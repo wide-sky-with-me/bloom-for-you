@@ -1,0 +1,2 @@
+# Optional browser regression tests only. The site/build use the standard library.
+playwright==1.58.0

@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#191119" />
+    <meta
+      name="description"
+      content="把花期交给时间，把浪漫留给你。一座只为你盛开的立体粒子花束画廊。"
+    />
+    <meta property="og:title" content="花间来信 · 给最爱的你" />
+    <meta
+      property="og:description"
+      content="有些喜欢，要用一整座花园来表达。点开，收下属于你的花。"
+    />
+    <title>花间来信 · 给最爱的你</title>
+    <link rel="icon" href="./assets/flower.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <div class="ambient" aria-hidden="true"></div>
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="花间来信首页">
+        <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
+          <path
+            d="M20 20C6 22 7 7 14 9c5 1 6 11 6 11Zm0 0C18 6 33 7 31 14c-1 5-11 6-11 6Zm0 0c14-2 13 13 6 11-5-1-6-11-6-11Zm0 0C22 34 7 33 9 26c1-5 11-6 11-6Z"
+            stroke="currentColor"
+            stroke-width="1.25"
+          />
+          <circle cx="20" cy="20" r="2" fill="currentColor" />
+        </svg>
+        <span>花间来信</span>
+      </a>
+      <p class="header-note">花会盛开，爱也是。</p>
+      <button class="letter-button" id="open-letter" aria-haspopup="dialog">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="m4 7 8 6 8-6" />
+        </svg>
+        <span>有封信给你</span
+        ><span class="unread-dot" aria-hidden="true"></span>
+      </button>
+    </header>
+
+    <main class="gallery" id="gallery">
+      <section class="intro" aria-labelledby="main-title">
+        <p class="dedication">
+          <span class="little-line"></span>献给<span id="recipient"
+            >我最爱的老婆</span
+          >
+        </p>
+        <h1 id="main-title">把每一次心动，<br />都开成花。</h1>
+        <p class="intro-copy">
+          有些喜欢，说一遍不够。<br />所以，我为你种下了一整个花园。
+        </p>
+        <button class="primary-button" id="bloom-button">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M12 3v4m0 10v4M3 12h4m10 0h4M5.6 5.6l2.8 2.8m7.2 7.2 2.8 2.8M5.6 18.4l2.8-2.8m7.2-7.2 2.8-2.8"
+            />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+          <span>让心意绽放</span>
+        </button>
+        <p class="intro-footnote">不止今天，往后的每一天。</p>
+      </section>
+
+      <section class="artwork" aria-label="可互动的立体粒子花束">
+        <div class="flower-halo" aria-hidden="true"></div>
+        <div class="orbit orbit-one" aria-hidden="true"></div>
+        <div class="orbit orbit-two" aria-hidden="true"></div>
+        <div class="canvas-wrap" id="canvas-wrap">
+          <canvas
+            id="bouquet"
+            tabindex="0"
+            aria-label="粉雾来信粒子花束，拖动旋转，点击绽放，方向键旋转，空格绽放"
+          ></canvas>
+          <img
+            class="fallback-art"
+            id="fallback-art"
+            alt="粉色玫瑰花束"
+            hidden
+          />
+          <div class="loading" id="loading" role="status">
+            <span class="loading-flower">✳</span
+            ><span>正在把心意编织成花…</span>
+          </div>
+        </div>
+        <div class="artwork-caption" aria-live="polite" aria-atomic="true">
+          <span class="caption-rule" aria-hidden="true"></span>
+          <div>
+            <h2 id="bouquet-title">粉雾来信</h2>
+            <p id="bouquet-description">玫瑰替我说，那些藏不住的喜欢。</p>
+          </div>
+          <span class="flower-tag" id="flower-tag">玫瑰</span>
+        </div>
+        <p class="interaction-hint" id="interaction-hint">
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path
+              d="m8 10 1-7a1 1 0 0 1 2 0v6l1-2a1 1 0 0 1 2 1l-1 7-3 2-4-5a1.2 1.2 0 0 1 2-2Z"
+            /></svg
+          >轻轻拖动，看花的另一面<span></span>点一下，让爱意散开
+        </p>
+        <div class="artwork-tools" role="group" aria-label="画廊设置">
+          <button
+            class="icon-button"
+            id="motion-toggle"
+            aria-label="暂停花束动画"
+            aria-pressed="false"
+            title="暂停动画"
+          >
+            <svg class="pause-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 5v14M15 5v14" /></svg
+            ><svg class="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m9 5 10 7-10 7Z" />
+            </svg>
+          </button>
+          <button
+            class="icon-button"
+            id="fullscreen-toggle"
+            aria-label="进入沉浸模式"
+            aria-pressed="false"
+            title="沉浸模式"
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4" />
+            </svg>
+          </button>
+        </div>
+      </section>
+
+      <nav class="collection" aria-label="挑选一束花">
+        <div class="collection-heading">
+          <span>总有一束，像你</span
+          ><span class="collection-count">四季心意 · 永不落幕</span>
+        </div>
+        <div class="bouquet-options" role="group" aria-label="花束收藏">
+          <button
+            class="bouquet-option is-selected"
+            data-bouquet="rose"
+            aria-pressed="true"
+          >
+            <span class="thumbnail"
+              ><img
+                src="./assets/rose-thumb.png"
+                alt=""
+                width="68"
+                height="78" /></span
+            ><span class="option-text"
+              ><span class="option-title">粉雾来信</span
+              ><span class="option-subtitle">玫瑰 · 热烈而温柔</span></span
+            ><span class="selected-mark" aria-hidden="true">✓</span>
+          </button>
+          <button
+            class="bouquet-option"
+            data-bouquet="tulip"
+            aria-pressed="false"
+          >
+            <span class="thumbnail"
+              ><img
+                src="./assets/tulip-thumb.png"
+                alt=""
+                width="68"
+                height="78" /></span
+            ><span class="option-text"
+              ><span class="option-title">把晴天给你</span
+              ><span class="option-subtitle">郁金香 · 刚刚好的偏爱</span></span
+            ><span class="selected-mark" aria-hidden="true">✓</span>
+          </button>
+          <button
+            class="bouquet-option"
+            data-bouquet="hydrangea"
+            aria-pressed="false"
+          >
+            <span class="thumbnail"
+              ><img
+                src="./assets/hydrangea-thumb.png"
+                alt=""
+                width="68"
+                height="78" /></span
+            ><span class="option-text"
+              ><span class="option-title">月光的拥抱</span
+              ><span class="option-subtitle"
+                >绣球 · 藏在日常里的浪漫</span
+              ></span
+            ><span class="selected-mark" aria-hidden="true">✓</span>
+          </button>
+          <button
+            class="bouquet-option"
+            data-bouquet="wildflower"
+            aria-pressed="false"
+          >
+            <span class="thumbnail"
+              ><img
+                src="./assets/wildflower-thumb.png"
+                alt=""
+                width="68"
+                height="78" /></span
+            ><span class="option-text"
+              ><span class="option-title">和你有个春天</span
+              ><span class="option-subtitle">花园 · 平凡日子的心动</span></span
+            ><span class="selected-mark" aria-hidden="true">✓</span>
+          </button>
+        </div>
+      </nav>
+    </main>
+
+    <footer class="site-footer">
+      <p>花期有时，爱你无期。</p>
+      <button id="share-button" class="text-button">
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M10 13V2m-4 4 4-4 4 4M5 9H3v8h14V9h-2" /></svg
+        >把这份浪漫收藏
+      </button>
+    </footer>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <dialog
+      id="letter-dialog"
+      class="letter-dialog"
+      aria-labelledby="letter-title"
+    >
+      <button class="close-button" id="close-letter" aria-label="收起信件">
+        ×
+      </button>
+      <div class="letter-flower" aria-hidden="true">❧</div>
+      <p class="letter-salutation" id="letter-salutation">亲爱的老婆：</p>
+      <h2 id="letter-title">你在，便是花期。</h2>
+      <div id="letter-body" class="letter-body">
+        <p>想送你一束花，又贪心地想让它永远盛开。</p>
+        <p>
+          于是把一颗颗微小的光，写成了花瓣的模样。你指尖掠过的风，你随手点亮的星光，都是我想给你的浪漫。
+        </p>
+        <p>谢谢你，把平凡的日子，变成我最喜欢的人间。</p>
+        <p>
+          往后的每一个春天，都想和你一起看花。<br />而每一个没有花的日子，也一样爱你。
+        </p>
+      </div>
+      <p class="letter-signature" id="letter-signature">永远偏爱你的，老公</p>
+      <button class="letter-action" id="letter-bloom">
+        收下这束花<span aria-hidden="true">♡</span>
+      </button>
+    </dialog>
+    <noscript
+      ><p class="noscript-note">
+        打开浏览器的 JavaScript，即可收下会绽放的花束。
+      </p></noscript
+    >
+  </body>
+</html>

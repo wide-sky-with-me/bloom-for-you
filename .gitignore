@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+artifacts/
+site/assets/*.bin
+site/assets/manifest.json
+site/assets/rose.svg
+site/assets/tulip.svg
+site/assets/hydrangea.svg
+site/assets/wildflower.svg
+.DS_Store
