@@ -24,6 +24,9 @@ SEED = 20_260_214
 RECORD = struct.Struct("<11f")
 MESH_HEADER = struct.Struct("<4sII")
 MESH_VERTEX = struct.Struct("<9f")
+GROWTH_HEADER = struct.Struct("<4sII")
+GROWTH_RECORD = struct.Struct("<hhhhhhH")
+GrowthPose = tuple[float, float, float, float, float, float, float]
 TAU = math.tau
 Vec3 = tuple[float, float, float]
 Particle = tuple[float, float, float, float, float, float, float, float,
@@ -162,6 +165,8 @@ class Surface:
     kind: str = "sheet"
     resolution: int = 12
     mesh_steps: tuple[int, int] | None = None
+    closed_point: PointFn | None = None
+    growth_delay: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -184,13 +189,14 @@ class Geometry:
             pigment: PigmentFn | Vec3, size: float = 1.0, shade: bool = True,
             edge_bias: float = 1.0, contour: bool = False,
             kind: str = "sheet", resolution: int = 12,
-            mesh_steps: tuple[int, int] | None = None) -> None:
+            mesh_steps: tuple[int, int] | None = None,
+            closed_point: PointFn | None = None, growth_delay: float = 0.0) -> None:
         if not callable(pigment):
             color = pigment
             pigment = lambda u, v, color=color: color
         self.sections[section].append(
             Surface(weight, point, pigment, size, shade, edge_bias, contour, kind,
-                    resolution, mesh_steps))
+                    resolution, mesh_steps, closed_point, growth_delay))
 
 
 def _allocate(count: int, weights: list[float]) -> list[int]:
@@ -729,33 +735,27 @@ _THEME_MIX = {
 }
 
 
+_THEME_COLORS = {
+    "rose": (0.94, 0.58, 0.72), "tulip": (0.98, 0.75, 0.74),
+    "hydrangea": (0.61, 0.71, 0.94), "wildflower": (0.97, 0.72, 0.59),
+    "peony": (0.94, 0.55, 0.69), "lily": (0.98, 0.92, 0.83),
+    "sunflower": (0.99, 0.78, 0.26), "calla": (0.89, 0.82, 0.95),
+}
+
+
 def _head_color(theme: str, species: str, index: int) -> Vec3:
-    cream, peach = (1.0, 0.94, 0.79), (0.99, 0.71, 0.55)
-    pink, butter = (0.95, 0.56, 0.68), (0.99, 0.87, 0.43)
-    colors = {
-        "rose": (pink, peach, (0.99, 0.77, 0.76)),
-        "tulip": (cream, peach, (0.98, 0.74, 0.77)),
-        "ranunculus": (cream, butter, (0.99, 0.89, 0.69)),
-        "lisianthus": ((0.94, 0.80, 0.84), cream, (0.87, 0.75, 0.88)),
-        "dahlia": ((0.91, 0.43, 0.57), (0.98, 0.66, 0.56), (0.96, 0.69, 0.75)),
-        "cosmos": (cream, (0.66, 0.79, 0.88), (0.98, 0.86, 0.67)),
-        "peony": (pink, (0.99, 0.73, 0.78), peach),
-        "lily": (cream, (1.0, 0.90, 0.85), (0.96, 0.82, 0.84)),
-        "sunflower": ((0.99, 0.73, 0.18), (1.0, 0.83, 0.28), (0.97, 0.66, 0.13)),
-        "calla": (cream, (0.92, 0.84, 0.96), (0.98, 0.95, 0.88)),
-        "hydrangea": ((0.65, 0.76, 0.90),),
-    }
-    palette = colors[species]
-    color = palette[index % len(palette)]
-    if theme == "rose" and species == "rose":
-        color = _mix(pink, (0.99, 0.78, 0.80), (index % 4) / 5)
-    elif theme == "wildflower" and species == "rose":
-        color = _mix(peach, cream, (index % 4) / 5)
-    elif theme == "sunflower" and species in ("dahlia", "cosmos", "ranunculus"):
-        color = _mix(color, butter, 0.42)
-    elif theme == "hydrangea" and species in ("rose", "lisianthus"):
-        color = _mix(color, (0.77, 0.79, 0.95), 0.36)
-    return color
+    base = _THEME_COLORS[theme]
+    if index % 9 == 8:
+        return (0.99, 0.95, 0.88)
+    return _mix(base, (1.0, 0.96, 0.93), (index % 4) * 0.055)
+
+
+def _tonal_pigment(pigment: PigmentFn, color: Vec3) -> PigmentFn:
+    def tonal(u: float, v: float) -> Vec3:
+        level = max(pigment(u, v))
+        target = _mix(color, (1.0, 0.97, 0.93), 0.22 * u ** 4)
+        return tuple(_clamp(c * level / max(color)) for c in target)
+    return tonal
 
 
 def _arrange_heads(bouquet_id: str) -> list[FlowerHead]:
@@ -809,6 +809,14 @@ def _arrange_heads(bouquet_id: str) -> list[FlowerHead]:
                 radius = rng.uniform(0.40, 0.52)
             if bouquet_id == "calla" and layer in ("middle", "top") and kind not in ("calla", "cosmos"):
                 radius = 0.50 + (radius - 0.40) * (2 / 3)
+            if bouquet_id == "calla" and layer == "middle":
+                c, s = math.cos(math.radians(30.0)), math.sin(math.radians(30.0))
+                center = (center[0] * c - center[2] * s, center[1], center[0] * s + center[2] * c)
+                axis = (axis[0] * c - axis[2] * s, axis[1], axis[0] * s + axis[2] * c)
+                radial = math.hypot(center[0], center[2])
+                fraction = max(0., min(1., (radial - .95) / .23))
+                scale = (1.15 + (1.34 - 1.15) * fraction) / radial
+                center = (center[0] * scale, center[1], center[2] * scale)
             heads.append(FlowerHead(kind, center, axis, radius, layer))
     # Preserve sampling order and the fitted transform sequence.
     if bouquet_id in ("peony", "sunflower"):
@@ -834,10 +842,79 @@ def _arrange_heads(bouquet_id: str) -> list[FlowerHead]:
                 center = (center[0] * scale, center[1], center[2] * scale)
             adjusted.append(replace(head, radius=radius, center=center, axis=axis))
         heads = adjusted
+    if bouquet_id == "wildflower":
+        # Open one supporting back-left rose toward the thin sector, not the six hero heads.
+        head = heads[11]
+        c, s = math.cos(math.radians(-40)), math.sin(math.radians(-40))
+        x, y, z = head.axis
+        heads[11] = replace(head, radius=min(.52, head.radius * 1.15),
+                            axis=(x * c - z * s, y, x * s + z * c))
     return heads
 
 
-def _add_head(model: Geometry, head: FlowerHead, color: Vec3, index: int) -> None:
+def _cupped_surface(surface: Surface, head: FlowerHead) -> PointFn:
+    point, axis = surface.point, head.axis
+    if head.species == "ranunculus" and head.radius < .65:
+        return point  # Existing micro-cups already use the full 2% triangulation error budget.
+    amount = head.radius * .06
+    if head.species == "hydrangea":
+        root, tip = point(0.0, .5), point(1.0, .5)
+        axis = _unit(tuple(a - b for a, b in zip(root, head.center)))
+        amount = .06 * math.dist(root, tip)
+    def cupped(u: float, v: float) -> Vec3:
+        bend = amount * math.sin(math.pi * u) ** 2 * ((2 * v - 1) ** 2 - .35)
+        return _add(point(u, v), _mul(axis, bend))
+    return cupped
+
+
+def _closed_petal(surface: Surface, head: FlowerHead, index: int, count: int,
+                  floret_frame: tuple[Vec3, Vec3] | None = None) -> PointFn:
+    """Rooted cupped bud sheets; each hydrangea floret keeps its own axis/base."""
+    point = surface.point
+    root, tip = point(0.0, .5), point(1.0, .5)
+    hydro = head.species == "hydrangea"
+    origin = floret_frame[0] if floret_frame else (root if hydro else head.center)
+    axis = floret_frame[1] if floret_frame else (
+        _unit(tuple(a - b for a, b in zip(root, head.center))) if hydro else head.axis)
+    length = max(.005, math.dist(root, tip))
+    radius = length if hydro else min(head.radius, length)
+    delta = tuple(a - b for a, b in zip(tip, origin))
+    radial = _add(delta, _mul(axis, -sum(a * b for a, b in zip(delta, axis))))
+    if sum(x * x for x in radial) < 1e-12:
+        radial = _cross(axis, (0.0, 1.0, 0.0) if abs(axis[1]) < .95 else (1.0, 0.0, 0.0))
+    radial = _unit(radial)
+    tangent = _unit(_cross(axis, radial))
+    fraction = index / max(1, count - 1)
+    root_delta = tuple(a - b for a, b in zip(root, origin))
+    root_height = sum(a * b for a, b in zip(root_delta, axis))
+    root_radial = _add(root_delta, _mul(axis, -root_height))
+    width = min(radius * .20, math.dist(point(.5, .1), point(.5, .9)) * .30)
+    detail = surface.kind != "sheet" or surface.mesh_steps in ((1, 4), (24, 2))
+    def closed(u: float, v: float) -> Vec3:
+        # The unchanged collar also preserves derivatives at shared root vertices.
+        if u <= .03:
+            return point(u, v)
+        if detail:
+            base = point(0.0, v)
+            target = _add(base, _mul(tuple(a - b for a, b in zip(point(u, v), base)), .25))
+        else:
+            q, arc = 2 * v - 1, math.sin(math.pi * u)
+            reach = radius * ((.20 + .11 * fraction) * arc + (.035 + .04 * fraction) * u
+                              + .045 * q * q * arc)
+            lift = (.90 if head.species == "calla" else .64) * length
+            height = root_height + lift * (1 + .10 * fraction) * math.sin(math.pi * u / 2)
+            height += length * .035 * (1 - q * q) * arc
+            target = _add(origin, _add(_mul(axis, height),
+                     _add(_mul(root_radial, 1 - u), _add(_mul(radial, reach),
+                          _mul(tangent, q * width * arc * (1 - .55 * u))))))
+        if u >= .13:
+            return target
+        t = (u - .03) / .10
+        return _mix(point(u, v), target, t * t * (3 - 2 * t))
+    return closed
+
+
+def _add_head(model: Geometry, head: FlowerHead, color: Vec3, index: int, *, extra_cup: bool = True) -> None:
     start = len(model.sections["flowers"])
     if head.species == "hydrangea":
         _hydrangea(model, head.center, head.radius, index)
@@ -875,10 +952,25 @@ def _add_head(model: Geometry, head: FlowerHead, color: Vec3, index: int) -> Non
         return (5, 3) if head.radius >= 0.40 else (3, 2)
 
     # Allocate by head area, not by the number of petals/florets in that species.
-    model.sections["flowers"][start:] = [
-        replace(surface, weight=surface.weight / total * head.radius ** 2,
-                mesh_steps=mesh_steps(surface, j))
-        for j, surface in enumerate(surfaces)]
+    shaped = []
+    floret_frame = None
+    for j, surface in enumerate(surfaces):
+        if head.species == "hydrangea" and j % 5 == 0:
+            group = surfaces[j:j + 5]
+            base = tuple(sum(s.point(0., .5)[k] for s in group[:4]) / 4 for k in range(3))
+            eye = group[4].point(0., .5)
+            floret_frame = (base, _unit(tuple(a - b for a, b in zip(eye, base))))
+        steps = mesh_steps(surface, j)
+        pigment = (surface.pigment if surface.kind == "tube" or steps == (1, 4)
+                   else _tonal_pigment(surface.pigment, color))
+        if extra_cup and surface.kind == "sheet" and steps != (1, 4):
+            surface = replace(surface, point=_cupped_surface(surface, head))
+        surface = replace(surface, pigment=pigment, mesh_steps=steps)
+        delay = .08 + .46 * (1 - j / max(1, len(surfaces) - 1)) + .05 * ((index * 3) % 7) / 6
+        shaped.append(replace(surface, weight=surface.weight / total * head.radius ** 2,
+                              closed_point=_closed_petal(surface, head, j, len(surfaces), floret_frame),
+                              growth_delay=delay))
+    model.sections["flowers"][start:] = shaped
     model.heads.append(head)
     _stem(model, head.center, index, head.species in ("tulip", "lily", "calla"), head.axis)
 
@@ -953,10 +1045,11 @@ def _accent_sprigs(model: Geometry, theme_index: int) -> None:
             end = _add(base, _add(_mul(side, (1 if k % 2 else -1) * 0.14), (0.0, 0.08, 0.0)))
             _tube(model, "stems", lambda u, a=base, b=end: _mix(a, b, u),
                   0.003, (0.46, 0.57, 0.38), 0.015, 0.60)
-            color = ((0.96, 0.94, 0.80), (0.59, 0.76, 0.87), (0.98, 0.85, 0.53))[j % 3]
+            theme = tuple(_THEME_MIX)[theme_index]
+            color = ((0.99, 0.95, 0.88) if j % 6 == 0 else _head_color(theme, "floret", j + k))
             axis = _unit(_add(radial, (0.0, 0.45, 0.0)))
             if k == 4 and j % 2 == 0:
-                _bud(model, end, axis, 0.085, (0.98, 0.85, 0.79))
+                _bud(model, end, axis, 0.085, color)
             else:
                 _floret(model, end, axis, 0.065 + 0.009 * (k % 3), color, j + k * 0.7)
         if j % 3 == 0:
@@ -965,14 +1058,15 @@ def _accent_sprigs(model: Geometry, theme_index: int) -> None:
                 end = _add(base, _add(_mul(side, (k % 2 * 2 - 1) * 0.17), (0.0, 0.10, 0.0)))
                 _tube(model, "stems", lambda u, a=base, b=end: _mix(a, b, u),
                       0.003, (0.40, 0.46, 0.28), 0.01, 0.60)
-                _berry(model, end, 0.047, (0.56, 0.28, 0.27) if j % 2 else (0.76, 0.59, 0.26))
+                _berry(model, end, 0.047, _mul(_THEME_COLORS[tuple(_THEME_MIX)[theme_index]], .72))
 
 
 def _build_geometry(bouquet_id: str) -> Geometry:
     model = Geometry()
     heads = _arrange_heads(bouquet_id)
     for i, head in enumerate(heads):
-        _add_head(model, head, _head_color(bouquet_id, head.species, i), i)
+        _add_head(model, head, _head_color(bouquet_id, head.species, i), i,
+                  extra_cup=bouquet_id != "wildflower")
     theme_index = tuple(_THEME_MIX).index(bouquet_id)
     _greenery(model, theme_index)
     _accent_sprigs(model, theme_index)
@@ -986,7 +1080,7 @@ def _build_geometry(bouquet_id: str) -> Geometry:
 _LIGHT = _unit((-0.35, 0.55, 0.76))
 
 
-def _surface_normal(surface: Surface, u: float, v: float) -> Vec3:
+def _surface_normal(surface: Surface, u: float, v: float, *, closed: bool = False) -> Vec3:
     """World-space partial derivatives; one-sided differences at domain edges.
 
     Dividing by the positive parameter interval avoids flipping normals at u/v=1.
@@ -995,8 +1089,9 @@ def _surface_normal(surface: Surface, u: float, v: float) -> Vec3:
     step = 0.0001
     ua, ub = max(0.0, u - step), min(1.0, u + step)
     va, vb = max(0.0, v - step), min(1.0, v + step)
-    a, b = surface.point(ua, v), surface.point(ub, v)
-    c, d = surface.point(u, va), surface.point(u, vb)
+    point = surface.closed_point if closed and surface.closed_point is not None else surface.point
+    a, b = point(ua, v), point(ub, v)
+    c, d = point(u, va), point(u, vb)
     du = tuple((y - x) / (ub - ua) for x, y in zip(a, b))
     dv = tuple((y - x) / (vb - va) for x, y in zip(c, d))
     return _unit(_cross(du, dv))
@@ -1013,8 +1108,37 @@ def _surface_color(surface: Surface, u: float, v: float, p: Vec3 | None = None,
     return tuple(_clamp(c * shade) for c in color)
 
 
-def generate_bouquet(bouquet_id: str, count: int = COUNT) -> list[Particle]:
-    """Sample real surfaces, with a fixed local seed and an unbiased final order."""
+def _quantized_growth(pose: GrowthPose) -> tuple[int, ...]:
+    values = tuple(round(c * 4096) for c in pose[:3]) + tuple(round(c * 32767) for c in pose[3:6])
+    if not all(-32768 <= value <= 32767 for value in values):
+        raise ValueError("growth position/normal exceeds Int16 range")
+    return (*values, round(_clamp(pose[6]) * 65535))
+
+
+def _growth_pose(surface: Surface, u: float, v: float, opened: tuple[float, ...]) -> GrowthPose:
+    opened = struct.unpack("<6f", struct.pack("<6f", *opened))
+    if surface.closed_point is None:
+        return (*opened, 0.0)
+    point = surface.closed_point(u, v)
+    normal = _surface_normal(surface, u, v, closed=True)
+    closed = (*point, *normal)
+    if struct.unpack("<6f", struct.pack("<6f", *closed)) == opened:
+        return (*opened, 0.0)
+    pose = (*closed, surface.growth_delay)
+    if _quantized_growth(pose)[:6] == _quantized_growth((*opened, 0.0))[:6]:
+        return (*opened, 0.0)
+    return pose
+
+
+def _stratified_uv(count: int, rng: random.Random):
+    """Jitter both axes in balanced 2-D cells, without piling samples on the rim."""
+    rows = max(1, math.isqrt(count))
+    for row, columns in enumerate(_allocate(count, [1.0] * rows)):
+        for column in range(columns):
+            yield (row + rng.random()) / rows, (column + rng.random()) / columns
+
+
+def _sample_bouquet(bouquet_id: str, count: int, with_growth: bool):
     if count < 1:
         raise ValueError("count must be positive")
     ids = [item["id"] for item in BOUQUETS]
@@ -1022,23 +1146,30 @@ def generate_bouquet(bouquet_id: str, count: int = COUNT) -> list[Particle]:
         raise ValueError(f"Unknown bouquet id: {bouquet_id}")
     rng = random.Random(SEED + ids.index(bouquet_id) * 7_919)
     model = _build_geometry(bouquet_id)
-    section_weights = (0.830, 0.080, 0.025, 0.065)
-    budgets = _allocate(count, list(section_weights))
-    particles: list[Particle] = []
+    budgets = _allocate(count, [0.850, 0.060, 0.025, 0.065])
+    particles, growth = [], []
     for surfaces, budget in zip(model.sections.values(), budgets):
         allocations = _allocate(budget, [surface.weight for surface in surfaces])
         for surface, n in zip(surfaces, allocations):
-            for i in range(n):
-                u, v = (i + rng.random()) / n, rng.random()
-                u = 1.0 - (1.0 - u) ** surface.edge_bias
+            for u, v in _stratified_uv(n, rng):
                 p = surface.point(u, v)
                 color = _surface_color(surface, u, v, p)
-                size = max(0.60, min(1.80, surface.size * rng.uniform(0.86, 1.22)))
+                size = max(.60, min(1.80, surface.size * rng.uniform(.78, 1.02)))
                 normal = _surface_normal(surface, u, v)
                 particles.append((*p, *color, size, rng.random() * TAU, *normal))
-    rng.shuffle(particles)
-    return particles
+                if with_growth:
+                    growth.append(_growth_pose(surface, u, v, (*p, *normal)))
+    order = list(range(len(particles)))
+    rng.shuffle(order)
+    return [particles[i] for i in order], [growth[i] for i in order] if with_growth else []
 
+
+def generate_bouquet(bouquet_id: str, count: int = COUNT) -> list[Particle]:
+    return _sample_bouquet(bouquet_id, count, False)[0]
+
+
+def generate_bouquet_with_growth(bouquet_id: str, count: int = COUNT) -> tuple[list[Particle], list[GrowthPose]]:
+    return _sample_bouquet(bouquet_id, count, True)
 
 def encode_particles(particles: list[Particle]) -> bytes:
     data = bytearray(len(particles) * RECORD.size)
@@ -1047,10 +1178,11 @@ def encode_particles(particles: list[Particle]) -> bytes:
     return bytes(data)
 
 
-def _tessellate_geometry(geometry: Geometry) -> tuple[list[tuple[float, ...]], list[int]]:
+def _tessellate_geometry(geometry: Geometry, *, growth: list[tuple[int, ...]] | None = None) -> tuple[list[tuple[float, ...]], list[int]]:
     """Evaluate the very same sheets as a compact, indexed, unlit triangle mesh."""
     vertices: list[tuple[float, ...]] = []
     indices: list[int] = []
+    poses: list[tuple[int, ...]] = []
     for surfaces in geometry.sections.values():
         for surface in surfaces:
             nu, nv = surface.mesh_steps or (
@@ -1065,7 +1197,9 @@ def _tessellate_geometry(geometry: Geometry) -> tuple[list[tuple[float, ...]], l
                     values = (*surface.point(u, v), *_surface_color(surface, u, v),
                               *_surface_normal(surface, u, v))
                     # Reject pole/seam triangles using the actual stored Float32 positions.
-                    vertices.append(MESH_VERTEX.unpack(MESH_VERTEX.pack(*values)))
+                    vertex = MESH_VERTEX.unpack(MESH_VERTEX.pack(*values))
+                    vertices.append(vertex)
+                    poses.append(_quantized_growth(_growth_pose(surface, u, v, (*vertex[:3], *vertex[6:9]))))
             for i in range(nu):
                 for j in range(nv):
                     a = base + i * (nv + 1) + j
@@ -1077,25 +1211,30 @@ def _tessellate_geometry(geometry: Geometry) -> tuple[list[tuple[float, ...]], l
                                        tuple(y - x for x, y in zip(p, r)))
                         if sum(value * value for value in cross) > 1e-18:
                             indices.extend(triangle)
-    # Keep the first u/v occurrence; weld only identical stored position/color/normal.
+    # Weld only identical stored open fields AND quantized closed position/normal/delay.
     used = set(indices)
     remap = {}
     packed = []
     unique = {}
     for old_index, vertex in enumerate(vertices):
         if old_index in used:
-            new_index = unique.get(vertex)
+            key = (*vertex, *poses[old_index])
+            new_index = unique.get(key)
             if new_index is None:
                 new_index = len(packed)
-                unique[vertex] = new_index
+                unique[key] = new_index
                 packed.append(vertex)
+                if growth is not None:
+                    growth.append(poses[old_index])
             remap[old_index] = new_index
     return packed, [remap[index] for index in indices]
 
 
-def encode_mesh(geometry: Geometry) -> bytes:
-    vertices, indices = _tessellate_geometry(geometry)
+def encode_mesh(geometry: Geometry, *, growth: list[tuple[int, ...]] | None = None) -> bytes:
+    vertices, indices = _tessellate_geometry(geometry, growth=growth)
     size = MESH_HEADER.size + len(vertices) * MESH_VERTEX.size + len(indices) * 4
+    if size >= 3_000_000:
+        raise ValueError(f"mesh asset exceeds 3 MB: {size}")
     data = bytearray(size)
     MESH_HEADER.pack_into(data, 0, b"BFM1", len(vertices), len(indices))
     offset = MESH_HEADER.size
@@ -1105,6 +1244,26 @@ def encode_mesh(geometry: Geometry) -> bytes:
     for index in indices:
         struct.pack_into("<I", data, offset, index)
         offset += 4
+    return bytes(data)
+
+
+def encode_growth(particle_poses: list[GrowthPose], geometry: Geometry, *,
+                  mesh_poses: list[tuple[int, ...]] | None = None) -> bytes:
+    if mesh_poses is None:
+        mesh_poses = []
+        _tessellate_geometry(geometry, growth=mesh_poses)
+    size = GROWTH_HEADER.size + GROWTH_RECORD.size * (len(particle_poses) + len(mesh_poses))
+    if size > 3_000_000:
+        raise ValueError(f"growth asset exceeds 3 MB: {size}")
+    data = bytearray(size)
+    GROWTH_HEADER.pack_into(data, 0, b"BFG1", len(particle_poses), len(mesh_poses))
+    offset = GROWTH_HEADER.size
+    for pose in particle_poses:
+        GROWTH_RECORD.pack_into(data, offset, *_quantized_growth(pose))
+        offset += GROWTH_RECORD.size
+    for pose in mesh_poses:
+        GROWTH_RECORD.pack_into(data, offset, *pose)
+        offset += GROWTH_RECORD.size
     return bytes(data)
 
 
@@ -1208,16 +1367,23 @@ def render_svg(particles: list[Particle], title: str, description: str,
     return "\n".join(lines)
 
 
-def generate_assets(output: str | Path = Path("site/assets")) -> dict:
+def generate_assets(output: str | Path = Path("site/assets"), *, include_growth: bool = True) -> dict:
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     manifest = {"version": 2, "count": COUNT, "stride": STRIDE,
-                "bouquets": [dict(item) for item in BOUQUETS]}
+                "bouquets": [dict(item, **({"growth": f'{item["id"]}.growth'} if include_growth else {}))
+                             for item in BOUQUETS]}
     for item in BOUQUETS:
-        particles = generate_bouquet(item["id"])
+        if include_growth:
+            particles, poses = generate_bouquet_with_growth(item["id"])
+        else:
+            particles = generate_bouquet(item["id"])
         (output / item["file"]).write_bytes(encode_particles(particles))
         geometry = _build_geometry(item["id"])
-        (output / item["surface"]).write_bytes(encode_mesh(geometry))
+        mesh_poses: list[tuple[int, ...]] = []
+        (output / item["surface"]).write_bytes(encode_mesh(geometry, growth=mesh_poses if include_growth else None))
+        if include_growth:
+            (output / f'{item["id"]}.growth').write_bytes(encode_growth(poses, geometry, mesh_poses=mesh_poses))
         (output / f'{item["id"]}.svg').write_text(
             render_svg(particles, item["title"], item["description"], geometry), encoding="utf-8")
     (output / "manifest.json").write_text(
@@ -1229,8 +1395,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="生成可复现的立体粒子花束与同源 SVG 投影")
     parser.add_argument("--output", type=Path, default=Path("site/assets"),
                         metavar="PATH", help="资源输出目录（默认：site/assets）")
+    parser.add_argument("--without-growth", action="store_true", help="省略可选 BFG1 生长姿态")
     args = parser.parse_args(argv)
-    manifest = generate_assets(args.output)
+    manifest = generate_assets(args.output, include_growth=not args.without_growth)
     print(f'已生成 {len(manifest["bouquets"])} 组花束，每组 {COUNT} 粒子，'
           f'{STRIDE} 个 Float32LE：{args.output.resolve()}')
     return 0

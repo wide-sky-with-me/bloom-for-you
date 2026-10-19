@@ -22,6 +22,7 @@ flowers = args.flowers.split(',')
 assert all(flower in FLOWERS for flower in flowers), flowers
 args.output.mkdir(parents=True, exist_ok=True)
 errors = []
+failures = []
 report = {}
 
 
@@ -105,7 +106,7 @@ with sync_playwright() as p:
     page.wait_for_function("document.body.dataset.ready === 'true'")
     canvas = page.locator('#bouquet')
     expect(canvas).to_have_attribute('data-rendered', 'true')
-    manifest = page.request.get(urljoin(page.url, 'assets/manifest.json?v=3')).json()
+    manifest = page.request.get(urljoin(page.url, 'assets/manifest.json?v=4')).json()
     assert manifest['count'] == 120_000 and manifest['stride'] == 11, manifest
     passes = page.evaluate('window.__renderPasses')
     assert any(not any(item['color']) and item['writeDepth'] and item['testDepth'] for item in passes), passes
@@ -148,12 +149,16 @@ with sync_playwright() as p:
         width_ratio = min(view['coloredWidth'] for view in views) / max(view['coloredWidth'] for view in views)
         report[flower].update(areaRatio=area_ratio, widthRatio=width_ratio)
         save_report()
-        assert area_ratio >= .72, (flower, 'flower area collapses from the back', report[flower])
-        assert width_ratio >= .82, (flower, 'flower crown becomes a thin side panel', report[flower])
-        report[flower]['status'] = 'passed'
+        if area_ratio < .72:
+            failures.append((flower, 'flower area collapses from the back', area_ratio))
+        if width_ratio < .82:
+            failures.append((flower, 'flower crown becomes a thin side panel', width_ratio))
+        report[flower]['status'] = 'passed' if area_ratio >= .72 and width_ratio >= .82 else 'failed'
         save_report()
-        print(f'PASS: {flower}: {args.views} views, colored crown area ratio {area_ratio:.3f}, width ratio {width_ratio:.3f}', flush=True)
+        status = report[flower]['status'].upper()
+        print(f'{status}: {flower}: {args.views} views, colored crown area ratio {area_ratio:.3f}, width ratio {width_ratio:.3f}', flush=True)
     assert not errors, errors
+    assert not failures, failures
     browser.close()
 save_report()
 print(f'Visual evidence: {args.output}', flush=True)

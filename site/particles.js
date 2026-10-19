@@ -1,6 +1,139 @@
+// Decision: .agents/notes/implemented/botanical-growth/2026-10-19-bud-to-bloom.md
 // Decision: .agents/notes/implemented/particle-depth/2026-10-19-normal-lit-bouquets.md
 const STRIDE = 11;
-const STRIDE_BYTES = STRIDE * Float32Array.BYTES_PER_ELEMENT;
+const GPU_STRIDE = 16;
+const STRIDE_BYTES = GPU_STRIDE * Float32Array.BYTES_PER_ELEMENT;
+const GROWTH_STRIDE = 7;
+
+function unitNormal(x, y, z) {
+  const length = Math.hypot(x, y, z);
+  return length > 1e-8 ? [x / length, y / length, z / length] : [0, 0, 1];
+}
+
+function packNormal(x, y, z, base) {
+  [x, y, z] = unitNormal(x, y, z);
+  const sum = Math.abs(x) + Math.abs(y) + Math.abs(z);
+  x /= sum;
+  y /= sum;
+  if (z < 0)
+    [x, y] = [
+      (1 - Math.abs(y)) * (x < 0 ? -1 : 1),
+      (1 - Math.abs(x)) * (y < 0 ? -1 : 1),
+    ];
+  return (
+    Math.round((x * 0.5 + 0.5) * (base - 1)) +
+    base * Math.round((y * 0.5 + 0.5) * (base - 1))
+  );
+}
+
+function unpackNormal(value, base) {
+  let x = ((value % base) / (base - 1)) * 2 - 1;
+  let y = (Math.floor(value / base) / (base - 1)) * 2 - 1;
+  const z = 1 - Math.abs(x) - Math.abs(y);
+  if (z < 0)
+    [x, y] = [
+      (1 - Math.abs(y)) * (x < 0 ? -1 : 1),
+      (1 - Math.abs(x)) * (y < 0 ? -1 : 1),
+    ];
+  return unitNormal(x, y, z);
+}
+
+function validateGrowth(part, count) {
+  if (!(part instanceof Float32Array) || part.length !== count * GROWTH_STRIDE)
+    throw new Error(
+      "Invalid growth stride or count: expected 7 Float32 values",
+    );
+  for (let i = 0; i < part.length; i += GROWTH_STRIDE) {
+    for (let j = 0; j < GROWTH_STRIDE; j++)
+      if (!Number.isFinite(part[i + j]))
+        throw new Error("Invalid growth value");
+    if (
+      part[i + 6] < 0 ||
+      part[i + 6] > 1 ||
+      Math.hypot(part[i + 3], part[i + 4], part[i + 5]) < 1e-8
+    )
+      throw new Error("Invalid growth normal or delay");
+  }
+}
+
+// Raw records remain immutable; only the private GPU layout consumes eight attributes.
+function packRecords(data, growth, stride, base) {
+  const packed = new Float32Array((data.length / stride) * GPU_STRIDE);
+  for (
+    let i = 0, j = 0, k = 0;
+    i < data.length;
+    i += stride, j += GPU_STRIDE, k += GROWTH_STRIDE
+  ) {
+    const n = stride === STRIDE ? i + 8 : i + 6;
+    packed.set(
+      [
+        data[i],
+        data[i + 1],
+        data[i + 2],
+        stride === STRIDE ? data[i + 6] : 1,
+        data[i + 3],
+        data[i + 4],
+        data[i + 5],
+        stride === STRIDE ? data[i + 7] : 0,
+        data[n],
+        data[n + 1],
+        data[n + 2],
+        growth
+          ? packNormal(growth[k + 3], growth[k + 4], growth[k + 5], base)
+          : packNormal(data[n], data[n + 1], data[n + 2], base),
+        growth ? growth[k] : data[i],
+        growth ? growth[k + 1] : data[i + 1],
+        growth ? growth[k + 2] : data[i + 2],
+        growth ? growth[k + 6] : 0,
+      ],
+      j,
+    );
+  }
+  return packed;
+}
+
+function localGrowth(progress, delay) {
+  return ramp(delay * 0.24, delay * 0.24 + 0.76, progress);
+}
+
+function poseNormal(packed, i, progress, base) {
+  const closed = unpackNormal(packed[i + 11], base);
+  const g = localGrowth(progress, packed[i + 15]);
+  return closed.map(
+    (value, axis) => value * (1 - g) + packed[i + 8 + axis] * g,
+  );
+}
+
+function freezePacked(from, to, mix, sourceGrowth, targetGrowth, base) {
+  const frozen = new Float32Array(from.length);
+  for (let i = 0; i < from.length; i += GPU_STRIDE) {
+    const a = localGrowth(sourceGrowth, from[i + 15]);
+    const b = localGrowth(targetGrowth, to[i + 15]);
+    for (let j = 0; j < GPU_STRIDE; j++)
+      frozen[i + j] = from[i + j] * (1 - mix) + to[i + j] * mix;
+    for (let axis = 0; axis < 3; axis++) {
+      const p = from[i + 12 + axis] * (1 - a) + from[i + axis] * a;
+      const q = to[i + 12 + axis] * (1 - b) + to[i + axis] * b;
+      frozen[i + axis] = p * (1 - mix) + q * mix;
+    }
+    const an = poseNormal(from, i, sourceGrowth, base),
+      bn = poseNormal(to, i, targetGrowth, base);
+    const normal = an.map((value, axis) => value * (1 - mix) + bn[axis] * mix);
+    frozen.set(
+      Math.hypot(...normal) < 0.01
+        ? unitNormal(...from.subarray(i + 8, i + 11))
+        : unitNormal(...normal),
+      i + 8,
+    );
+    const ac = unpackNormal(from[i + 11], base),
+      bc = unpackNormal(to[i + 11], base);
+    frozen[i + 11] = packNormal(
+      ...ac.map((value, axis) => value * (1 - mix) + bc[axis] * mix),
+      base,
+    );
+  }
+  return frozen;
+}
 const CAMERA_DISTANCE = 6.8;
 const SUPPORT_DIRECTIONS = [];
 for (const x of [-1, 0, 1])
@@ -38,16 +171,19 @@ function idlePosition(x, y, z, phase, time) {
 
 const VERTEX = `
 precision highp float;
-attribute vec3 aPosition;
-attribute vec3 aTarget;
-attribute vec3 aColor;
-attribute vec3 aTargetColor;
-attribute vec2 aMeta;
-attribute vec3 aNormal;
-attribute vec3 aTargetNormal;
+attribute vec4 aPosition;
+attribute vec4 aColor;
+attribute vec4 aNormal;
+attribute vec4 aBud;
+attribute vec4 aTarget;
+attribute vec4 aTargetColor;
+attribute vec4 aTargetNormal;
+attribute vec4 aTargetBud;
 uniform float uMix;
 uniform float uTime;
-uniform float uBurst;
+uniform float uSourceGrowth;
+uniform float uTargetGrowth;
+uniform float uOctBase;
 uniform float uAppear;
 uniform vec2 uRotation;
 uniform vec2 uPointer;
@@ -62,19 +198,28 @@ uniform mediump float uGlow;
 uniform mediump float uDust;
 varying mediump vec3 vColor;
 varying mediump float vAlpha;
+varying mediump vec3 vMaterialPosition;
 vec3 rotate(vec3 p) {
   float cy = cos(uRotation.x), sy = sin(uRotation.x);
   float cx = cos(uRotation.y), sx = sin(uRotation.y);
   p = vec3(p.x * cy + p.z * sy, p.y, -p.x * sy + p.z * cy);
   return vec3(p.x, p.y * cx - p.z * sx, p.y * sx + p.z * cx);
 }
+vec3 closedNormal(float encoded) {
+  vec2 f = vec2(mod(encoded, uOctBase), floor(encoded / uOctBase)) / (uOctBase - 1.0) * 2.0 - 1.0;
+  vec3 n = vec3(f, 1.0 - abs(f.x) - abs(f.y));
+  if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * (step(vec2(0.0), n.xy) * 2.0 - 1.0);
+  return normalize(n);
+}
+float openPetal(float progress, float delay) {
+  return smoothstep(delay * .24, delay * .24 + .76, progress);
+}
 void main() {
-  float phase = aMeta.y;
-  vec3 p = mix(aPosition, aTarget, uMix);
-  vec3 direction = normalize(vec3(sin(phase * 7.1), cos(phase * 4.3), sin(phase * 3.7)) + vec3(.001));
-  float scatter = (uBurst + (1.0 - uAppear) * .85) * (1.0 - uSurface);
-  p += direction * scatter * (0.7 + fract(phase * 3.1) * 1.8);
-  p.y += scatter * sin(phase * 6.0 + uTime * .6) * .3;
+  float phase = uSurface > .5 ? 0.0 : aColor.w;
+  float sourceOpen = openPetal(uSourceGrowth, aBud.w);
+  float targetOpen = openPetal(uTargetGrowth, aTargetBud.w);
+  vec3 p = mix(mix(aBud.xyz, aPosition.xyz, sourceOpen), mix(aTargetBud.xyz, aTarget.xyz, targetOpen), uMix);
+  vMaterialPosition = p;
   float wind = sin(uTime * .65 + p.y * .85) * .032;
   float breath = sin(uTime * .82 + p.y * .5) * .012;
   p.xy *= 1.0 + breath * max(0.0, p.y + 1.0);
@@ -99,13 +244,15 @@ void main() {
   float clipZ = (far + near) / (far - near) * depth - 2.0 * far * near / (far - near);
   gl_Position = vec4(screen.x * depth / uAspect, screen.y * depth, clipZ, depth);
   // World-sized grains keep the same surface coverage as the canvas or lens grows.
-  float coreSize = aMeta.x * uPointScale * perspective;
-  if (uDust > .5) coreSize = aMeta.x * uDpr * perspective * 2.2;
-  coreSize = clamp(coreSize, 1.0, (uDust > .5 ? 2.5 : 3.8) * uDpr);
-  gl_PointSize = coreSize * (1.0 + uGlow * 1.55);
-  vec3 blendedNormal = mix(aNormal, aTargetNormal, uMix);
+  float coreSize = aPosition.w * uPointScale * perspective * .72;
+  if (uDust > .5) coreSize = aPosition.w * uDpr * perspective * 2.2;
+  coreSize = clamp(coreSize, 1.0, (uDust > .5 ? 2.5 : 2.6) * uDpr);
+  gl_PointSize = coreSize * (1.0 + uGlow * .65);
+  vec3 sourceNormal = mix(closedNormal(aNormal.w), aNormal.xyz, sourceOpen);
+  vec3 targetNormal = mix(closedNormal(aTargetNormal.w), aTargetNormal.xyz, targetOpen);
+  vec3 blendedNormal = mix(sourceNormal, targetNormal, uMix);
   if (dot(blendedNormal, blendedNormal) < .0001) {
-    blendedNormal = dot(aNormal, aNormal) < .0001 ? vec3(0.0, 0.0, 1.0) : aNormal;
+    blendedNormal = dot(aNormal.xyz, aNormal.xyz) < .0001 ? vec3(0.0, 0.0, 1.0) : aNormal.xyz;
   }
   vec3 normal = normalize(rotate(blendedNormal));
   vec3 view = normalize(vec3(0.0, 0.0, uCameraDistance) - p);
@@ -116,13 +263,13 @@ void main() {
   float key = max(0.0, dot(normal, keyDirection));
   float side = max(0.0, dot(normal, sideDirection));
   float rim = pow(1.0 - max(0.0, dot(normal, view)), 3.0);
-  vec3 light = vec3(.26, .245, .27)
-    + vec3(1.0, .86, .80) * key * .78
-    + vec3(.62, .76, 1.0) * side * .32
-    + vec3(.86, .65, .72) * rim * .18;
-  vec3 pigment = mix(aColor, aTargetColor, uMix);
+  vec3 light = vec3(.18, .18, .18)
+    + vec3(1.0, .98, .95) * key * .98
+    + vec3(.94, .97, 1.0) * side * .16
+    + vec3(1.0, .98, .96) * rim * .06;
+  vec3 pigment = mix(aColor.rgb, aTargetColor.rgb, uMix);
   vColor = max(pigment, vec3(0.0)) * pow(light * mix(.91, 1.0, front), vec3(1.0 / 2.2));
-  vAlpha = uAppear * (.96 + .03 * sin(phase + uTime * 1.3));
+  vAlpha = uSurface > .5 ? aPosition.w : uAppear * (.96 + .03 * sin(phase + uTime * 1.3));
   if (uDust > .5) {
     vColor = pigment * .72;
     vAlpha *= .10 + .15 * pow(.5 + .5 * sin(phase * 3. + uTime * .7), 3.);
@@ -140,10 +287,13 @@ uniform mediump float uSurfaceAlpha;
 uniform mediump float uPointAlpha;
 varying mediump vec3 vColor;
 varying mediump float vAlpha;
+varying mediump vec3 vMaterialPosition;
 void main() {
   if (uSurface > .5) {
-    if (uSurfaceAlpha < .005) discard;
-    gl_FragColor = vec4(vColor, uSurfaceAlpha);
+    float surfaceAlpha = uSurfaceAlpha * vAlpha;
+    if (surfaceAlpha < .005) discard;
+    float micrograin = .985 + .015 * sin(dot(vMaterialPosition, vec3(177.1, 243.7, 201.3)));
+    gl_FragColor = vec4(vColor * micrograin, surfaceAlpha);
     return;
   }
   vec2 q = gl_PointCoord * 2.0 - 1.0;
@@ -157,7 +307,7 @@ void main() {
   }
   float alpha;
   if (uGlow > .5) {
-    alpha = exp(-r * 4.5) * vAlpha * .035;
+    alpha = exp(-r * 4.5) * vAlpha * .012;
   } else if (uDust > .5) {
     alpha = exp(-r * 3.0) * vAlpha;
   } else {
@@ -201,6 +351,15 @@ export class ParticleGarden {
     });
     if (!gl) throw new Error("WebGL unavailable");
     this.gl = gl;
+    const precision =
+      gl.getShaderPrecisionFormat?.(gl.VERTEX_SHADER, gl.HIGH_FLOAT)
+        ?.precision ?? 23;
+    this.octBase = precision >= 23 ? 4096 : 256;
+    this.hasGrowth = false;
+    this.bloomProgress = this.sourceGrowth = 1;
+    this.growthCycle = null;
+    this.gpuData = this.gpuTargetData = null;
+    this.surfacePacked = this.surfaceIndices = this.outgoingSurface = null;
     this.program = gl.createProgram();
     const vertex = compile(gl, gl.VERTEX_SHADER, VERTEX);
     const fragment = compile(gl, gl.FRAGMENT_SHADER, FRAGMENT);
@@ -218,7 +377,8 @@ export class ParticleGarden {
         "aTarget",
         "aColor",
         "aTargetColor",
-        "aMeta",
+        "aBud",
+        "aTargetBud",
         "aNormal",
         "aTargetNormal",
       ].map((key) => [key, gl.getAttribLocation(this.program, key)]),
@@ -227,7 +387,9 @@ export class ParticleGarden {
       [
         "uMix",
         "uTime",
-        "uBurst",
+        "uSourceGrowth",
+        "uTargetGrowth",
+        "uOctBase",
         "uAppear",
         "uRotation",
         "uPointer",
@@ -250,6 +412,8 @@ export class ParticleGarden {
     this.dustBuffer = gl.createBuffer();
     this.surfaceVertexBuffer = gl.createBuffer();
     this.surfaceIndexBuffer = gl.createBuffer();
+    this.outgoingVertexBuffer = gl.createBuffer();
+    this.outgoingIndexBuffer = gl.createBuffer();
     this.uintIndices = !!gl.getExtension?.("OES_element_index_uint");
     this.surfaceCount = 0;
     this.surfaceSupportPoints = null;
@@ -257,6 +421,7 @@ export class ParticleGarden {
     this.listeners = [];
     this.reducedMotion = reducedMotion;
     this.paused = reducedMotion;
+    this.focused = true;
     this.rotation = [0.43, -0.15];
     this.targetRotation = [...this.rotation];
     this.pointer = [20, 20];
@@ -264,7 +429,6 @@ export class ParticleGarden {
     this.elapsed = 0;
     this.mix = 1;
     this.transitionAt = 0;
-    this.burstAt = -100;
     this.appearance = reducedMotion ? 1 : 0;
     this.raf = 0;
     this.lastFrame = 0;
@@ -295,6 +459,19 @@ export class ParticleGarden {
         this.raf = 0;
       }
     });
+    if (window.addEventListener) {
+      this.listen(window, "blur", () => {
+        this.focused = false;
+        this.lastFrame = 0;
+        cancelAnimationFrame(this.raf);
+        this.raf = 0;
+      });
+      this.listen(window, "focus", () => {
+        this.focused = true;
+        this.lastFrame = 0;
+        this.requestFrame();
+      });
+    }
     this.resize();
     this.bindPointer();
   }
@@ -326,7 +503,11 @@ export class ParticleGarden {
       );
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, this.dustBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, dust, gl.STATIC_DRAW);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      packRecords(dust, null, STRIDE, this.octBase),
+      gl.STATIC_DRAW,
+    );
   }
 
   resize() {
@@ -342,39 +523,108 @@ export class ParticleGarden {
     this.aspect = width / height;
   }
 
-  setBouquet(data, immediate = false, surface = null) {
+  setBouquet(data, immediate = false, surface = null, growth = null) {
     if (this.disposed || this.lost) return;
-    if (!data.length || data.length % STRIDE)
+    if (!(data instanceof Float32Array) || !data.length || data.length % STRIDE)
       throw new Error("Invalid particle stride: expected 11 Float32 values");
-    this.setSurface(surface);
+    this.validateSurface(surface);
+    if (growth) {
+      validateGrowth(growth.points, data.length / STRIDE);
+      if (surface) validateGrowth(growth.vertices, surface.vertices.length / 9);
+    }
+    const first = !this.data;
     const previousFrame = this.projectionState;
     const direct =
-      !this.data ||
+      first ||
       this.data.length !== data.length ||
       immediate ||
       this.reducedMotion ||
       this.paused;
+    const outgoing = growth && !direct ? this.captureSurface() : null;
+    const visible =
+      !direct && (growth || this.hasGrowth)
+        ? freezePacked(
+            this.gpuData,
+            this.gpuTargetData,
+            this.mix,
+            this.sourceGrowth,
+            this.bloomProgress,
+            this.octBase,
+          )
+        : null;
     if (direct) {
-      if (this.paused) this.appearance = 1;
-      this.burstAt = -100;
-      this.data = data;
-      this.targetData = data;
+      if (this.paused || growth) this.appearance = 1;
+      this.data = this.targetData = data;
       this.mix = 1;
     } else {
-      // Freeze the visible intermediate shape before retargeting a rapid click.
+      // Preserve the eleven-field CPU/frame contract independently of the visible GPU pose.
       const frozen = new Float32Array(this.data.length);
-      const m = this.mix;
       for (let i = 0; i < frozen.length; i++)
-        frozen[i] = this.data[i] * (1 - m) + this.targetData[i] * m;
+        frozen[i] =
+          this.data[i] * (1 - this.mix) + this.targetData[i] * this.mix;
       this.data = frozen;
       this.targetData = data;
       this.mix = 0;
     }
+    this.hasGrowth = !!growth;
+    this.growth = growth;
+    this.gpuTargetData = packRecords(
+      data,
+      growth?.points,
+      STRIDE,
+      this.octBase,
+    );
+    this.gpuData =
+      visible ||
+      (direct
+        ? this.gpuTargetData
+        : packRecords(this.data, null, STRIDE, this.octBase));
+    if (visible) {
+      for (let i = 0, j = 7; i < visible.length; i += GPU_STRIDE, j += STRIDE)
+        visible[i + 7] = this.data[j];
+    }
+    this.growthCycle =
+      growth && !this.paused && !this.reducedMotion && (first || !direct)
+        ? {
+            at: this.elapsed,
+            from: 0,
+            close: first ? 0 : 1.6,
+            duration: first ? 4.8 : 4.0,
+          }
+        : null;
+    this.transitionAt = this.elapsed - (direct ? 1.6 : 0);
+    this.updateGrowth();
+    this.setSurface(surface, growth?.vertices);
+    if (this.outgoingSurface && !outgoing) {
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.outgoingVertexBuffer);
+      this.gl.bufferData(
+        this.gl.ARRAY_BUFFER,
+        new Float32Array(),
+        this.gl.STATIC_DRAW,
+      );
+      this.gl.bindBuffer(
+        this.gl.ELEMENT_ARRAY_BUFFER,
+        this.outgoingIndexBuffer,
+      );
+      this.gl.bufferData(
+        this.gl.ELEMENT_ARRAY_BUFFER,
+        new Uint32Array(),
+        this.gl.STATIC_DRAW,
+      );
+    }
+    this.outgoingSurface = outgoing;
+    if (outgoing)
+      this.uploadSurface(
+        outgoing.packed,
+        outgoing.indices,
+        this.outgoingVertexBuffer,
+        this.outgoingIndexBuffer,
+      );
     const gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.currentBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, this.data, gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, this.gpuData, gl.STATIC_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.targetBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, this.targetData, gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, this.gpuTargetData, gl.STATIC_DRAW);
     this.count = data.length / STRIDE;
     this.projectionCache ||= new WeakMap();
     this.projectionIndices = [
@@ -383,6 +633,31 @@ export class ParticleGarden {
         ...this.sampleProjection(this.targetData),
       ]),
     ];
+    // Wander can peak at a different phase than idle(time=0), including on fixed roots.
+    // Exact support for this small moving subset avoids cached-pose false negatives.
+    const wanderIndices = [];
+    if (growth)
+      for (let i = 0; i < this.gpuData.length; i += GPU_STRIDE)
+        if (this.gpuData[i + 7] > 6.13 || this.gpuTargetData[i + 7] > 6.13)
+          wanderIndices.push(i);
+    this.growthProjectionIndices = growth
+      ? [
+          ...new Set([
+            ...this.projectionIndices.map(
+              (index) => (index / STRIDE) * GPU_STRIDE,
+            ),
+            ...wanderIndices,
+            ...this.sampleGrowthProjection(this.gpuData),
+            ...(this.gpuData === this.gpuTargetData
+              ? []
+              : this.sampleGrowthProjection(this.gpuTargetData)),
+          ]),
+        ]
+      : null;
+    this.surfaceGrowthIndices =
+      growth && this.surfacePacked
+        ? this.sampleGrowthProjection(this.surfacePacked, this.surfaceIndices)
+        : null;
     this.framingAnchor = null;
     if (!direct && previousFrame) {
       const start = this.measureProjection(
@@ -396,7 +671,7 @@ export class ParticleGarden {
         ),
       };
     }
-    this.transitionAt = this.elapsed - (direct ? 1.6 : 0);
+    this.updateGrowth();
     this.requestFrame();
   }
 
@@ -405,13 +680,8 @@ export class ParticleGarden {
     this.listeners.push(() => target.removeEventListener?.(name, callback));
   }
 
-  setSurface(surface) {
-    if (!surface) {
-      this.surfaceCount = 0;
-      this.surfaceOpacity = 0;
-      this.surfaceSupportPoints = null;
-      return;
-    }
+  validateSurface(surface) {
+    if (!surface) return;
     const { vertices, indices } = surface;
     if (
       !(vertices instanceof Float32Array) ||
@@ -422,27 +692,148 @@ export class ParticleGarden {
       indices.length % 3
     )
       throw new Error("Invalid surface geometry");
-    const vertexCount = vertices.length / 9;
     for (const index of indices)
-      if (index >= vertexCount) throw new Error("Invalid surface index");
+      if (index >= vertices.length / 9)
+        throw new Error("Invalid surface index");
+  }
+
+  uploadSurface(packed, indices, vertexBuffer, indexBuffer) {
     const gl = this.gl;
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.surfaceVertexBuffer);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
     if (this.uintIndices) {
-      gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.surfaceIndexBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, packed, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
       gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
     } else {
-      // WebGL1 without uint indices still draws the same triangles, without truncation.
-      const expanded = new Float32Array(indices.length * 9);
+      const expanded = new Float32Array(indices.length * GPU_STRIDE);
       for (let i = 0; i < indices.length; i++)
         expanded.set(
-          vertices.subarray(indices[i] * 9, indices[i] * 9 + 9),
-          i * 9,
+          packed.subarray(
+            indices[i] * GPU_STRIDE,
+            (indices[i] + 1) * GPU_STRIDE,
+          ),
+          i * GPU_STRIDE,
         );
       gl.bufferData(gl.ARRAY_BUFFER, expanded, gl.STATIC_DRAW);
     }
-    this.surfaceSupportPoints = this.sampleSurfaceSupport(vertices, indices);
-    this.surfaceCount = indices.length;
+  }
+
+  setSurface(surface, growth = null) {
+    if (!surface) {
+      this.surfaceCount = 0;
+      this.surfaceOpacity = 0;
+      this.surfaceSupportPoints =
+        this.surfacePacked =
+        this.surfaceIndices =
+          null;
+      return;
+    }
+    this.validateSurface(surface);
+    this.surfacePacked = packRecords(surface.vertices, growth, 9, this.octBase);
+    this.surfaceIndices = surface.indices;
+    this.uploadSurface(
+      this.surfacePacked,
+      surface.indices,
+      this.surfaceVertexBuffer,
+      this.surfaceIndexBuffer,
+    );
+    this.surfaceSupportPoints = this.sampleSurfaceSupport(
+      surface.vertices,
+      surface.indices,
+    );
+    this.surfaceCount = surface.indices.length;
+  }
+
+  updateGrowth() {
+    const cycle = this.growthCycle;
+    this.bloomProgress = 1;
+    if (this.hasGrowth && cycle && !this.reducedMotion) {
+      const age = Math.max(0, this.elapsed - cycle.at);
+      this.bloomProgress =
+        age < cycle.close
+          ? cycle.from * (1 - ramp(0, cycle.close, age))
+          : ramp(0, cycle.duration, age - cycle.close);
+    }
+    this.sourceGrowth = this.hasGrowth
+      ? 1 - ramp(0, 0.8, this.elapsed - this.transitionAt)
+      : 1;
+    this.canvas.dataset.bloomProgress = String(this.bloomProgress);
+  }
+
+  captureSurface() {
+    const parts = [];
+    if (this.outgoingSurface && this.mix < 1)
+      parts.push([
+        this.outgoingSurface.packed,
+        this.outgoingSurface.indices,
+        this.sourceGrowth,
+        1 - this.mix,
+      ]);
+    if (this.surfacePacked)
+      parts.push([
+        this.surfacePacked,
+        this.surfaceIndices,
+        this.bloomProgress,
+        this.outgoingSurface ? this.mix : this.surfaceVisibility(),
+      ]);
+    const records = [],
+      triangles = [];
+    let offset = 0;
+    for (const [packed, indices, progress, weight] of parts) {
+      if (weight <= 0.005) continue;
+      const frozen = freezePacked(
+        packed,
+        packed,
+        0,
+        progress,
+        progress,
+        this.octBase,
+      );
+      const used = new Set();
+      const keep = [];
+      for (let i = 0; i < indices.length; i += 3) {
+        const triangle = [...indices.subarray(i, i + 3)];
+        if (
+          triangle.every(
+            (index) => frozen[index * GPU_STRIDE + 3] * weight < 0.005,
+          )
+        )
+          continue;
+        keep.push(...triangle);
+        for (const index of triangle) used.add(index);
+      }
+      const remap = new Map();
+      const compact = new Float32Array(used.size * GPU_STRIDE);
+      let cursor = 0;
+      for (const index of used) {
+        remap.set(index, cursor);
+        compact.set(
+          frozen.subarray(index * GPU_STRIDE, (index + 1) * GPU_STRIDE),
+          cursor * GPU_STRIDE,
+        );
+        compact[cursor * GPU_STRIDE + 3] *= weight;
+        cursor++;
+      }
+      records.push(compact);
+      for (const index of keep) triangles.push(remap.get(index) + offset);
+      offset += used.size;
+    }
+    if (!triangles.length) return null;
+    const packed = new Float32Array(offset * GPU_STRIDE);
+    let cursor = 0;
+    for (const record of records) {
+      packed.set(record, cursor);
+      cursor += record.length;
+    }
+    const indices = new Uint32Array(triangles);
+    return {
+      packed,
+      indices,
+      projectionIndices: this.sampleGrowthProjection(packed, indices),
+      opaque: [...new Set(triangles)].every(
+        (index) => packed[index * GPU_STRIDE + 3] > 0.999,
+      ),
+    };
   }
 
   sampleSurfaceSupport(vertices, indices) {
@@ -479,37 +870,15 @@ export class ParticleGarden {
     );
   }
 
-  surfaceVisibility(burst) {
+  surfaceVisibility() {
     if (!this.surfaceCount) return 0;
-    if (burst === undefined) {
-      const age = this.elapsed - this.burstAt;
-      burst =
-        age < 3.8
-          ? Math.pow(Math.sin(Math.min(1, age / 3.8) * Math.PI), 2) * 1.25
-          : 0;
-    }
-    return (
-      ramp(0.6, 1, this.appearance) *
-      ramp(0.86, 1, this.mix) *
-      (1 - ramp(0.01, 0.18, this.reducedMotion ? 0 : burst))
-    );
+    if (this.hasGrowth)
+      return this.appearance * (this.outgoingSurface ? this.mix : 1);
+    return ramp(0.6, 1, this.appearance) * ramp(0.86, 1, this.mix);
   }
 
-  bindSurfaceAttributes() {
-    const gl = this.gl;
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.surfaceVertexBuffer);
-    for (const [names, offset] of [
-      [["aPosition", "aTarget"], 0],
-      [["aColor", "aTargetColor"], 12],
-      [["aNormal", "aTargetNormal"], 24],
-    ])
-      for (const name of names) {
-        const index = this.attributes[name];
-        gl.enableVertexAttribArray(index);
-        gl.vertexAttribPointer(index, 3, gl.FLOAT, false, 36, offset);
-      }
-    gl.disableVertexAttribArray(this.attributes.aMeta);
-    gl.vertexAttrib2f(this.attributes.aMeta, 0, 0);
+  bindSurfaceAttributes(buffer = this.surfaceVertexBuffer) {
+    this.bindAttributes(buffer, buffer);
   }
 
   dispose() {
@@ -527,10 +896,21 @@ export class ParticleGarden {
       this.dustBuffer,
       this.surfaceVertexBuffer,
       this.surfaceIndexBuffer,
+      this.outgoingVertexBuffer,
+      this.outgoingIndexBuffer,
     ])
       this.gl.deleteBuffer(buffer);
     this.gl.deleteProgram(this.program);
-    this.data = this.targetData = null;
+    this.data = this.targetData = this.gpuData = this.gpuTargetData = null;
+    this.surfacePacked =
+      this.surfaceIndices =
+      this.outgoingSurface =
+      this.growth =
+        null;
+    this.growthCycle =
+      this.growthProjectionIndices =
+      this.surfaceGrowthIndices =
+        null;
     this.surfaceCount = 0;
     this.surfaceOpacity = 0;
     this.surfaceSupportPoints = null;
@@ -553,14 +933,13 @@ export class ParticleGarden {
       );
     };
     gl.bindBuffer(gl.ARRAY_BUFFER, from);
-    bind("aPosition", 3, 0);
-    bind("aColor", 3, 12);
-    bind("aMeta", 2, 24);
-    bind("aNormal", 3, 32);
-    gl.bindBuffer(gl.ARRAY_BUFFER, to);
-    bind("aTarget", 3, 0);
-    bind("aTargetColor", 3, 12);
-    bind("aTargetNormal", 3, 32);
+    for (const [buffer, names] of [
+      [from, ["aPosition", "aColor", "aNormal", "aBud"]],
+      [to, ["aTarget", "aTargetColor", "aTargetNormal", "aTargetBud"]],
+    ]) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      names.forEach((name, index) => bind(name, 4, index * 16));
+    }
   }
 
   sampleProjection(data) {
@@ -568,14 +947,17 @@ export class ParticleGarden {
     if (cached) return cached;
     const count = data.length / STRIDE;
     const indices = new Set();
-    const budget = Math.min(1024, count);
-    for (let i = 0; i < budget; i++) {
-      indices.add(
-        Math.round((i * (count - 1)) / Math.max(1, budget - 1)) * STRIDE,
-      );
-    }
-    // Directional support points retain true tips and edges, not empty AABB corners.
-    const directions = SUPPORT_DIRECTIONS;
+    // Spherical supports catch perspective tips between cube diagonals.
+    // Reallocate the same 1076-record budget, without shrinking the target frame.
+    const directions = [
+      ...SUPPORT_DIRECTIONS,
+      ...Array.from({ length: 96 }, (_, i) => {
+        const z = 1 - (2 * (i + 0.5)) / 96;
+        const radius = Math.sqrt(1 - z * z),
+          angle = i * Math.PI * (3 - Math.sqrt(5));
+        return [radius * Math.cos(angle), radius * Math.sin(angle), z];
+      }),
+    ];
     const support = directions.map(() => [-Infinity, 0]);
     const motionSupport = directions.map(() => [-Infinity, 0]);
     for (let i = 0; i < data.length; i += STRIDE) {
@@ -589,9 +971,44 @@ export class ParticleGarden {
       }
     }
     for (const [, index] of [...support, ...motionSupport]) indices.add(index);
+    const budget = Math.min(1076 - indices.size, count);
+    for (let i = 0; i < budget; i++)
+      indices.add(
+        Math.round((i * (count - 1)) / Math.max(1, budget - 1)) * STRIDE,
+      );
     const samples = [...indices];
     this.projectionCache.set(data, samples);
     return samples;
+  }
+
+  sampleGrowthProjection(packed, indices = null) {
+    const supports = Array.from({ length: 4 }, () =>
+      SUPPORT_DIRECTIONS.map(() => [-Infinity, 0]),
+    );
+    const seen = new Uint8Array(packed.length / GPU_STRIDE);
+    const count = indices ? indices.length : seen.length;
+    for (let cursor = 0; cursor < count; cursor++) {
+      const vertex = indices ? indices[cursor] : cursor;
+      if (seen[vertex]) continue;
+      seen[vertex] = 1;
+      const i = vertex * GPU_STRIDE;
+      const points = [
+        [packed[i], packed[i + 1], packed[i + 2]],
+        [packed[i + 12], packed[i + 13], packed[i + 14]],
+      ];
+      points.push(
+        idlePosition(...points[0], packed[i + 7], 0),
+        idlePosition(...points[1], packed[i + 7], 0),
+      );
+      for (let k = 0; k < points.length; k++)
+        for (let j = 0; j < SUPPORT_DIRECTIONS.length; j++) {
+          const d = SUPPORT_DIRECTIONS[j],
+            p = points[k];
+          const dot = p[0] * d[0] + p[1] * d[1] + p[2] * d[2];
+          if (dot > supports[k][j][0]) supports[k][j] = [dot, i];
+        }
+    }
+    return [...new Set(supports.flat().map(([, i]) => i))];
   }
 
   measureProjection(yaw, pitch) {
@@ -648,6 +1065,56 @@ export class ParticleGarden {
       minY = pointBounds[2] + (minY - pointBounds[2]) * weight;
       maxY = pointBounds[3] + (maxY - pointBounds[3]) * weight;
     }
+    if (this.hasGrowth && this.growthProjectionIndices) {
+      const extend = (position, phase) => {
+        const p = idlePosition(...position, phase, this.time);
+        const x = p[0] * cy + p[2] * sy,
+          z = -p[0] * sy + p[2] * cy;
+        const y = p[1] * cx - z * sx;
+        const depth = Math.max(0.2, CAMERA_DISTANCE - (p[1] * sx + z * cx));
+        minX = Math.min(minX, x / depth);
+        maxX = Math.max(maxX, x / depth);
+        minY = Math.min(minY, y / depth);
+        maxY = Math.max(maxY, y / depth);
+      };
+      const pose = (packed, i, progress) => {
+        const g = localGrowth(progress, packed[i + 15]);
+        return [0, 1, 2].map(
+          (axis) => packed[i + 12 + axis] * (1 - g) + packed[i + axis] * g,
+        );
+      };
+      for (const i of this.growthProjectionIndices) {
+        const a = pose(this.gpuData, i, this.sourceGrowth),
+          b = pose(this.gpuTargetData, i, this.bloomProgress);
+        extend(
+          a.map((value, axis) => value * (1 - this.mix) + b[axis] * this.mix),
+          this.gpuData[i + 7],
+        );
+      }
+      for (const [packed, samples, progress, alpha] of [
+        [
+          this.surfacePacked,
+          this.surfaceGrowthIndices,
+          this.bloomProgress,
+          this.surfaceVisibility(),
+        ],
+        [
+          this.outgoingSurface?.packed,
+          this.outgoingSurface?.projectionIndices,
+          this.sourceGrowth,
+          this.outgoingSurface ? this.appearance * (1 - this.mix) : 0,
+        ],
+      ]) {
+        if (!packed || !samples || alpha <= 0.005) continue;
+        const bounds = [minX, maxX, minY, maxY];
+        for (const i of samples) extend(pose(packed, i, progress), 0);
+        const weight = ramp(0.005, 0.18, alpha);
+        minX = bounds[0] + (minX - bounds[0]) * weight;
+        maxX = bounds[1] + (maxX - bounds[1]) * weight;
+        minY = bounds[2] + (minY - bounds[2]) * weight;
+        maxY = bounds[3] + (maxY - bounds[3]) * weight;
+      }
+    }
     return {
       center: [(minX + maxX) / 2, (minY + maxY) / 2],
       focal: Math.min(
@@ -685,7 +1152,7 @@ export class ParticleGarden {
       ? Math.max(0, (now - this.lastFrame) / 1000)
       : 0.016;
     this.lastFrame = now;
-    if (!this.paused) {
+    if (!this.paused && this.focused) {
       this.elapsed += dt;
       this.time += dt;
       this.appearance = Math.min(1, this.appearance + dt * 1.4);
@@ -693,11 +1160,25 @@ export class ParticleGarden {
     const transition = Math.min(1, (this.elapsed - this.transitionAt) / 1.6);
     this.mix = transition * transition * (3 - 2 * transition);
     if (this.reducedMotion) this.mix = 1;
-    const age = this.elapsed - this.burstAt;
-    const burst =
-      age < 3.8
-        ? Math.pow(Math.sin(Math.min(1, age / 3.8) * Math.PI), 2) * 1.25
-        : 0;
+    this.updateGrowth();
+    if (this.mix >= 1 && this.outgoingSurface) {
+      this.outgoingSurface = null;
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.outgoingVertexBuffer);
+      this.gl.bufferData(
+        this.gl.ARRAY_BUFFER,
+        new Float32Array(),
+        this.gl.STATIC_DRAW,
+      );
+      this.gl.bindBuffer(
+        this.gl.ELEMENT_ARRAY_BUFFER,
+        this.outgoingIndexBuffer,
+      );
+      this.gl.bufferData(
+        this.gl.ELEMENT_ARRAY_BUFFER,
+        new Uint32Array(),
+        this.gl.STATIC_DRAW,
+      );
+    }
     const rotationEase = this.reducedMotion ? 1 : Math.min(1, dt * 7);
     this.rotation[0] +=
       (this.targetRotation[0] - this.rotation[0]) * rotationEase;
@@ -715,15 +1196,21 @@ export class ParticleGarden {
     const f = (name, value) => gl.uniform1f(this.uniforms[name], value);
     f("uMix", this.mix);
     f("uTime", this.time);
-    f("uBurst", this.reducedMotion ? 0 : burst);
+    f("uSourceGrowth", this.sourceGrowth);
+    f("uTargetGrowth", this.bloomProgress);
+    f("uOctBase", this.octBase);
     f("uAppear", this.appearance);
     f("uAspect", this.aspect);
     f("uDpr", this.dpr);
     f("uDust", 0);
     f("uSurface", 0);
-    this.surfaceOpacity = this.surfaceVisibility(burst);
+    this.surfaceOpacity = this.surfaceVisibility();
+    const outgoingOpacity = this.outgoingSurface
+      ? this.appearance * (1 - this.mix)
+      : 0;
+    const coverage = Math.max(this.surfaceOpacity, outgoingOpacity);
     f("uSurfaceAlpha", this.surfaceOpacity);
-    f("uPointAlpha", 1 - this.surfaceOpacity * 0.68);
+    f("uPointAlpha", 1 - coverage * 0.42);
     // This clock is frozen by pause, reduced motion and hidden-page suspension.
     const yaw = this.rotation[0] + Math.sin(this.time * 0.12) * 0.16;
     const pitch = this.rotation[1] + Math.sin(this.time * 0.09) * 0.035;
@@ -731,7 +1218,7 @@ export class ParticleGarden {
     f("uFocal", focal);
     f(
       "uPointScale",
-      (this.canvas.height * focal * 0.027 * (1 - this.surfaceOpacity * 0.38)) /
+      (this.canvas.height * focal * 0.027 * (1 - coverage * 0.22)) /
         (2 * CAMERA_DISTANCE),
     );
     f("uCameraDistance", CAMERA_DISTANCE);
@@ -744,18 +1231,30 @@ export class ParticleGarden {
       gl.ONE,
       gl.ONE_MINUS_SRC_ALPHA,
     );
-    if (this.surfaceOpacity > 0.005) {
-      this.bindSurfaceAttributes();
+    const drawMesh = (
+      vertexBuffer,
+      indexBuffer,
+      count,
+      alpha,
+      progress,
+      opaque,
+    ) => {
+      if (alpha <= 0.005 || !count) return;
+      this.bindSurfaceAttributes(vertexBuffer);
       f("uSurface", 1);
       f("uGlow", 0);
+      f("uMix", 1);
+      f("uSourceGrowth", progress);
+      f("uTargetGrowth", progress);
+      f("uSurfaceAlpha", alpha);
       const drawSurface = () => {
         if (this.uintIndices) {
-          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.surfaceIndexBuffer);
-          gl.drawElements(gl.TRIANGLES, this.surfaceCount, gl.UNSIGNED_INT, 0);
-        } else gl.drawArrays(gl.TRIANGLES, 0, this.surfaceCount);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+          gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_INT, 0);
+        } else gl.drawArrays(gl.TRIANGLES, 0, count);
       };
-      // A fading surface must not become an invisible opaque particle occluder.
-      if (this.surfaceOpacity > 0.95) {
+      // Only fully opaque surface records own depth; crossfades retain their color.
+      if (alpha > 0.95 && opaque) {
         gl.disable(gl.BLEND);
         gl.colorMask(false, false, false, false);
         gl.depthMask(true);
@@ -767,8 +1266,29 @@ export class ParticleGarden {
       gl.depthMask(false);
       f("uDepthOnly", 0);
       drawSurface();
-      f("uSurface", 0);
-    }
+    };
+    if (this.outgoingSurface)
+      drawMesh(
+        this.outgoingVertexBuffer,
+        this.outgoingIndexBuffer,
+        this.outgoingSurface.indices.length,
+        outgoingOpacity,
+        this.sourceGrowth,
+        this.outgoingSurface.opaque,
+      );
+    drawMesh(
+      this.surfaceVertexBuffer,
+      this.surfaceIndexBuffer,
+      this.surfaceCount,
+      this.surfaceOpacity,
+      this.bloomProgress,
+      true,
+    );
+    f("uSurface", 0);
+    f("uMix", this.mix);
+    f("uSourceGrowth", this.sourceGrowth);
+    f("uTargetGrowth", this.bloomProgress);
+    f("uSurfaceAlpha", this.surfaceOpacity);
     this.bindAttributes(this.currentBuffer, this.targetBuffer);
     gl.disable(gl.BLEND);
     gl.colorMask(false, false, false, false);
@@ -790,7 +1310,8 @@ export class ParticleGarden {
     f("uGlow", 0);
     f("uDust", 1);
     f("uMix", 0);
-    f("uBurst", 0);
+    f("uSourceGrowth", 1);
+    f("uTargetGrowth", 1);
     gl.drawArrays(gl.POINTS, 0, 360);
     gl.depthMask(true);
     this.canvas.dataset.rendered = "true";
@@ -798,14 +1319,21 @@ export class ParticleGarden {
       Math.abs(this.rotation[0] - this.targetRotation[0]) +
         Math.abs(this.rotation[1] - this.targetRotation[1]) >
       0.001;
-    if (!this.paused || rotating) this.requestFrame();
+    if ((!this.paused && this.focused) || rotating) this.requestFrame();
     else this.lastFrame = 0;
   }
 
   bloom() {
     if (this.reducedMotion) return;
     this.setPaused(false);
-    this.burstAt = this.elapsed;
+    if (this.hasGrowth)
+      this.growthCycle = {
+        at: this.elapsed,
+        from: this.bloomProgress,
+        close: 0.8,
+        duration: 4.2,
+      };
+    this.updateGrowth();
     this.requestFrame();
   }
 
@@ -819,6 +1347,12 @@ export class ParticleGarden {
   setReducedMotion(value) {
     this.reducedMotion = value;
     this.appearance = 1;
+    if (value) {
+      this.growthCycle = null;
+      this.mix = 1;
+      this.transitionAt = this.elapsed - 1.6;
+    }
+    this.updateGrowth();
     this.setPaused(value);
   }
 

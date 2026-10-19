@@ -21,15 +21,16 @@ class RendererContractTests(unittest.TestCase):
         # Generate hermetic binary fixtures: a clean checkout has no ignored assets.
         with tempfile.TemporaryDirectory(prefix="bloom-renderer-") as directory:
             assets = Path(directory)
-            for bouquet in generator.BOUQUETS:
-                particles = generator.generate_bouquet(bouquet["id"])
+            bouquets = [dict(item, growth=f"{item['id']}.growth") for item in generator.BOUQUETS]
+            for bouquet in bouquets:
+                geometry = generator._build_geometry(bouquet["id"])
+                particles, poses = generator.generate_bouquet_with_growth(bouquet["id"])
                 (assets / bouquet["file"]).write_bytes(generator.encode_particles(particles))
-                (assets / bouquet["surface"]).write_bytes(
-                    generator.encode_mesh(generator._build_geometry(bouquet["id"]))
-                )
+                (assets / bouquet["surface"]).write_bytes(generator.encode_mesh(geometry))
+                (assets / bouquet["growth"]).write_bytes(generator.encode_growth(poses, geometry))
             (assets / "manifest.json").write_text(json.dumps({
                 "version": 2, "count": generator.COUNT, "stride": generator.STRIDE,
-                "bouquets": generator.BOUQUETS,
+                "bouquets": bouquets,
             }), encoding="utf-8")
             env = dict(os.environ, BLOOM_TEST_ASSETS_URL=assets.as_uri() + "/")
             result = subprocess.run(

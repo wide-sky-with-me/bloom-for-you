@@ -277,17 +277,13 @@ class ParticleContractTests(unittest.TestCase):
             self.assertGreater(max(p[2] for p in points) - min(p[2] for p in points), 0.4)
         self.assertEqual(counts, {"ranunculus": 98, "dahlia": 70, "lisianthus": 17})
 
-    def test_mesh_budget_changes_preserve_the_untouched_theme_geometry(self) -> None:
-        # Unretouched themes keep byte-identical samples across mesh refinement.
-        expected = {
-            "tulip": "4abb81f1f83edd32ac857b2f10acfe0c01ab433f833c8b31a1a49bfbf249e4e3",
-            "hydrangea": "878ccacba2f3476a56ab2cfd1b317c91123095951a20f92c4ff8f2e1e7a20fa7",
-            "lily": "506e346fae3c46275f6b12af8b6f78a6b10bcaeea9d333fdceab042c84b150d2",
-        }
-        for key, digest in expected.items():
+    def test_growth_sampling_preserves_the_exact_open_particle_stream(self) -> None:
+        for key in IDS:
             with self.subTest(bouquet=key):
-                data = generator.encode_particles(generator.generate_bouquet(key, 2_000))
-                self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
+                expected = generator.encode_particles(generator.generate_bouquet(key, 257))
+                points, poses = generator.generate_bouquet_with_growth(key, 257)
+                self.assertEqual(generator.encode_particles(points), expected)
+                self.assertEqual(len(poses), len(points))
 
     def test_small_budgets_and_bad_inputs(self) -> None:
         for key in IDS:
@@ -338,28 +334,63 @@ class ParticleContractTests(unittest.TestCase):
         self.assertEqual(gradient.find("svg:stop", SVG_NS).attrib["stop-color"], "#cc8066")
         self.assertEqual(len(root.findall("svg:g/svg:circle", SVG_NS)), 2)
 
+    def test_wildflower_keeps_original_cups_without_disabling_other_themes(self) -> None:
+        with mock.patch.object(generator, "_cupped_surface", wraps=generator._cupped_surface) as cup:
+            generator._build_geometry("wildflower")
+            cup.assert_not_called()
+            generator._build_geometry("rose")
+            self.assertGreater(cup.call_count, 0)
+
+    def test_wildflower_thin_sector_adjustment_preserves_heroes_and_other_heads(self) -> None:
+        with mock.patch.object(generator, "replace", side_effect=lambda head, **kwargs: head):
+            baseline = generator._arrange_heads("wildflower")
+        actual = generator._arrange_heads("wildflower")
+        self.assertEqual(len(actual), 36)
+        self.assertEqual(sum(head.radius >= .65 for head in actual), 6)
+        for index, (before, after) in enumerate(zip(baseline, actual)):
+            if index != 11:
+                self.assertEqual(after, before)
+                continue
+            self.assertEqual(after.species, "rose")
+            self.assertEqual(after.center, before.center)
+            self.assertEqual(after.radius, min(.52, before.radius * 1.15))
+            self.assertLessEqual(after.radius, .52)
+            c, s = math.cos(math.radians(-40)), math.sin(math.radians(-40))
+            x, y, z = before.axis
+            self.assertEqual(after.axis, (x * c - z * s, y, x * s + z * c))
+
+    def test_calla_middle_spread_fills_sectors_without_enlarging_petals(self) -> None:
+        heads = generator._arrange_heads("calla")
+        middle = [head for head in heads if head.layer == "middle"]
+        self.assertEqual(len(middle), 12)
+        self.assertTrue(all(1.15 <= math.hypot(head.center[0], head.center[2]) <= 1.34 for head in middle))
+        self.assertTrue(all(head.radius < .65 for head in middle))
+        self.assertEqual(sum(head.radius >= .65 for head in heads), 6)
+        self.assertTrue(all(head.layer == "outer" for head in heads if head.radius >= .65))
+
     def test_manifest_and_asset_paths(self) -> None:
-        # Geometry is already tested at full size above; reuse it for the writer test.
+        # Exercise the paired growth writer against the independently sampled open stream.
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "nested" / "assets"
-            with mock.patch.object(generator, "generate_bouquet",
-                                   side_effect=lambda key: self.particles[key]):
-                result = generator.generate_assets(output)
+            result = generator.generate_assets(output)
             manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(result, manifest)
             self.assertEqual(set(manifest), {"version", "count", "stride", "bouquets"})
             self.assertEqual((manifest["version"], manifest["count"], manifest["stride"]),
                              (2, 120_000, 11))
             self.assertEqual(tuple(item["id"] for item in manifest["bouquets"]), IDS)
-            self.assertEqual(len(list(output.iterdir())), 25)
+            self.assertEqual({p.name for p in output.iterdir()}, {"manifest.json"} |
+                             {f"{key}.{suffix}" for key in IDS for suffix in ("bin", "mesh", "svg", "growth")})
             for item in manifest["bouquets"]:
                 self.assertEqual(set(item), {"id", "file", "surface", "title", "subtitle",
-                                             "description", "color"})
+                                             "description", "color", "growth"})
                 filename = item["file"]
                 self.assertEqual(filename, f'{item["id"]}.bin')
                 self.assertEqual(Path(filename).name, filename)
                 self.assertEqual((output / filename).read_bytes(), self.binaries[item["id"]])
                 self.assertEqual(item["surface"], f'{item["id"]}.mesh')
+                self.assertEqual(item["growth"], f'{item["id"]}.growth')
+                self.assertEqual(Path(item["growth"]).name, item["growth"])
                 mesh = (output / item["surface"]).read_bytes()
                 magic, vertices, indices = generator.MESH_HEADER.unpack_from(mesh)
                 self.assertEqual(magic, b"BFM1")
@@ -581,6 +612,13 @@ class CommandLineTests(unittest.TestCase):
             self.assertEqual((output / f"{key}.bin").stat().st_size, 5_280_000)
             self.assertTrue((output / f"{key}.svg").is_file())
             self.assertTrue((output / f"{key}.mesh").is_file())
+            data = (output / f"{key}.growth").read_bytes()
+            mesh = (output / f"{key}.mesh").read_bytes()
+            _, vertices, _ = struct.unpack_from("<4sII", mesh)
+            self.assertEqual(struct.unpack_from("<4sII", data), (b"BFG1", 120_000, vertices))
+            self.assertEqual(len(data), 12 + (120_000 + vertices) * 14)
+            self.assertLessEqual(len(data), 3_000_000)
+        self.assertTrue(all(item["growth"] == f'{item["id"]}.growth' for item in manifest["bouquets"]))
 
     def test_default_output_is_relative_to_current_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -611,6 +649,168 @@ class CommandLineTests(unittest.TestCase):
         process = self._run(ROOT, "--help")
         self.assertIn("--output PATH", process.stdout)
         self.assertIn("site/assets", process.stdout)
+
+
+class GrowthContractTests(unittest.TestCase):
+    def test_optional_growth_can_be_omitted_without_changing_legacy_files(self) -> None:
+        model = generator.Geometry()
+        model.add("flowers", 1., lambda u, v: (u, v, 0.), (.9, .6, .7), mesh_steps=(1, 1))
+        point = (0., 0., 0., .9, .6, .7, 1., 0., 0., 0., 1.)
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(generator, "BOUQUETS", (generator.BOUQUETS[0],)), \
+                mock.patch.object(generator, "generate_bouquet", return_value=[point]), \
+                mock.patch.object(generator, "_build_geometry", return_value=model), \
+                mock.patch.object(generator, "generate_bouquet_with_growth", side_effect=AssertionError("optional sampler called")):
+            output = Path(directory)
+            manifest = generator.generate_assets(output, include_growth=False)
+            self.assertNotIn("growth", manifest["bouquets"][0])
+            self.assertFalse((output / "rose.growth").exists())
+            self.assertEqual((output / "rose.bin").read_bytes(), generator.encode_particles([point]))
+            self.assertEqual((output / "rose.mesh").read_bytes(), generator.encode_mesh(model))
+
+    def test_mesh_pose_collection_is_byte_identical_without_a_second_tessellation(self) -> None:
+        model = generator.Geometry()
+        model.add("flowers", 1., lambda u, v: (u, v, 0.), (.9, .6, .7), mesh_steps=(2, 2),
+                  closed_point=lambda u, v: (u, v, .2 * u), growth_delay=.3)
+        poses = []
+        generator.encode_mesh(model, growth=poses)
+        expected = generator.encode_growth([], model)
+        with mock.patch.object(generator, "_tessellate_geometry", side_effect=AssertionError("duplicate tessellation")):
+            self.assertEqual(generator.encode_growth([], model, mesh_poses=poses), expected)
+
+    def test_record_layout_rounding_range_and_header(self) -> None:
+        self.assertEqual(generator.GROWTH_HEADER.format, "<4sII")
+        self.assertEqual(generator.GROWTH_RECORD.format, "<hhhhhhH")
+        self.assertEqual(generator.GROWTH_RECORD.size, 14)
+        pose = (1.25, -2.5, .125, 0., 0., 1., .5)
+        self.assertEqual(generator._quantized_growth(pose), (5120, -10240, 512, 0, 0, 32767, 32768))
+        with self.assertRaises(ValueError):
+            generator._quantized_growth((8., 0., 0., 0., 0., 1., 0.))
+        model = generator.Geometry()
+        model.add("flowers", 1., lambda u, v: (u, v, 0.), (.9, .5, .6), mesh_steps=(1, 1))
+        data = generator.encode_growth([pose], model)
+        self.assertEqual(struct.unpack_from("<4sII", data), (b"BFG1", 1, 4))
+        self.assertEqual(len(data), 12 + 5 * 14)
+        self.assertEqual(struct.unpack_from("<hhhhhhH", data, 12), generator._quantized_growth(pose))
+
+    def test_two_dimensional_strata_cover_each_cell_once(self) -> None:
+        samples = list(generator._stratified_uv(100, random.Random(17)))
+        self.assertEqual(len(samples), 100)
+        self.assertEqual({(int(u * 10), int(v * 10)) for u, v in samples},
+                         {(i, j) for i in range(10) for j in range(10)})
+        self.assertEqual(len(list(generator._stratified_uv(113, random.Random(17)))), 113)
+        self.assertEqual(list(generator._stratified_uv(0, random.Random(17))), [])
+
+    def test_particle_growth_stays_paired_after_shuffle_and_nonflowers_are_static(self) -> None:
+        model = generator.Geometry()
+        for index, section in enumerate(model.sections):
+            model.add(section, 1., lambda u, v, k=index: (u, v, float(k)), (.9, .6, .7),
+                      closed_point=(lambda u, v: (u, v, .2 * u * u + .15 * v)) if index == 0 else None,
+                      growth_delay=.4 if index == 0 else 0.)
+        with mock.patch.object(generator, "_build_geometry", return_value=model):
+            points, poses = generator.generate_bouquet_with_growth("rose", 257)
+            self.assertEqual(points, generator.generate_bouquet("rose", 257))
+        data = generator.encode_growth(poses, model)
+        records = list(struct.iter_unpack("<hhhhhhH", data[12:12 + len(points) * 14]))
+        self.assertEqual(len(records), len(points))
+        self.assertGreater(sum(p[2] == 0 for p in points), 215)
+        self.assertTrue(any(p[2] != 0 for p in points[:20]))
+        for point, pose, record in zip(points, poses, records):
+            u, v, tag = point[:3]
+            if tag == 0:
+                expected = generator._unit((-.4 * u, -.15, 1.))
+                self.assertLess(math.dist(pose[:3], (u, v, .2 * u * u + .15 * v)), 1e-12)
+                self.assertGreater(sum(a * b for a, b in zip(pose[3:6], expected)), .999999)
+                self.assertEqual(record[6], round(.4 * 65535))
+            else:
+                opened = struct.unpack("<11f", struct.pack("<11f", *point))
+                self.assertEqual(record, generator._quantized_growth((*opened[:3], *opened[8:11], 0.)))
+
+    def test_closed_normals_are_the_actual_closed_surface_derivatives(self) -> None:
+        surface = generator.Surface(1., lambda u, v: (u, v, 0.), lambda u, v: (.9, .6, .7),
+                                    closed_point=lambda u, v: (u, v, .35 * u * u + .2 * v))
+        for u, v in ((0., 0.), (.25, .6), (.8, .4), (1., 1.)):
+            expected = generator._unit((-.7 * u, -.2, 1.))
+            normal = generator._surface_normal(surface, u, v, closed=True)
+            self.assertGreater(sum(a * b for a, b in zip(normal, expected)), .999999)
+            self.assertNotEqual(normal, generator._surface_normal(surface, u, v))
+
+    def test_growth_seams_split_welds_but_stationary_delays_do_not(self) -> None:
+        point = lambda u, v: (u, v, 0.)
+        model = generator.Geometry()
+        for sign in (-1, 1):
+            model.add("flowers", 1., point, (.9, .6, .7), mesh_steps=(2, 2),
+                      closed_point=lambda u, v, s=sign: (u, v, s * .2 * u), growth_delay=.3)
+        poses = []
+        vertices, indices = generator._tessellate_geometry(model, growth=poses)
+        self.assertEqual((len(vertices), len(indices), len(poses)), (18, 48, 18))
+        self.assertEqual(len(set(vertices)), 9)
+        self.assertEqual(len(set(zip(vertices, poses))), 18)
+        stationary = generator.Geometry()
+        for delay in (.2, .9):
+            stationary.add("flowers", 1., point, (.9, .6, .7), mesh_steps=(2, 2),
+                           closed_point=point, growth_delay=delay)
+        poses = []
+        vertices, indices = generator._tessellate_geometry(stationary, growth=poses)
+        self.assertEqual((len(vertices), len(indices)), (9, 48))
+        self.assertTrue(all(pose[6] == 0 for pose in poses))
+
+    def test_real_buds_keep_roots_fixed_and_hydrangea_stays_local(self) -> None:
+        for species in ("rose", "hydrangea", "calla"):
+            model = generator.Geometry()
+            head = generator.FlowerHead(species, (.2, 1., -.4), generator._unit((.3, .5, .8)), .70, "outer")
+            generator._add_head(model, head, (.9, .6, .7), 0)
+            roots, closed_tips = [], []
+            for surface in model.sections["flowers"]:
+                self.assertIsNotNone(surface.closed_point)
+                for v in (0., .25, .5, .75, 1.):
+                    self.assertEqual(surface.closed_point(0., v), surface.point(0., v))
+                    self.assertEqual(generator._surface_normal(surface, 0., v, closed=True),
+                                     generator._surface_normal(surface, 0., v))
+                root, tip = surface.point(0., .5), surface.point(1., .5)
+                closed = surface.closed_point(1., .5)
+                self.assertLessEqual(math.dist(root, closed), 1.5 * math.dist(root, tip) + .005)
+                roots.append(root); closed_tips.append(closed)
+            self.assertGreater(len({surface.growth_delay for surface in model.sections["flowers"]}),
+                               min(5, len(model.sections["flowers"]) - 1))
+            if species == "hydrangea":
+                for axis in range(3):
+                    spread = max(p[axis] for p in roots) - min(p[axis] for p in roots)
+                    self.assertGreater(max(p[axis] for p in closed_tips) - min(p[axis] for p in closed_tips), spread * .8)
+            self.assertTrue(all(s.closed_point is None and s.growth_delay == 0 for s in model.sections["stems"]))
+
+    def test_mesh_growth_order_and_quantization_match_every_welded_vertex(self) -> None:
+        model = generator.Geometry()
+        model.add("flowers", 1., lambda u, v: (u, v, 0.), (.9, .6, .7), mesh_steps=(3, 2),
+                  closed_point=lambda u, v: (u, v, .25 * u * u), growth_delay=.37)
+        mesh = generator.encode_mesh(model)
+        _, count, _ = struct.unpack_from("<4sII", mesh)
+        vertices = list(struct.iter_unpack("<9f", mesh[12:12 + count * 36]))
+        growth = generator.encode_growth([], model)
+        self.assertEqual(struct.unpack_from("<4sII", growth), (b"BFG1", 0, count))
+        for vertex, record in zip(vertices, struct.iter_unpack("<hhhhhhH", growth[12:])):
+            u, v = vertex[:2]
+            normal = generator._unit((-.5 * u, 0., 1.))
+            expected = (u, v, .25 * u * u, *normal, .37)
+            for actual, value in zip(record[:6], generator._quantized_growth(expected)[:6]):
+                self.assertLessEqual(abs(actual - value), 1)
+            stationary = record[:6] == generator._quantized_growth((*vertex[:3], *vertex[6:9], 0.))[:6]
+            self.assertEqual(record[6], 0 if stationary else round(.37 * 65535))
+
+    def test_accent_palettes_follow_the_theme_instead_of_rainbow_branches(self) -> None:
+        for key in IDS:
+            model = generator.Geometry()
+            generator._accent_sprigs(model, IDS.index(key))
+            for surface in model.sections["flowers"]:
+                if surface.mesh_steps == (1, 4):
+                    continue
+                color = surface.pigment(.6, .5)
+                if max(color) - min(color) < .16:
+                    continue
+                if key in ("hydrangea", "calla"):
+                    self.assertGreaterEqual(color[2], color[0])
+                else:
+                    self.assertGreaterEqual(color[0], color[2])
 
 
 if __name__ == "__main__":

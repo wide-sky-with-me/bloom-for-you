@@ -8,7 +8,7 @@
 
 粉雾玫瑰、奶油粉郁金香、月光绣球、香槟混合花园，以及牡丹、百合、向日葵、马蹄莲。每束由 Python 确定性生成 120,000 个三维粒子，并从同一套参数曲面生成连续花瓣、枝叶与蝴蝶结。主花、重瓣配花和细枝小花交错组成环绕花冠，拖到背面也有完整花头，不是前面一排花、后面一层叶。
 
-连续花瓣与细粒共享曲面法线光照、透视和深度遮挡；静息时读得出瓣缘和层次，风场与呼吸让花束轻摆。点击花束或「让心意绽放」时，连续表面淡出，粒子散开再重聚；切花时平滑变形。拖动可绕整束观察，右上角还藏着一封信。
+连续花瓣与细粒共享曲面法线光照、透视和深度遮挡；同主题花材收拢到主色、邻近色与少量奶白，细密采样优先落在花瓣上。加载时花瓣从包裹的花苞逐层展开，点击花束或「让心意绽放」可重放收拢到盛开的过程，不再爆散重聚。点和面共享同源闭合姿态、法线与展开延迟，枝叶和丝带留在原位。盛开后保留风场与呼吸轻摆，拖动可绕整束观察，右上角还藏着一封信。
 
 手机可触碰、滑动和挑花；支持沉浸模式、暂停与键盘操作。页面跟随系统「减弱动态效果」设置，默认静止，可手动播放。设备未启用 WebGL 或首组数据加载失败时，显示由相同曲面与粒子生成的 SVG 花束投影。
 
@@ -37,15 +37,16 @@ GitHub 仓库与 Pages 是公开的。信件配置、URL 参数和站点内容�
 
 ## 实现
 
-- [generator.py](generator.py)：标准库参数曲面，固定种子和预算，生成带单位法线的未烘焙底色粒子、索引曲面与 SVG 投影。
+- [generator.py](generator.py)：标准库参数曲面、同源开放/闭合花瓣、固定种子与预算，生成点、曲面、紧凑生长数据和 SVG 投影。
 - [build.py](build.py)：生成花束、校验情书配置、生成同源曲面 PNG 缩略图，并构建可独立托管的 `dist`。
-- [site/particles.js](site/particles.js)：原生 WebGL 曲面与粒子渲染，处理风场、呼吸、游离、绽放、重聚和交互，不依赖 CDN。
+- [site/particles.js](site/particles.js)：原生 WebGL 点面同步生长、八属性 GPU 布局、动态光照、暂停和旋转，不依赖 CDN。
 - [site/surface-data.js](site/surface-data.js)：验证 BFM1 曲面头、长度、颜色、法线及索引。
-- [site/app.js](site/app.js)：同步加载点与面、竞态保护、个性化、情书、分享与降级。
+- [site/growth-data.js](site/growth-data.js)：验证 BFG1 数量绑定、紧凑坐标、闭合法线和展开延迟。
+- [site/app.js](site/app.js)：同步加载点、面与生长数据，处理竞态、个性化、情书、分享与降级。
 
-点记录沿用 version 2 / stride 11，每束原始点数据 5.28 MB，另附紧凑的同源 `.mesh`；格式与取舍见下方决策。资源缓存修订为 `v=3`，点、面、清单与客户端须一并构建发布。首束优先，空闲时最多预取相邻一束；省流量或报告低速移动网络时不预取。预览为轻量 PNG，完整 SVG 只在降级时加载。移动端像素比限制在 1.8，页面切至后台和暂停后停止空转。Python 只负责静态生成，GitHub Pages 不需要常驻服务。
+点记录沿用 version 2 / stride 11，每束原始点数据 5.28 MB，另附同源 `.mesh` 与 `.growth`，两者各控制在 3 MB 内。BFG1 以 14 字节定点记录保存闭合坐标、法线与延迟，绑定点数和焊接后的网格顶点数；GPU 重包只在内存中发生。资源缓存修订为 `v=4`，点、面、生长、清单与客户端须一并构建发布。首束优先，空闲时最多预取相邻一束；省流量或报告低速移动网络时不预取。预览为盛开终态的轻量 PNG，SVG 只在降级时加载。移动端像素比限制在 1.8，页面切至后台和暂停后冻结生长时钟并停止空转。Python 只负责静态生成，GitHub Pages 不需要常驻服务。
 
-环绕构图、实拍参考、纯点方案的视觉失败，以及同源曲面与透明深度取舍见[环绕花束决策](.agents/notes/implemented/round-bouquets/2026-10-19-all-around-garden-composition.md)。当次完整测试和实图证据见[验收记录](.agents/notes/implemented/round-bouquets/2026-10-19-validation.md)。仍有效的法线、透视和生命周期背景见[此前实现决策](.agents/notes/implemented/particle-depth/2026-10-19-normal-lit-bouquets.md)。
+环绕构图、实拍参考、纯点方案的视觉失败，以及透明深度取舍见[环绕花束决策](.agents/notes/implemented/round-bouquets/2026-10-19-all-around-garden-composition.md)；其[历史验收](.agents/notes/implemented/round-bouquets/2026-10-19-validation.md)仅代表该轮版本。本轮实现取舍见[含苞到盛开决策](.agents/notes/implemented/botanical-growth/2026-10-19-bud-to-bloom.md)，当前检查与发布状态见[本轮验收](.agents/notes/implemented/botanical-growth/2026-10-19-validation.md)。仍有效的法线、透视和生命周期背景见[此前实现决策](.agents/notes/implemented/particle-depth/2026-10-19-normal-lit-bouquets.md)。
 
 ## 验证
 
@@ -68,7 +69,7 @@ python3 tests/browser_smoke.py --url http://localhost:8000
 python3 tests/visual_depth.py --url http://localhost:8000
 ```
 
-覆盖真实 WebGL 曲面与粒子绘制、持续动画、暂停帧稳定性、切花与快速点击、绽放、拖动、键盘、信件、沉浸、分享、手机尺寸、触碰、减弱动态、文本转义、缺少 uint 索引扩展、省流量、无 WebGL 与损坏点/面数据降级。环绕验图同时检查花冠面积、宽度和花材占比，避免只靠绿叶撑满背面；数值通过仍需人工看图。截图在 `artifacts/`，不提交。手机检查为 Chromium 触屏模拟，非 iPhone / Android 真机测试。
+覆盖真实 WebGL 点面绘制、生长、暂停、切花与快速点击、拖动、键盘、信件、沉浸、分享、手机尺寸、触碰、减弱动态、文本转义、缺少 uint 索引扩展、省流量、无 WebGL 与损坏点/面/生长数据降级。环绕验图检查花冠面积、宽度和花材占比，避免靠绿叶撑满背面；数值通过仍需人工看图。生长阶段可用 `python3 tests/visual_growth.py --url http://localhost:8000` 检查真实 GL 花苞、半开与盛开、重放和暂停，时钟由测试控制而着色器与数据均为正式实现。截图在 `artifacts/`，不提交。手机检查为 Chromium 触屏模拟，非 iPhone / Android 真机测试。
 
 ## 字体
 

@@ -1,5 +1,6 @@
-import { ParticleGarden } from "./particles.js?v=3";
-import { decodeSurface } from "./surface-data.js?v=3";
+import { ParticleGarden } from "./particles.js?v=4";
+import { decodeSurface } from "./surface-data.js?v=4";
+import { decodeGrowth } from "./growth-data.js?v=4";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("bouquet");
@@ -82,7 +83,7 @@ async function fetchResource(url, type = "json") {
   );
   try {
     const resource = new URL(url, location.href);
-    resource.searchParams.set("v", "3");
+    resource.searchParams.set("v", "4");
     const response = await fetch(resource, { signal: controller.signal });
     if (!response.ok) throw new Error(`Resource ${response.status}: ${url}`);
     return await response[type]();
@@ -107,7 +108,7 @@ function showFallback() {
   selectionVersion++;
   $("gallery").setAttribute("aria-busy", "false");
   fallback.hidden = false;
-  fallback.src = `./assets/${activeId}.svg?v=3`;
+  fallback.src = `./assets/${activeId}.svg?v=4`;
   canvas.hidden = true;
   loading.classList.add("is-loaded");
   $("interaction-hint").textContent = "心意一直在，挑一束你喜欢的花。";
@@ -140,13 +141,19 @@ function updateCaption(id) {
 async function loadBouquet(id) {
   if (cache.has(id)) return cache.get(id);
   const record = manifest.bouquets.find((bouquet) => bouquet.id === id);
-  if (!record || record.file !== `${id}.bin` || record.surface !== `${id}.mesh`)
+  if (
+    !record ||
+    record.file !== `${id}.bin` ||
+    record.surface !== `${id}.mesh` ||
+    record.growth !== `${id}.growth`
+  )
     throw new Error("Invalid bouquet manifest");
   const promise = Promise.all([
     fetchResource(`./assets/${record.file}`, "arrayBuffer"),
     fetchResource(`./assets/${record.surface}`, "arrayBuffer"),
+    fetchResource(`./assets/${record.growth}`, "arrayBuffer"),
   ])
-    .then(([buffer, surfaceBuffer]) => {
+    .then(([buffer, surfaceBuffer, growthBuffer]) => {
       if (buffer.byteLength !== manifest.count * manifest.stride * 4)
         throw new Error("Invalid particle data length");
       const data = new Float32Array(buffer);
@@ -158,7 +165,13 @@ async function loadBouquet(id) {
         if (normalLength < 0.95 || normalLength > 1.05)
           throw new Error("Invalid particle surface normal");
       }
-      return { particles: data, surface: decodeSurface(surfaceBuffer) };
+      const surface = decodeSurface(surfaceBuffer);
+      const growth = decodeGrowth(
+        growthBuffer,
+        manifest.count,
+        surface.vertices.length / 9,
+      );
+      return { particles: data, surface, growth };
     })
     .catch((error) => {
       cache.delete(id);
@@ -177,7 +190,7 @@ async function selectBouquet(id, immediate = false) {
   const version = ++selectionVersion;
   if (fallbackMode) {
     updateCaption(id);
-    fallback.src = `./assets/${id}.svg?v=3`;
+    fallback.src = `./assets/${id}.svg?v=4`;
     history.replaceState(null, "", `#${id}`);
     return;
   }
@@ -185,7 +198,7 @@ async function selectBouquet(id, immediate = false) {
   try {
     const data = await loadBouquet(id);
     if (version !== selectionVersion) return;
-    garden.setBouquet(data.particles, immediate, data.surface);
+    garden.setBouquet(data.particles, immediate, data.surface, data.growth);
     updateCaption(id);
     history.replaceState(null, "", `#${id}`);
     document.body.dataset.bouquet = id;

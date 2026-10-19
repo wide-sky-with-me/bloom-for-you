@@ -18,6 +18,13 @@ const { decodeSurface } = await import(
   `data:text/javascript;base64,${Buffer.from(surfaceSource).toString("base64")}`
 );
 
+const growthSource = await readFile(
+  new URL("../site/growth-data.js", import.meta.url),
+  "utf8",
+);
+const { decodeGrowth } = await import(
+  `data:text/javascript;base64,${Buffer.from(growthSource).toString("base64")}`
+);
 function eventTarget(extra = {}) {
   const listeners = new Map();
   return Object.assign(extra, {
@@ -44,7 +51,7 @@ function eventTarget(extra = {}) {
   });
 }
 
-function fakeGL({ uintIndices = true } = {}) {
+function fakeGL({ uintIndices = true, precision = 23 } = {}) {
   const enabled = new Set();
   const uniforms = {};
   const pointers = new Map();
@@ -65,6 +72,9 @@ function fakeGL({ uintIndices = true } = {}) {
     clears: [],
     deletedBuffers: [],
     deletedPrograms: [],
+    getShaderPrecisionFormat() {
+      return { precision };
+    },
     getExtension(name) {
       assert.equal(name, "OES_element_index_uint");
       return uintIndices ? {} : null;
@@ -102,7 +112,7 @@ function fakeGL({ uintIndices = true } = {}) {
     useProgram() {},
     getAttribLocation(_program, name) {
       if (!attributes.has(name)) attributes.set(name, attributes.size);
-      assert.ok(attributes.size <= 7, "WebGL1 budget is seven attributes");
+      assert.ok(attributes.size <= 8, "WebGL1 budget is eight attributes");
       return attributes.get(name);
     },
     getUniformLocation(_program, name) {
@@ -128,7 +138,7 @@ function fakeGL({ uintIndices = true } = {}) {
       constantAttributes.set(index, [x, y]);
     },
     enableVertexAttribArray(index) {
-      assert.ok(index >= 0 && index < 7);
+      assert.ok(index >= 0 && index < 8);
       constantAttributes.delete(index);
     },
     vertexAttribPointer(index, size, type, normalized, stride, offset) {
@@ -224,7 +234,10 @@ function fakeGL({ uintIndices = true } = {}) {
 }
 
 function rig(options = {}) {
-  const gl = fakeGL({ uintIndices: options.uintIndices ?? true });
+  const gl = fakeGL({
+    uintIndices: options.uintIndices ?? true,
+    precision: options.precision ?? 23,
+  });
   const queue = new Map();
   let nextFrame = 0;
   const document = eventTarget({ hidden: false });
@@ -244,7 +257,7 @@ function rig(options = {}) {
     setPointerCapture() {},
   });
   globalThis.document = document;
-  globalThis.window = { devicePixelRatio: 1.5 };
+  globalThis.window = eventTarget({ devicePixelRatio: 1.5 });
   globalThis.ResizeObserver = class {
     constructor(callback) {
       this.callback = callback;
@@ -310,35 +323,47 @@ function core(r) {
   return r.gl.draws.at(-3);
 }
 
-test("version2 binds seven attributes at 44-byte stride, including all dust normals", () => {
+test("immutable CPU stride11 packs eight vec4 GPU attributes at 64-byte stride", () => {
   const r = rig();
-  r.garden.setBouquet(particles());
+  const data = particles(),
+    copy = new Float32Array(data);
+  r.garden.setBouquet(data);
   r.step(1000);
   assert.equal(r.garden.count, 2);
-  assert.equal(r.gl.attributes.size, 7);
-  assert.equal(r.gl.uploads[0].data.length, 360 * 11);
-  for (let i = 0; i < 360; i++) {
+  assert.equal(r.gl.attributes.size, 8);
+  assert.equal(r.gl.attributes.has("aMeta"), false);
+  assert.equal(r.gl.uploads[0].data.length, 360 * 16);
+  for (let i = 0; i < 360; i++)
     assert.deepEqual(
-      [...r.gl.uploads[0].data.slice(i * 11 + 8, i * 11 + 11)],
+      [...r.gl.uploads[0].data.slice(i * 16 + 8, i * 16 + 11)],
       [0, 0, 1],
     );
-  }
   for (const draw of r.gl.draws) {
-    assert.equal(draw.pointers.size, 7);
-    for (const pointer of draw.pointers.values())
-      assert.equal(pointer.stride, 44);
-    assert.equal(draw.pointers.get(r.gl.attributes.get("aNormal")).offset, 32);
-    assert.equal(
-      draw.pointers.get(r.gl.attributes.get("aTargetNormal")).offset,
-      32,
-    );
+    assert.equal(draw.pointers.size, 8);
+    for (const pointer of draw.pointers.values()) {
+      assert.equal(pointer.stride, 64);
+      assert.equal(pointer.size, 4);
+    }
+    for (const name of ["aNormal", "aTargetNormal"])
+      assert.equal(draw.pointers.get(r.gl.attributes.get(name)).offset, 32);
+    for (const name of ["aBud", "aTargetBud"])
+      assert.equal(draw.pointers.get(r.gl.attributes.get(name)).offset, 48);
   }
-  const normalPointer = core(r).pointers.get(r.gl.attributes.get("aNormal"));
-  const targetNormalPointer = core(r).pointers.get(
-    r.gl.attributes.get("aTargetNormal"),
+  assert.equal(
+    core(r).pointers.get(r.gl.attributes.get("aNormal")).buffer,
+    r.garden.currentBuffer,
   );
-  assert.equal(normalPointer.buffer, r.garden.currentBuffer);
-  assert.equal(targetNormalPointer.buffer, r.garden.targetBuffer);
+  assert.equal(
+    core(r).pointers.get(r.gl.attributes.get("aTargetNormal")).buffer,
+    r.garden.targetBuffer,
+  );
+  assert.deepEqual(data, copy);
+  assert.equal(r.garden.data, data);
+  assert.equal(r.garden.gpuData.length, 2 * 16);
+  assert.deepEqual(
+    [...r.garden.gpuData.slice(0, 4)],
+    [data[0], data[1], data[2], data[6]],
+  );
   assert.throws(() => r.garden.setBouquet(new Float32Array(16)), /stride/);
   assert.throws(() => r.garden.setBouquet(new Float32Array()), /stride/);
 });
@@ -378,7 +403,7 @@ test("depth-only prepass owns depth, opaque cores and restrained halos share dep
   assert.equal(r.gl.state.depthMask, true);
   assert.deepEqual(r.gl.state.colorMask, [true, true, true, true]);
   assert.match(r.gl.shaders[1].source, /r > \.72/);
-  assert.match(r.gl.shaders[1].source, /vAlpha \* \.035/);
+  assert.match(r.gl.shaders[1].source, /vAlpha \* \.012/);
   assert.match(r.gl.shaders[0].source, /uAppear \* \(\.96/);
 });
 
@@ -386,7 +411,11 @@ test("perspective uses clip-w and normal lighting follows both rotating and morp
   const r = rig();
   const vertex = r.gl.shaders[0].source;
   assert.match(vertex, /gl_Position = vec4\([^;]+clipZ, depth\)/);
-  assert.match(vertex, /mix\(aNormal, aTargetNormal, uMix\)/);
+  assert.match(vertex, /mix\(sourceNormal, targetNormal, uMix\)/);
+  assert.match(
+    vertex,
+    /mix\(closedNormal\(aNormal.w\), aNormal.xyz, sourceOpen\)/,
+  );
   assert.match(vertex, /normalize\(rotate\(blendedNormal\)\)/);
   for (const feature of ["keyDirection", "sideDirection", "rim", "front"])
     assert.ok(vertex.includes(feature));
@@ -449,7 +478,14 @@ test("pause freezes every analytic clock, bloom and morph while direct paused se
   r.step(100000);
   for (const [key, value] of Object.entries(state))
     assert.equal(r.garden[key], value, key);
-  for (const key of ["uTime", "uMix", "uBurst", "uAppear", "uRotation"])
+  for (const key of [
+    "uTime",
+    "uMix",
+    "uSourceGrowth",
+    "uTargetGrowth",
+    "uAppear",
+    "uRotation",
+  ])
     assert.deepEqual(core(r).uniforms[key], frozen[key], key);
   const next = particles(0.2);
   r.garden.setBouquet(next);
@@ -513,7 +549,7 @@ test("opposite normals frozen by rapid retarget have a nonzero final shader fall
   assert.equal(core(r).uniforms.uMix, 0);
   assert.match(
     r.gl.shaders[0].source,
-    /if \(dot\(blendedNormal, blendedNormal\) < \.0001\) \{\s*blendedNormal = dot\(aNormal, aNormal\) < \.0001 \? vec3\(0\.0, 0\.0, 1\.0\) : aNormal;/,
+    /if \(dot\(blendedNormal, blendedNormal\) < \.0001\) \{\s*blendedNormal = dot\(aNormal.xyz, aNormal.xyz\) < \.0001 \? vec3\(0\.0, 0\.0, 1\.0\) : aNormal.xyz;/,
   );
 });
 
@@ -698,7 +734,11 @@ function projectedEnvelope(
   return envelope;
 }
 
-async function bouquetData() {
+let bouquetDataPromise;
+function bouquetData() {
+  return (bouquetDataPromise ||= loadBouquetData());
+}
+async function loadBouquetData() {
   const assets = new URL(
     process.env.BLOOM_TEST_ASSETS_URL ?? "../site/assets/",
     import.meta.url,
@@ -709,33 +749,38 @@ async function bouquetData() {
   assert.equal(manifest.version, 2);
   assert.equal(manifest.stride, 11);
   return Promise.all(
-    manifest.bouquets.map(async ({ id, file, surface: surfaceFile }) => {
-      assert.equal(surfaceFile, `${id}.mesh`);
-      const [bytes, meshBytes] = await Promise.all([
-        readFile(new URL(file, assets)),
-        readFile(new URL(surfaceFile, assets)),
-      ]);
-      assert.equal(
-        bytes.byteLength,
-        120000 * 11 * 4,
-        `${id}: full 120000-particle crown`,
-      );
-      return {
-        id,
-        surface: decodeSurface(
-          meshBytes.buffer.slice(
-            meshBytes.byteOffset,
-            meshBytes.byteOffset + meshBytes.byteLength,
-          ),
-        ),
-        data: new Float32Array(
+    manifest.bouquets.map(
+      async ({ id, file, surface: surfaceFile, growth: growthFile }) => {
+        assert.equal(surfaceFile, `${id}.mesh`);
+        assert.equal(growthFile, `${id}.growth`);
+        const [bytes, meshBytes, growthBytes] = await Promise.all([
+          readFile(new URL(file, assets)),
+          readFile(new URL(surfaceFile, assets)),
+          readFile(new URL(growthFile, assets)),
+        ]);
+        const buffer = (bytes) =>
           bytes.buffer.slice(
             bytes.byteOffset,
             bytes.byteOffset + bytes.byteLength,
+          );
+        assert.equal(
+          bytes.byteLength,
+          120000 * 11 * 4,
+          `${id}: full 120000-particle crown`,
+        );
+        const surface = decodeSurface(buffer(meshBytes));
+        return {
+          id,
+          surface,
+          data: new Float32Array(buffer(bytes)),
+          growth: decodeGrowth(
+            buffer(growthBytes),
+            120000,
+            surface.vertices.length / 9,
           ),
-        ),
-      };
-    }),
+        };
+      },
+    ),
   );
 }
 
@@ -861,7 +906,7 @@ test("lighting converts linear illumination to display gamma without increasing 
     r.gl.shaders[0].source,
     /max\(pigment, vec3\(0\.0\)\) \* pow\(light \* mix\(\.91, 1\.0, front\), vec3\(1\.0 \/ 2\.2\)\)/,
   );
-  assert.match(r.gl.shaders[1].source, /vAlpha \* \.035/);
+  assert.match(r.gl.shaders[1].source, /vAlpha \* \.012/);
 });
 
 test("fine surface grains scale with the projected canvas, not fixed screen-sized holes", () => {
@@ -884,10 +929,10 @@ test("fine surface grains scale with the projected canvas, not fixed screen-size
   assert.equal(r.garden.time, 0);
   assert.equal(r.queue.size, 0);
   const vertex = r.gl.shaders[0].source;
-  assert.match(vertex, /aMeta.x \* uPointScale \* perspective/);
+  assert.match(vertex, /aPosition.w \* uPointScale \* perspective \* \.72/);
   assert.match(
     vertex,
-    /coreSize = clamp\(coreSize, 1\.0, \(uDust > \.5 \? 2\.5 : 3\.8\) \* uDpr\)/,
+    /coreSize = clamp\(coreSize, 1\.0, \(uDust > \.5 \? 2\.5 : 2\.6\) \* uDpr\)/,
   );
   assert.match(r.gl.shaders[1].source, /smoothstep\(\.72, 1\.0, r\)/);
   assert.match(r.gl.shaders[1].source, /grain = \.975 \+ \.025/);
@@ -895,12 +940,9 @@ test("fine surface grains scale with the projected canvas, not fixed screen-size
 
 test("neutral ambient and two-sided pigment keep back-facing petals colored", () => {
   const r = rig();
-  assert.match(
-    r.gl.shaders[0].source,
-    /vec3 light = vec3\(\.26, \.245, \.27\)/,
-  );
+  assert.match(r.gl.shaders[0].source, /vec3 light = vec3\(\.18, \.18, \.18\)/);
   assert.match(r.gl.shaders[0].source, /normal \*= front \* 2\.0 - 1\.0/);
-  assert.ok(Math.pow(0.245 * 0.91, 1 / 2.2) > 0.5);
+  assert.ok(Math.pow(0.18 * 0.91, 1 / 2.2) > 0.4);
 });
 
 function restPositions(data) {
@@ -957,7 +999,7 @@ function crownRaster(data, positions, yaw, pitch, focal, center) {
     const screenY = ((1 - (y / depth - center[1]) * focal) * height) / 2;
     const diameter = Math.max(
       1,
-      Math.min(3.8, (data[i + 6] * scale * 6.8) / depth),
+      Math.min(2.6, (data[i + 6] * scale * 6.8 * 0.72) / depth),
     );
     const radius = (diameter * Math.sqrt(0.72)) / 2;
     const r = data[i + 3],
@@ -993,22 +1035,21 @@ function crownRaster(data, positions, yaw, pitch, focal, center) {
       const colors = [
         r *
           Math.pow(
-            (0.26 + key * 0.78 + 0.62 * side * 0.32 + 0.86 * rim * 0.18) *
-              factor,
+            (0.18 + key * 0.98 + 0.94 * side * 0.16 + rim * 0.06) * factor,
             1 / 2.2,
           ),
         g *
           Math.pow(
-            (0.245 +
-              0.86 * key * 0.78 +
-              0.76 * side * 0.32 +
-              0.65 * rim * 0.18) *
+            (0.18 +
+              0.98 * key * 0.98 +
+              0.97 * side * 0.16 +
+              0.98 * rim * 0.06) *
               factor,
             1 / 2.2,
           ),
         b *
           Math.pow(
-            (0.27 + 0.8 * key * 0.78 + side * 0.32 + 0.72 * rim * 0.18) *
+            (0.18 + 0.95 * key * 0.98 + side * 0.16 + 0.96 * rim * 0.06) *
               factor,
             1 / 2.2,
           ),
@@ -1365,7 +1406,7 @@ test("mesh support ignores unreferenced vertices and clears on legacy selection 
   assert.equal(r.garden.surfaceOpacity, 0);
 });
 
-test("surface triangles precede grain cores with continuous color, real depth and six mesh attributes", () => {
+test("surface triangles precede grains with eight packed mesh attributes and real depth", () => {
   const r = rig({ reducedMotion: true });
   const surface = triangleSurface();
   r.garden.setBouquet(particles(), false, surface);
@@ -1380,29 +1421,25 @@ test("surface triangles precede grain cores with continuous color, real depth an
     assert.equal(draw.count, 3);
     assert.equal(draw.uniforms.uSurface, 1);
     assert.equal(draw.uniforms.uSurfaceAlpha, 1);
-    assert.equal(draw.pointers.size, 6);
-    assert.deepEqual(
-      draw.constantAttributes.get(r.gl.attributes.get("aMeta")),
-      [0, 0],
-    );
+    assert.equal(draw.pointers.size, 8);
     for (const pointer of draw.pointers.values()) {
       assert.equal(pointer.buffer, r.garden.surfaceVertexBuffer);
-      assert.equal(pointer.stride, 36);
+      assert.equal(pointer.stride, 64);
     }
   }
   assert.equal(depth.depthMask, true);
   assert.deepEqual(depth.colorMask, [false, false, false, false]);
   assert.equal(color.depthMask, false);
   assert.deepEqual(color.colorMask, [true, true, true, true]);
-  assert.ok(Math.abs(core(r).uniforms.uPointAlpha - 0.32) < 1e-12);
+  assert.ok(Math.abs(core(r).uniforms.uPointAlpha - 0.58) < 1e-12);
   assert.equal(core(r).uniforms.uSurface, 0);
-  assert.equal(core(r).pointers.size, 7);
-  assert.equal(core(r).pointers.get(r.gl.attributes.get("aMeta")).stride, 44);
+  assert.equal(core(r).pointers.size, 8);
+  assert.equal(core(r).pointers.get(r.gl.attributes.get("aBud")).stride, 64);
   const fragment = r.gl.shaders[1].source;
   assert.ok(
     fragment.indexOf("if (uSurface > .5)") < fragment.indexOf("gl_PointCoord"),
   );
-  assert.match(fragment, /vec4\(vColor, uSurfaceAlpha\)/);
+  assert.match(fragment, /vec4\(vColor \* micrograin, surfaceAlpha\)/);
 });
 
 test("fading surfaces blend color without writing depth until they are nearly opaque", () => {
@@ -1434,7 +1471,7 @@ test("fading surfaces blend color without writing depth until they are nearly op
       if (ownsDepth) assert.equal(triangles[0].depthMask, true);
       else assert.ok(triangles.every((draw) => !draw.depthMask));
       assert.ok(
-        Math.abs(core(r).uniforms.uPointAlpha - (1 - opacity * 0.68)) < 1e-12,
+        Math.abs(core(r).uniforms.uPointAlpha - (1 - opacity * 0.42)) < 1e-12,
       );
       assert.equal(r.gl.state.depthMask, true);
       assert.equal(r.queue.size, 0);
@@ -1455,18 +1492,22 @@ test("surface fallback expands uint indices above 65535 into exact triangle vert
   const upload = r.gl.uploads.find(
     (item) => item.buffer === r.garden.surfaceVertexBuffer,
   );
-  assert.equal(upload.data.length, 27);
+  assert.equal(upload.data.length, 48);
   assert.deepEqual(
-    [...upload.data.slice(0, 9)],
-    [...vertices.slice(70000 * 9, 70000 * 9 + 9)],
+    [...upload.data.slice(0, 3)],
+    [...vertices.slice(70000 * 9, 70000 * 9 + 3)],
   );
-  assert.deepEqual([...upload.data.slice(9, 18)], [...vertices.slice(0, 9)]);
+  assert.deepEqual([...upload.data.slice(16, 19)], [...vertices.slice(0, 3)]);
+  assert.deepEqual(
+    [...upload.data.slice(32, 35)],
+    [...vertices.slice(70000 * 9, 70000 * 9 + 3)],
+  );
   assert.equal(r.gl.draws[0].mode, r.gl.TRIANGLES);
   assert.equal(r.gl.draws[0].indexed, undefined);
   assert.equal(r.gl.draws[0].count, 3);
 });
 
-test("surface disappears during morph and burst, returns on rejoin, and paused selection is immediate", () => {
+test("legacy surfaces retain volume on bloom, morph and paused selection stay compatible", () => {
   const r = rig();
   r.garden.appearance = 1;
   r.garden.setBouquet(particles(), true, triangleSurface());
@@ -1481,15 +1522,15 @@ test("surface disappears during morph and burst, returns on rejoin, and paused s
   r.garden.bloom();
   r.step(3400);
   r.step(4000);
-  assert.equal(r.garden.surfaceOpacity, 0);
-  assert.equal(core(r).uniforms.uPointAlpha, 1);
+  assert.equal(r.garden.surfaceOpacity, 1);
+  assert.ok(Math.abs(core(r).uniforms.uPointAlpha - 0.58) < 1e-12);
   r.garden.setPaused(true);
   r.step(4100);
   const time = r.garden.time;
   r.garden.requestFrame();
   r.step(100000);
   assert.equal(r.garden.time, time);
-  assert.equal(r.garden.surfaceOpacity, 0);
+  assert.equal(r.garden.surfaceOpacity, 1);
   r.garden.setBouquet(particles(0.2), false, triangleSurface(0.2));
   r.step(100100);
   assert.equal(r.garden.surfaceOpacity, 1);
@@ -1507,7 +1548,7 @@ test("surface reveal follows appearance and reduced motion restores a complete s
   r.garden.bloom();
   r.step(2400);
   r.step(3000);
-  assert.equal(r.garden.surfaceOpacity, 0);
+  assert.equal(r.garden.surfaceOpacity, 1);
   r.garden.setReducedMotion(true);
   r.step(3100);
   assert.equal(r.garden.surfaceOpacity, 1);
@@ -1526,7 +1567,11 @@ test("rapid surface retarget replaces target buffers and legacy selection clears
   const upload = r.gl.uploads.findLast(
     (item) => item.buffer === r.garden.surfaceVertexBuffer,
   );
-  assert.deepEqual([...upload.data], [...next.vertices]);
+  assert.deepEqual(
+    [...upload.data.slice(0, 3)],
+    [...next.vertices.slice(0, 3)],
+  );
+  assert.equal(upload.data.length, (next.vertices.length / 9) * 16);
   r.step(1400);
   assert.equal(r.garden.surfaceOpacity, 0);
   r.step(3200);
@@ -1568,7 +1613,7 @@ test("surface resize and context loss keep single-frame lifecycle and stop later
   assert.equal(r.queue.size, 0);
 });
 
-test("dispose releases five GPU buffers, observers and listeners exactly once", () => {
+test("dispose releases seven GPU buffers, observers and listeners exactly once", () => {
   const r = rig();
   r.garden.setBouquet(particles(), false, triangleSurface());
   r.step(1000);
@@ -1576,8 +1621,8 @@ test("dispose releases five GPU buffers, observers and listeners exactly once", 
   assert.ok(r.canvas.listenerCount() > 0);
   r.garden.dispose();
   r.garden.dispose();
-  assert.equal(r.gl.deletedBuffers.length, 5);
-  assert.equal(new Set(r.gl.deletedBuffers).size, 5);
+  assert.equal(r.gl.deletedBuffers.length, 7);
+  assert.equal(new Set(r.gl.deletedBuffers).size, 7);
   assert.equal(r.gl.deletedPrograms.length, 1);
   assert.equal(r.garden.resizeObserver.disconnected, true);
   assert.equal(r.canvas.listenerCount(), 0);
@@ -1587,4 +1632,617 @@ test("dispose releases five GPU buffers, observers and listeners exactly once", 
   r.garden.requestFrame();
   assert.equal(r.gl.uploads.length, uploads);
   assert.equal(r.queue.size, 0);
+});
+
+function growthRecords(data, stride = 11, normal = [1, 0, 0]) {
+  const count = data.length / stride,
+    out = new Float32Array(count * 7);
+  for (let vertex = 0; vertex < count; vertex++) {
+    const i = vertex * stride;
+    out.set(
+      [
+        data[i] * 0.24,
+        data[i + 1] * 0.72,
+        data[i + 2] * 0.24,
+        ...normal,
+        vertex / Math.max(1, count - 1),
+      ],
+      vertex * 7,
+    );
+  }
+  return out;
+}
+function growthBundle(data, surface, normal = [1, 0, 0]) {
+  return {
+    points: growthRecords(data, 11, normal),
+    vertices: growthRecords(surface.vertices, 9, normal),
+  };
+}
+function packedPose(packed, i, progress) {
+  const start = packed[i + 15] * 0.24;
+  const t = Math.max(0, Math.min(1, (progress - start) / 0.76));
+  const g = t * t * (3 - 2 * t);
+  return [0, 1, 2].map(
+    (axis) => packed[i + 12 + axis] * (1 - g) + packed[i + axis] * g,
+  );
+}
+function unpackOct(encoded, base) {
+  let x = ((encoded % base) / (base - 1)) * 2 - 1;
+  let y = (Math.floor(encoded / base) / (base - 1)) * 2 - 1;
+  const z = 1 - Math.abs(x) - Math.abs(y);
+  if (z < 0)
+    [x, y] = [
+      (1 - Math.abs(y)) * (x < 0 ? -1 : 1),
+      (1 - Math.abs(x)) * (y < 0 ? -1 : 1),
+    ];
+  const length = Math.hypot(x, y, z);
+  return [x / length, y / length, z / length];
+}
+
+test("growth starts closed even on first immediate load and keeps the mesh opaque", () => {
+  const r = rig(),
+    data = particles(),
+    surface = triangleSurface();
+  const growth = growthBundle(data, surface),
+    snapshot = new Float32Array(growth.points);
+  r.garden.setBouquet(data, true, surface, growth);
+  assert.equal(Number(r.canvas.dataset.bloomProgress), 0);
+  assert.equal(r.garden.data, data);
+  r.step(1000);
+  assert.equal(r.garden.surfaceOpacity, 1);
+  assert.ok(Number(r.canvas.dataset.bloomProgress) < 0.001);
+  for (const draw of r.gl.draws.filter((draw) => draw.mode === r.gl.TRIANGLES))
+    assert.equal(draw.uniforms.uTargetGrowth, r.garden.bloomProgress);
+  assert.deepEqual(
+    [...r.garden.gpuTargetData.slice(12, 15)],
+    [...growth.points.slice(0, 3)],
+  );
+  assert.equal(r.garden.gpuTargetData[15], growth.points[6]);
+  assert.deepEqual(
+    [...r.garden.surfacePacked.slice(12, 15)],
+    [...growth.vertices.slice(0, 3)],
+  );
+  r.step(3400);
+  assert.ok(r.garden.bloomProgress > 0.49 && r.garden.bloomProgress < 0.52);
+  r.step(5800);
+  assert.equal(r.garden.bloomProgress, 1);
+  assert.equal(r.garden.surfaceOpacity, 1);
+  assert.deepEqual(growth.points, snapshot);
+  assert.equal(core(r).uniforms.uTargetGrowth, 1);
+  assert.doesNotMatch(r.gl.shaders[0].source, /scatter|uBurst|aMeta/);
+});
+
+test("growth replay closes continuously for .8s then unfolds for 4.2s with real surfaces", () => {
+  const r = rig(),
+    data = particles(),
+    surface = triangleSurface();
+  r.garden.setBouquet(data, true, surface, growthBundle(data, surface));
+  r.step(1000);
+  r.step(6000);
+  r.garden.bloom();
+  assert.equal(r.garden.bloomProgress, 1);
+  r.step(7000);
+  const start = r.garden.growthCycle.at;
+  r.garden.elapsed = start + 0.4;
+  r.garden.updateGrowth();
+  assert.ok(Math.abs(r.garden.bloomProgress - 0.5) < 1e-9);
+  r.garden.elapsed = start + 0.8;
+  r.garden.updateGrowth();
+  assert.equal(r.garden.bloomProgress, 0);
+  r.garden.elapsed = start + 2.9;
+  r.garden.updateGrowth();
+  assert.ok(Math.abs(r.garden.bloomProgress - 0.5) < 1e-9);
+  r.garden.elapsed = start + 5;
+  r.garden.updateGrowth();
+  assert.equal(r.garden.bloomProgress, 1);
+  assert.equal(r.garden.surfaceVisibility(), 1);
+  r.garden.bloomProgress = 0.37;
+  r.garden.bloom();
+  assert.equal(
+    r.garden.bloomProgress,
+    0.37,
+    "replaying a partial flower never jumps open",
+  );
+});
+
+test("growth clocks freeze on pause, hidden tabs and window blur without wall-time catchup", () => {
+  const r = rig(),
+    data = particles(),
+    surface = triangleSurface();
+  r.garden.setBouquet(data, true, surface, growthBundle(data, surface));
+  r.step(1000);
+  r.step(2200);
+  const progress = r.canvas.dataset.bloomProgress,
+    elapsed = r.garden.elapsed;
+  r.garden.setPaused(true);
+  r.step(3000);
+  assert.equal(r.canvas.dataset.bloomProgress, progress);
+  r.garden.requestFrame();
+  r.step(100000);
+  assert.equal(r.canvas.dataset.bloomProgress, progress);
+  r.garden.setPaused(false);
+  r.step(100100);
+  const resumed = r.garden.elapsed;
+  assert.ok(Math.abs(resumed - elapsed - 0.016) < 1e-9);
+  window.emit("blur");
+  assert.equal(r.queue.size, 0);
+  r.garden.requestFrame();
+  r.step(200000);
+  assert.equal(r.garden.elapsed, resumed);
+  assert.equal(r.queue.size, 0);
+  window.emit("focus");
+  r.step(300000);
+  assert.ok(Math.abs(r.garden.elapsed - resumed - 0.016) < 1e-9);
+  const visible = r.garden.elapsed;
+  r.document.hidden = true;
+  r.document.emit("visibilitychange");
+  r.document.hidden = false;
+  r.document.emit("visibilitychange");
+  r.step(900000);
+  assert.ok(Math.abs(r.garden.elapsed - visible - 0.016) < 1e-9);
+  r.garden.dispose();
+  assert.equal(window.listenerCount(), 0);
+});
+
+test("growth reduced motion and paused selections are fully open single frames", () => {
+  for (const options of [{ reducedMotion: true }, {}]) {
+    const r = rig(options),
+      data = particles(),
+      surface = triangleSurface();
+    if (!options.reducedMotion) r.garden.setPaused(true);
+    r.garden.setBouquet(data, true, surface, growthBundle(data, surface));
+    r.step(1000);
+    assert.equal(r.garden.bloomProgress, 1);
+    assert.equal(r.garden.surfaceOpacity, 1);
+    assert.equal(r.queue.size, 0);
+  }
+  const r = rig(),
+    data = particles(),
+    surface = triangleSurface();
+  r.garden.setBouquet(data, true, surface, growthBundle(data, surface));
+  r.step(1000);
+  r.garden.setReducedMotion(true);
+  r.step(2000);
+  assert.equal(Number(r.canvas.dataset.bloomProgress), 1);
+  assert.equal(core(r).uniforms.uTargetGrowth, 1);
+  assert.equal(r.queue.size, 0);
+});
+
+test("growth retarget freezes actual GPU poses, both normals and transparent mesh layers", () => {
+  const r = rig(),
+    a = particles(),
+    sa = triangleSurface();
+  r.garden.setBouquet(a, true, sa, growthBundle(a, sa, [1, 0, 0]));
+  r.step(1000);
+  r.step(6000);
+  const b = particles(0.3, [0, 1, 0]),
+    sb = triangleSurface(0.3);
+  r.garden.setBouquet(b, false, sb, growthBundle(b, sb, [0, 1, 0]));
+  r.step(6400);
+  const from = r.garden.gpuData,
+    to = r.garden.gpuTargetData,
+    m = r.garden.mix;
+  const sourceProgress = r.garden.sourceGrowth,
+    targetProgress = r.garden.bloomProgress;
+  const expected = packedPose(from, 0, sourceProgress).map(
+    (value, axis) =>
+      value * (1 - m) + packedPose(to, 0, targetProgress)[axis] * m,
+  );
+  const normalPose = (packed, progress) => {
+    const t = Math.max(0, Math.min(1, (progress - packed[15] * 0.24) / 0.76)),
+      g = t * t * (3 - 2 * t);
+    return unpackOct(packed[11], r.garden.octBase).map(
+      (value, axis) => value * (1 - g) + packed[8 + axis] * g,
+    );
+  };
+  const na = normalPose(from, sourceProgress),
+    nb = normalPose(to, targetProgress);
+  const expectedNormal = na.map(
+      (value, axis) => value * (1 - m) + nb[axis] * m,
+    ),
+    normalLength = Math.hypot(...expectedNormal);
+  const c = particles(-0.2),
+    sc = triangleSurface(-0.2);
+  r.garden.setBouquet(c, false, sc, growthBundle(c, sc));
+  for (let axis = 0; axis < 3; axis++)
+    assert.ok(Math.abs(r.garden.gpuData[axis] - expected[axis]) < 1e-6);
+  for (let axis = 0; axis < 3; axis++)
+    assert.ok(
+      Math.abs(
+        r.garden.gpuData[8 + axis] - expectedNormal[axis] / normalLength,
+      ) < 1e-6,
+    );
+  for (let i = 0; i < a.length; i++)
+    assert.ok(Math.abs(r.garden.data[i] - (a[i] * (1 - m) + b[i] * m)) < 1e-6);
+  const ac = unpackOct(from[11], r.garden.octBase),
+    bc = unpackOct(to[11], r.garden.octBase);
+  const closed = ac.map((value, axis) => value * (1 - m) + bc[axis] * m),
+    length = Math.hypot(...closed);
+  const actual = unpackOct(r.garden.gpuData[11], r.garden.octBase);
+  assert.ok(
+    actual.reduce(
+      (sum, value, axis) => sum + (value * closed[axis]) / length,
+      0,
+    ) > 0.99999,
+  );
+  assert.notEqual(
+    r.garden.gpuData[11],
+    from[11] * (1 - m) + to[11] * m,
+    "packed words are decoded before interpolation",
+  );
+  assert.equal(r.garden.bloomProgress, 0);
+  assert.equal(r.garden.outgoingSurface.indices.length, 6);
+  assert.equal(r.garden.outgoingSurface.opaque, false);
+  r.step(6500);
+  assert.ok(
+    r.gl.draws.filter((draw) => draw.mode === r.gl.TRIANGLES).length > 0,
+  );
+  r.garden.setBouquet(c, false, sc, growthBundle(c, sc));
+  r.step(9500);
+  assert.equal(r.garden.outgoingSurface, null);
+  assert.ok(
+    r.gl.uploads.some(
+      (upload) =>
+        upload.buffer === r.garden.outgoingVertexBuffer && !upload.data.length,
+    ),
+  );
+});
+
+test("growth fallback expands closed normals and delays with indices above 65535", () => {
+  const r = rig({ uintIndices: false }),
+    data = particles();
+  const vertices = new Float32Array(70001 * 9);
+  vertices.set([0.3, 1, 0.2, 0.8, 0.5, 0.6, 0, 0, 1], 70000 * 9);
+  const surface = { vertices, indices: new Uint32Array([70000, 0, 70000]) };
+  const growth = growthBundle(data, surface);
+  r.garden.setBouquet(data, true, surface, growth);
+  r.step(1000);
+  const upload = r.gl.uploads.findLast(
+    (upload) => upload.buffer === r.garden.surfaceVertexBuffer,
+  ).data;
+  assert.equal(upload.length, 3 * 16);
+  for (const [record, vertex] of [70000, 0, 70000].entries()) {
+    assert.deepEqual(
+      [...upload.slice(record * 16 + 12, record * 16 + 15)],
+      [...growth.vertices.slice(vertex * 7, vertex * 7 + 3)],
+    );
+    assert.equal(upload[record * 16 + 15], growth.vertices[vertex * 7 + 6]);
+    assert.ok(Number.isInteger(upload[record * 16 + 11]));
+  }
+  assert.equal(r.gl.draws[0].indexed, undefined);
+});
+
+test("growth validation is atomic before uploads and supports legacy identity poses", () => {
+  const r = rig(),
+    data = particles(),
+    surface = triangleSurface();
+  r.garden.setBouquet(data, true, surface, growthBundle(data, surface));
+  const uploads = r.gl.uploads.length,
+    before = r.garden.gpuData;
+  for (const broken of [
+    {
+      points: new Float32Array(7),
+      vertices: growthRecords(surface.vertices, 9),
+    },
+    { points: growthRecords(data) },
+    ...[NaN, 1.01, -1].map((value) => {
+      const growth = growthBundle(data, surface);
+      growth.points[6] = value;
+      return growth;
+    }),
+  ]) {
+    assert.throws(
+      () => r.garden.setBouquet(data, false, surface, broken),
+      /growth/,
+    );
+    assert.equal(r.gl.uploads.length, uploads);
+    assert.equal(r.garden.gpuData, before);
+  }
+  r.garden.setBouquet(data, true, surface);
+  assert.equal(r.garden.hasGrowth, false);
+  assert.equal(r.garden.bloomProgress, 1);
+  assert.deepEqual([...r.garden.gpuData.slice(12, 15)], [...data.slice(0, 3)]);
+});
+
+test("growth octahedral normals retain all hemispheres with low-precision vertex fallback", () => {
+  const normals = [
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 1, 0],
+    [0, -1, 0],
+    [0, 0, 1],
+    [0, 0, -1],
+    [-1e-12, -1e-12, -1],
+    [0.3, -0.8, -0.5],
+  ];
+  for (const precision of [23, 16]) {
+    const r = rig({ reducedMotion: true, precision });
+    for (const normal of normals) {
+      const data = particles(),
+        surface = triangleSurface(),
+        growth = growthBundle(data, surface, normal);
+      r.garden.setBouquet(data, true, surface, growth);
+      const encoded = r.garden.gpuTargetData[11],
+        base = r.garden.octBase;
+      assert.equal(base, precision === 23 ? 4096 : 256);
+      assert.ok(
+        Number.isInteger(encoded) && encoded >= 0 && encoded < base * base,
+      );
+      const decoded = unpackOct(encoded, base),
+        length = Math.hypot(...normal);
+      assert.ok(
+        Math.hypot(
+          ...decoded.map((value, axis) => value - normal[axis] / length),
+        ) < (precision === 23 ? 0.001 : 0.02),
+      );
+      if (normal[0] < 0 && normal[1] < 0 && normal[2] === -1)
+        assert.equal(encoded, 0, "zero is a valid packed normal");
+    }
+  }
+});
+
+test("growth projection fits true closed tips and releases their envelope when open", () => {
+  for (const uintIndices of [true, false]) {
+    const r = rig({ uintIndices }),
+      data = particles(),
+      surface = triangleSurface();
+    surface.vertices = new Float32Array([
+      ...surface.vertices,
+      90,
+      90,
+      90,
+      0.8,
+      0.5,
+      0.6,
+      0,
+      0,
+      1,
+    ]);
+    const growth = growthBundle(data, surface);
+    growth.points[1] = 5.5;
+    growth.vertices[1] = 6.5;
+    growth.vertices[3 * 7 + 1] = 100;
+    r.garden.setBouquet(data, true, surface, growth);
+    r.step(1000);
+    r.garden.time = 0;
+    assert.ok(
+      !r.garden.surfaceGrowthIndices.includes(3 * 16),
+      "unreferenced closed tips do not affect framing",
+    );
+    for (const progress of [0, 0.2, 0.5, 0.8, 1]) {
+      r.garden.bloomProgress = progress;
+      for (const aspect of [0.65, 1.6]) {
+        r.garden.aspect = aspect;
+        for (const yaw of [0, 0.43, Math.PI / 2, Math.PI]) {
+          const focal = r.garden.fitProjection(yaw, -0.15);
+          const posed = new Float32Array(3 * 9);
+          for (let vertex = 0; vertex < 3; vertex++)
+            posed.set(
+              [
+                ...packedPose(r.garden.surfacePacked, vertex * 16, progress),
+                0.8,
+                0.5,
+                0.6,
+                0,
+                0,
+                1,
+              ],
+              vertex * 9,
+            );
+          const bounds = projectedEnvelope(
+            posed,
+            yaw,
+            -0.15,
+            focal,
+            aspect,
+            0,
+            9,
+            r.garden.frameCenter,
+          );
+          assert.ok(
+            Object.values(bounds).every((value) => Math.abs(value) < 0.98),
+            `closed tip clipped at progress ${progress}`,
+          );
+        }
+      }
+    }
+    r.garden.aspect = 1;
+    const grown = r.garden.fitProjection(0.43, -0.15);
+    r.garden.setBouquet(data, true, surface);
+    assert.ok(
+      Math.abs(grown / r.garden.fitProjection(0.43, -0.15) - 1) < 1e-6,
+      "closed tips never permanently shrink the open bouquet",
+    );
+  }
+});
+
+test("growth motion support unions rare source and target phases independently of coarse samples", () => {
+  for (const [sourcePhase, targetPhase] of [
+    [6.2, 0.7],
+    [0.7, 6.2],
+    [0.7, 0.8],
+  ]) {
+    const r = rig();
+    // Isolate motion coverage from geometric support selection.
+    r.garden.sampleProjection = () => [0];
+    r.garden.sampleGrowthProjection = () => [0];
+    const a = particles(),
+      sa = triangleSurface();
+    a[18] = sourcePhase;
+    r.garden.setBouquet(a, true, sa, growthBundle(a, sa));
+    const b = particles(0.1),
+      sb = triangleSurface(0.1);
+    b[18] = targetPhase;
+    r.garden.setBouquet(b, false, sb, growthBundle(b, sb));
+    assert.equal(
+      r.garden.growthProjectionIndices.includes(16),
+      sourcePhase > 6.13 || targetPhase > 6.13,
+    );
+    assert.equal(
+      r.garden.projectionIndices.length,
+      1,
+      "legacy budget is independent of growth motion support",
+    );
+    r.garden.dispose();
+  }
+});
+
+test("actual growth assets synchronize all eight full-size point and mesh bouquets", async () => {
+  const bouquets = await bouquetData();
+  assert.equal(bouquets.length, 8);
+  const began = performance.now();
+  for (const { id, data, surface, growth } of bouquets) {
+    const r = rig();
+    r.garden.setBouquet(data, true, surface, growth);
+    assert.equal(r.garden.count, 120000, id);
+    assert.equal(r.garden.data, data);
+    assert.equal(Number(r.canvas.dataset.bloomProgress), 0);
+    assert.equal(r.garden.gpuTargetData.length, 120000 * 16);
+    assert.equal(
+      r.garden.surfacePacked.length,
+      (surface.vertices.length / 9) * 16,
+    );
+    for (const [packed, records] of [
+      [r.garden.gpuTargetData, growth.points],
+      [r.garden.surfacePacked, growth.vertices],
+    ]) {
+      const count = records.length / 7;
+      for (const vertex of [0, Math.floor(count / 2), count - 1]) {
+        assert.deepEqual(
+          [...packed.slice(vertex * 16 + 12, vertex * 16 + 15)],
+          [...records.slice(vertex * 7, vertex * 7 + 3)],
+          id,
+        );
+        assert.equal(packed[vertex * 16 + 15], records[vertex * 7 + 6], id);
+      }
+    }
+    const posedPoints = new Float32Array(data),
+      posedSurface = new Float32Array(surface.vertices);
+    for (const now of [1000, 3400, 5800]) {
+      r.step(now);
+      assert.equal(
+        r.garden.surfaceOpacity,
+        1,
+        `${id}: solid petals remain during growth`,
+      );
+      assert.equal(
+        core(r).uniforms.uTargetGrowth,
+        Number(r.canvas.dataset.bloomProgress),
+        id,
+      );
+      assert.ok(
+        r.gl.draws.some((draw) => draw.mode === r.gl.TRIANGLES),
+        id,
+      );
+      for (let vertex = 0; vertex < 120000; vertex++)
+        posedPoints.set(
+          packedPose(
+            r.garden.gpuTargetData,
+            vertex * 16,
+            r.garden.bloomProgress,
+          ),
+          vertex * 11,
+        );
+      for (let vertex = 0; vertex < surface.vertices.length / 9; vertex++)
+        posedSurface.set(
+          packedPose(
+            r.garden.surfacePacked,
+            vertex * 16,
+            r.garden.bloomProgress,
+          ),
+          vertex * 9,
+        );
+      for (const aspect of [0.65, 1.6]) {
+        r.garden.aspect = aspect;
+        for (const yaw of [0.43, Math.PI / 2, Math.PI * 1.5])
+          for (const pitch of [-0.65, 0.65]) {
+            const focal = r.garden.fitProjection(yaw, pitch);
+            for (const [posed, stride] of [
+              [posedPoints, 11],
+              [posedSurface, 9],
+            ]) {
+              const bounds = projectedEnvelope(
+                posed,
+                yaw,
+                pitch,
+                focal,
+                aspect,
+                r.garden.time,
+                stride,
+                r.garden.frameCenter,
+              );
+              if (
+                Object.values(bounds).some((value) => Math.abs(value) >= 0.98)
+              ) {
+                let witness = { magnitude: 0 };
+                for (let vertex = 0; vertex < posed.length / stride; vertex++) {
+                  const single = projectedEnvelope(
+                    posed.subarray(vertex * stride, (vertex + 1) * stride),
+                    yaw,
+                    pitch,
+                    focal,
+                    aspect,
+                    r.garden.time,
+                    stride,
+                    r.garden.frameCenter,
+                  );
+                  const magnitude = Math.max(
+                    ...Object.values(single).map(Math.abs),
+                  );
+                  if (magnitude > witness.magnitude)
+                    witness = { magnitude, vertex };
+                }
+                const vertex = witness.vertex;
+                console.log(
+                  "GROWTH_WITNESS",
+                  JSON.stringify({
+                    id,
+                    stride,
+                    progress: r.garden.bloomProgress,
+                    time: r.garden.time,
+                    bounds,
+                    ...witness,
+                    raw: [
+                      ...(stride === 11 ? data : surface.vertices).slice(
+                        vertex * stride,
+                        (vertex + 1) * stride,
+                      ),
+                    ],
+                    growth: [
+                      ...(stride === 11
+                        ? growth.points
+                        : growth.vertices
+                      ).slice(vertex * 7, vertex * 7 + 7),
+                    ],
+                    posed: [
+                      ...posed.slice(vertex * stride, vertex * stride + 3),
+                    ],
+                    sampled:
+                      stride === 11
+                        ? r.garden.growthProjectionIndices.includes(vertex * 16)
+                        : r.garden.surfaceGrowthIndices.includes(vertex * 16),
+                  }),
+                );
+              }
+              assert.ok(
+                Object.values(bounds).every((value) => Math.abs(value) < 0.98),
+                `${id}: growth clipping stride${stride} progress${r.garden.bloomProgress} aspect${aspect} yaw${yaw} pitch${pitch}: ${JSON.stringify(bounds)}`,
+              );
+            }
+          }
+      }
+    }
+    assert.equal(r.garden.bloomProgress, 1, id);
+    for (let vertex = 0; vertex < 120000; vertex += 1031)
+      assert.deepEqual(
+        [...r.garden.gpuTargetData.slice(vertex * 16, vertex * 16 + 3)],
+        [...data.slice(vertex * 11, vertex * 11 + 3)],
+        `${id}: full-size open pose unchanged`,
+      );
+    r.garden.dispose();
+    assert.equal(r.gl.deletedBuffers.length, 7);
+  }
+  console.log(
+    `GROWTH eight full-size bouquets: ${(performance.now() - began).toFixed(1)}ms`,
+  );
 });
