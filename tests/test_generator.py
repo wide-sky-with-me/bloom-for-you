@@ -599,10 +599,12 @@ class MeshContractTests(unittest.TestCase):
 
 class CommandLineTests(unittest.TestCase):
     def _run(self, cwd: Path, *args: str) -> subprocess.CompletedProcess:
+        # Full eight-theme growth generation exceeds 90s on hosted CPUs.
+        # Bound a hung subprocess, not the machine-dependent generation speed.
         env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
         return subprocess.run([sys.executable, str(ROOT / "generator.py"), *args],
                               cwd=cwd, env=env, capture_output=True, text=True,
-                              encoding="utf-8", timeout=90, check=True)
+                              encoding="utf-8", timeout=180, check=True)
 
     def _check_output(self, output: Path) -> None:
         manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))

@@ -33,9 +33,11 @@ class RendererContractTests(unittest.TestCase):
                 "bouquets": bouquets,
             }), encoding="utf-8")
             env = dict(os.environ, BLOOM_TEST_ASSETS_URL=assets.as_uri() + "/")
+            # Exhaustive real-asset phase/orbit scans are CPU-heavy on hosted runners.
+            # This is a liveness budget; every numerical assertion remains required.
             result = subprocess.run(
                 [shutil.which("node"), "--test", "tests/renderer_contract.mjs"],
-                cwd=ROOT, env=env, capture_output=True, text=True, timeout=30,
+                cwd=ROOT, env=env, capture_output=True, text=True, timeout=120,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 

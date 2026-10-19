@@ -42,6 +42,12 @@
 
 阶段脚本等待实际 120,000 点绘制时 GPU `uMix=1` 后才拍目标花苞，避免误拍旧主题；末尾 dust pass 会重置该 uniform，故不能以其值判断换花结束。坏增长响应覆盖 header、闭合法线与网格顶点数三类不匹配，均验证整束降级而非部分错位。
 
+## CI 执行预算排障
+
+[首轮 CI](https://github.com/wide-sky-with-me/bloom-for-you/actions/runs/39239275597) 未发布：56 项中 53 项通过，三个 ERROR 均为 `subprocess.TimeoutExpired`，不是数值断言失败。同一 CI 的完整资产生成在 manifest 检查耗时约 102 秒，超过旧 CLI wrapper 的 90 秒；Node wrapper 另在 30 秒截断，该限额不包含此前约 108 秒的 Python fixture 生成。
+
+保留所有输出、确定性、metadata、画面和坐标断言，仅把有界子进程执行预算调整为 CLI 180 秒、Node 120 秒；这些 wrapper 限额不是产品性能基准。正式运行资源 32 个 SHA256 不变。受影响类本地复测通过：CLI 三项 158.956 秒，Renderer 一项 73.598 秒（包含重新生成八组 fixture 及完整 Node 契约）。完整 CI 随本次新提交重跑；旧截断日志不当作 Node 契约通过。
+
 ## 发布与线上
 
 本轮尚待推送和线上验收；历史发布结果不作为本轮通过证明。后续记录新提交、成功的 Pages Actions、正式站点 32 个核心资源与验收构建的 SHA256 对应，以及正式 URL 的初始花苞、重放、深链接、触碰、信件与页面异常结果。
