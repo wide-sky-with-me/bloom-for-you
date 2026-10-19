@@ -1,4 +1,4 @@
-import { ParticleGarden } from "./particles.js";
+import { ParticleGarden } from "./particles.js?v=2";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("bouquet");
@@ -30,6 +30,30 @@ const bouquets = {
     tag: "花园",
     color: "#efc4b5",
   },
+  peony: {
+    title: "把盛大留给你",
+    description: "最盛大的温柔，只为你层层盛开。",
+    tag: "牡丹",
+    color: "#efafc2",
+  },
+  lily: {
+    title: "白昼的情书",
+    description: "把清晨的光，折成一封写给你的信。",
+    tag: "百合",
+    color: "#f2ddcb",
+  },
+  sunflower: {
+    title: "只向着你",
+    description: "我的晴天，永远朝着你的方向。",
+    tag: "向日葵",
+    color: "#efc55b",
+  },
+  calla: {
+    title: "温柔的回声",
+    description: "一句喜欢，在岁月里轻轻回响。",
+    tag: "马蹄莲",
+    color: "#e6d8ef",
+  },
 };
 let garden = null;
 let activeId = "rose";
@@ -53,7 +77,9 @@ async function fetchResource(url, type = "json") {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    const resource = new URL(url, location.href);
+    resource.searchParams.set("v", "2");
+    const response = await fetch(resource, { signal: controller.signal });
     if (!response.ok) throw new Error(`Resource ${response.status}: ${url}`);
     return await response[type]();
   } finally {
@@ -120,6 +146,11 @@ async function loadBouquet(id) {
       for (const value of data)
         if (!Number.isFinite(value))
           throw new Error("Invalid particle coordinate");
+      for (let i = 0; i < data.length; i += manifest.stride) {
+        const normalLength = Math.hypot(data[i + 8], data[i + 9], data[i + 10]);
+        if (normalLength < 0.95 || normalLength > 1.05)
+          throw new Error("Invalid particle surface normal");
+      }
       return data;
     })
     .catch((error) => {
@@ -331,8 +362,12 @@ async function initialize() {
     updateMotionButton();
     manifest = await fetchResource("./assets/manifest.json");
     if (
-      manifest.version !== 1 ||
-      manifest.stride !== 8 ||
+      manifest.version !== 2 ||
+      manifest.stride !== 11 ||
+      !Array.isArray(manifest.bouquets) ||
+      !Object.keys(bouquets).every((id) =>
+        manifest.bouquets.some((entry) => entry.id === id),
+      ) ||
       !Number.isSafeInteger(manifest.count) ||
       manifest.count < 1 ||
       manifest.count > 200000
@@ -342,8 +377,12 @@ async function initialize() {
     // Low priority preloading is bounded; failed entries remain retryable.
     if (!fallbackMode && !navigator.connection?.saveData) {
       const preload = () => {
-        for (const id of Object.keys(bouquets))
-          if (id !== activeId) loadBouquet(id).catch(() => {});
+        const ids = Object.keys(bouquets);
+        const start = ids.indexOf(activeId);
+        for (let offset = 1; offset <= 2; offset++) {
+          const id = ids[(start + offset) % ids.length];
+          loadBouquet(id).catch(() => {});
+        }
       };
       if ("requestIdleCallback" in window)
         requestIdleCallback(preload, { timeout: 3000 });

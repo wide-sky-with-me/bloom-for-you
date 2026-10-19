@@ -13,12 +13,18 @@ def _chunk(kind: bytes, payload: bytes) -> bytes:
 
 
 def render_png(data: bytes, width: int = 128, height: int = 144) -> bytes:
-    if len(data) % 32:
-        raise ValueError('Particle records must contain eight Float32 values')
+    if len(data) % 44:
+        raise ValueError('Particle records must contain eleven Float32 values')
     pixels = [0.0] * (width * height * 4)
     scale = min(width / 5.3, height / 5.95)
-    records = sorted(struct.iter_unpack('<8f', data), key=lambda p: p[2])
-    for x, y, _z, r, g, b, size, _phase in records:
+    records = sorted(struct.iter_unpack('<11f', data), key=lambda p: p[2])
+    for x, y, _z, r, g, b, size, _phase, nx, ny, nz in records:
+        # Match the gallery's directional surface lighting, not a flat color cloud.
+        if nz < 0:
+            nx, ny, nz = -nx, -ny, -nz
+        diffuse = max(0, -.45 * nx + .65 * ny + .61 * nz)
+        light = .3 + .7 * diffuse
+        r, g, b = (min(1, value * light) for value in (r, g, b))
         cx, cy = width / 2 + x * scale, (y * -1 + 3.12) * scale
         radius = max(.6, size * .7)
         for py in range(max(0, int(cy - radius)), min(height, math.ceil(cy + radius))):

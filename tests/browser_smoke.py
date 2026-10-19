@@ -12,6 +12,7 @@ OUT.mkdir(exist_ok=True)
 parser = argparse.ArgumentParser()
 parser.add_argument('--url', default='http://127.0.0.1:8765')
 args = parser.parse_args()
+FLOWERS = ['rose', 'tulip', 'hydrangea', 'wildflower', 'peony', 'lily', 'sunflower', 'calla']
 errors: list[str] = []
 checks: list[str] = []
 
@@ -40,21 +41,24 @@ with sync_playwright() as p:
     page.on('request', lambda request: requests.append(request.url))
     ready(page)
     expect(page.locator('#bouquet')).to_have_attribute('data-rendered', 'true', timeout=15000)
+    check('The renderer exposes real surface normals', page.evaluate("(() => {const gl=document.querySelector('canvas').getContext('webgl');return gl.getAttribLocation(gl.getParameter(gl.CURRENT_PROGRAM),'aNormal')>=0;})()"))
     check('WebGL renders real particles, not the fallback', page.locator('body').get_attribute('data-mode') != 'illustration')
     page.wait_for_function("[...document.querySelectorAll('.thumbnail img')].every(image => image.complete && image.naturalWidth > 0)")
     check('All lightweight thumbnail images load')
-    check('Initial view skips the full SVG fallback assets', not any(url.endswith('/' + name + '.svg') for url in requests for name in ['rose','tulip','hydrangea','wildflower']))
+    check('Initial view skips the full SVG fallback assets', not any(url.endswith('/' + name + '.svg') for url in requests for name in FLOWERS))
     page.wait_for_timeout(4000)
     page.screenshot(path=str(OUT / 'desktop.png'), full_page=True)
     canvas = page.locator('#bouquet')
     frame_a = digest(canvas)
     page.wait_for_timeout(800)
     check('Flowers animate continuously without interaction', frame_a != digest(canvas))
-    for flower in ['tulip', 'hydrangea', 'wildflower', 'rose']:
+    check('All eight flower styles are available', page.locator('button[data-bouquet]').count() == len(FLOWERS))
+    for flower in FLOWERS:
         page.locator(f'button[data-bouquet="{flower}"]').click()
         expect(page.locator('body')).to_have_attribute('data-bouquet', flower)
         expect(page.locator(f'button[data-bouquet="{flower}"]')).to_have_attribute('aria-pressed', 'true')
-    check('All four bouquets load and select')
+        page.wait_for_function("document.querySelector('#gallery').getAttribute('aria-busy') === 'false'")
+    check('All eight bouquets load and select')
     page.evaluate("['rose','tulip','hydrangea','wildflower'].forEach(id => document.querySelector('button[data-bouquet='+id+']').click())")
     expect(page.locator('body')).to_have_attribute('data-bouquet', 'wildflower')
     check('Rapid selection keeps the final choice')
@@ -144,13 +148,15 @@ with sync_playwright() as p:
     expect(backup.locator('#fallback-art')).to_be_visible()
     backup.locator('button[data-bouquet="hydrangea"]').click()
     expect(backup.locator('#fallback-art')).to_have_attribute('src', './assets/hydrangea.svg')
-    check('Devices without WebGL still show all bouquets')
+    backup.locator('button[data-bouquet="calla"]').click()
+    expect(backup.locator('#fallback-art')).to_have_attribute('src', './assets/calla.svg')
+    check('Devices without WebGL still show new flower styles')
     fallback_context.close()
 
     slow_context = browser.new_context()
     slow_context.add_init_script("const names=new WeakMap();const get=WebGLRenderingContext.prototype.getUniformLocation;const set=WebGLRenderingContext.prototype.uniform1f;WebGLRenderingContext.prototype.getUniformLocation=function(...args){const location=get.apply(this,args);if(location)names.set(location,args[1]);return location;};WebGLRenderingContext.prototype.uniform1f=function(location,value){if(names.get(location)==='uAppear')window.__flowerAppearance=value;return set.call(this,location,value);};")
     held_manifest = []
-    slow_context.route('**/assets/manifest.json', lambda route: held_manifest.append(route))
+    slow_context.route('**/assets/manifest.json*', lambda route: held_manifest.append(route))
     slow = slow_context.new_page()
     slow.on('pageerror', lambda error: errors.append(str(error)))
     slow.goto(args.url.rstrip('/') + '/', wait_until='domcontentloaded')
@@ -170,7 +176,7 @@ with sync_playwright() as p:
     lost_page = lost_context.new_page()
     ready(lost_page)
     held_tulip = []
-    lost_context.route('**/assets/tulip.bin', lambda route: held_tulip.append(route))
+    lost_context.route('**/assets/tulip.bin*', lambda route: held_tulip.append(route))
     lost_page.locator('button[data-bouquet="tulip"]').click()
     lost_page.wait_for_timeout(100)
     assert held_tulip
@@ -182,11 +188,21 @@ with sync_playwright() as p:
     lost_context.close()
 
     damaged = browser.new_context()
-    damaged.route('**/assets/rose.bin', lambda route: route.fulfill(status=200, body=b'broken'))
+    damaged.route('**/assets/rose.bin*', lambda route: route.fulfill(status=200, body=b'broken'))
     bad_page = damaged.new_page()
     ready(bad_page)
     expect(bad_page.locator('#fallback-art')).to_be_visible()
     check('Corrupt initial particle data falls back gracefully')
+    damaged.close()
+
+    invalid_normals = browser.new_context()
+    normal_fixture = bytearray((ROOT / 'dist/assets/rose.bin').read_bytes())
+    normal_fixture[32:44] = bytes(12)
+    invalid_normals.route('**/assets/rose.bin*', lambda route: route.fulfill(status=200, body=bytes(normal_fixture)))
+    invalid_page = invalid_normals.new_page()
+    ready(invalid_page)
+    expect(invalid_page.locator('#fallback-art')).to_be_visible()
+    check('Zero surface normals are detected instead of rendering a blank flower')
     browser.close()
 
 check('No uncaught browser exceptions', not errors)

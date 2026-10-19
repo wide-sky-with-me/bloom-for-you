@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import generator
 
-IDS = ("rose", "tulip", "hydrangea", "wildflower")
+IDS = ("rose", "tulip", "hydrangea", "wildflower", "peony", "lily", "sunflower", "calla")
 SVG_NS = {"svg": "http://www.w3.org/2000/svg"}
 
 
@@ -34,25 +34,29 @@ class ParticleContractTests(unittest.TestCase):
 
     def test_exact_equal_lengths_and_little_endian_layout(self) -> None:
         self.assertEqual(generator.COUNT, 52_000)
-        self.assertEqual(generator.STRIDE, 8)
+        self.assertEqual(generator.STRIDE, 11)
+        self.assertEqual(generator.RECORD.format, "<11f")
+        self.assertEqual(generator.RECORD.size, 44)
         for key in IDS:
             with self.subTest(bouquet=key):
                 self.assertEqual(len(self.particles[key]), 52_000)
-                self.assertEqual(len(self.binaries[key]), 52_000 * 8 * 4)
-                decoded = struct.unpack_from("<8f", self.binaries[key])
+                self.assertEqual(len(self.binaries[key]), 52_000 * 11 * 4)
+                decoded = struct.unpack_from("<11f", self.binaries[key])
                 for actual, expected in zip(decoded, self.particles[key][0]):
                     self.assertAlmostEqual(actual, expected, places=5)
-        known = [(1.0, -2.0, 0.25, 1.0, 0.5, 0.0, 1.5, math.pi)]
+        known = [(1.0, -2.0, 0.25, 1.0, 0.5, 0.0, 1.5, math.pi, 0.0, 0.0, 1.0)]
         self.assertEqual(generator.encode_particles(known)[:4], b"\x00\x00\x80\x3f")
 
     def test_every_float_is_finite_and_within_contract(self) -> None:
-        bounds = ((-2.5, 2.5), (-2.7, 3.0), (-1.4, 1.4),
+        bounds = ((-2.6, 2.6), (-2.7, 3.0), (-1.6, 1.6),
                   (0.0, 1.0), (0.0, 1.0), (0.0, 1.0),
-                  (0.6 - 1e-6, 1.8 + 1e-6), (0.0, math.tau + 1e-6))
+                  (0.6 - 1e-6, 1.8 + 1e-6), (0.0, math.tau + 1e-6),
+                  (-1.000001, 1.000001), (-1.000001, 1.000001), (-1.000001, 1.000001))
         for key in IDS:
             with self.subTest(bouquet=key):
-                extrema = [[math.inf, -math.inf] for _ in range(8)]
-                for record in struct.iter_unpack("<8f", self.binaries[key]):
+                extrema = [[math.inf, -math.inf] for _ in range(11)]
+                for record in struct.iter_unpack("<11f", self.binaries[key]):
+                    self.assertAlmostEqual(sum(c * c for c in record[8:11]), 1.0, delta=2e-6)
                     for i, value in enumerate(record):
                         self.assertTrue(math.isfinite(value))
                         extrema[i][0] = min(extrema[i][0], value)
@@ -70,7 +74,7 @@ class ParticleContractTests(unittest.TestCase):
 
     def test_bouquets_are_distinct_and_do_not_touch_global_random(self) -> None:
         self.assertEqual(len({hashlib.sha256(data).digest()
-                              for data in self.binaries.values()}), 4)
+                              for data in self.binaries.values()}), 8)
         before = random.getstate()
         generator.generate_bouquet("rose", 113)
         self.assertEqual(random.getstate(), before)
@@ -113,6 +117,69 @@ class ParticleContractTests(unittest.TestCase):
         self.assertGreater(tips[1][1], 0.9)
         self.assertLess(tips[2][0], -0.9)
         self.assertLess(tips[3][1], -0.9)
+
+    def test_surface_normals_follow_true_derivatives_including_edges(self) -> None:
+        surface = generator.Surface(1.0, lambda u, v: (u, v, 0.35 * u * u + 0.2 * math.sin(math.pi * v)),
+                                    lambda u, v: (0.8, 0.6, 0.4))
+        for u, v in ((0.0, 0.0), (0.25, 0.37), (0.7, 0.8), (1.0, 1.0)):
+            actual = generator._surface_normal(surface, u, v)
+            expected = generator._unit((-0.7 * u, -0.2 * math.pi * math.cos(math.pi * v), 1.0))
+            self.assertGreater(sum(a * b for a, b in zip(actual, expected)), 0.999999)
+        for point in (lambda u, v: (2.0, 3.0, 4.0), lambda u, v: (u, 0.0, 0.0)):
+            collapsed = generator.Surface(1.0, point, lambda u, v: (1.0, 1.0, 1.0))
+            self.assertEqual(generator._surface_normal(collapsed, 0.0, 0.0), (0.0, 0.0, 1.0))
+            self.assertEqual(generator._surface_normal(collapsed, 1.0, 1.0), (0.0, 0.0, 1.0))
+
+    def test_normals_transform_with_the_real_surface_and_leaf_backs_are_opposed(self) -> None:
+        frame = generator._frame((0.0, 0.0, 0.0), (0.4, -0.3, 0.8), 2.0, 0.4)
+        surface = generator.Surface(1.0, lambda u, v: frame((u, v, 0.0)),
+                                    lambda u, v: (0.7, 0.5, 0.4))
+        normal = generator._surface_normal(surface, 0.3, 0.8)
+        expected = generator._unit((0.4, -0.3, 0.8))
+        self.assertGreater(sum(a * b for a, b in zip(normal, expected)), 0.999999)
+        model = generator.Geometry()
+        generator._leaf(model, (-0.2, 0.0, 0.1), (0.7, 1.2, -0.3), 0.3, roll=0.6)
+        front, back = model.sections["leaves"]
+        for u, v in ((0.17, 0.3), (0.5, 0.75), (0.85, 0.1)):
+            nf = generator._surface_normal(front, u, v)
+            nb = generator._surface_normal(back, u, 1.0 - v)
+            self.assertLess(sum(a * b for a, b in zip(nf, nb)), -0.999999)
+            distance = math.dist(front.point(u, v), back.point(u, 1.0 - v))
+            self.assertAlmostEqual(distance, 0.014, places=7)
+
+    def test_particle_pigments_are_not_prebaked_directional_lighting(self) -> None:
+        pigment = (0.83, 0.62, 0.48)
+        for point in (lambda u, v: (u, v, 0.0), lambda u, v: (0.0, u, v)):
+            surface = generator.Surface(1.0, point, lambda u, v: pigment)
+            self.assertEqual(generator._surface_color(surface, 0.5, 0.5), pigment)
+            self.assertNotEqual(generator._surface_color(surface, 0.5, 0.5, preview=True), pigment)
+
+    def test_new_flower_silhouettes_have_distinct_construction_and_real_depth(self) -> None:
+        surfaces = {}
+        expected_counts = {"peony": 72, "lily": 19, "sunflower": 176, "calla": 2}
+        for key in expected_counts:
+            model = generator.Geometry()
+            getattr(generator, "_" + key)(model, (0.0, 0.0, 0.0), 1.0, (0.96, 0.80, 0.72))
+            surfaces[key] = model.sections["flowers"]
+            self.assertEqual(len(surfaces[key]), expected_counts[key])
+        peony = surfaces["peony"][-1]
+        self.assertGreater(math.dist(peony.point(0.0, 0.5), peony.point(1.0, 0.5)), 0.8)
+        self.assertGreater(max(peony.point(u / 20, 0.5)[2] for u in range(21))
+                           - min(peony.point(u / 20, 0.5)[2] for u in range(21)), 0.5)
+        lily = surfaces["lily"][0]
+        self.assertGreater(lily.point(0.6, 0.5)[2] - lily.point(0.0, 0.5)[2], 0.6)
+        self.assertLess(lily.point(1.0, 0.5)[2], lily.point(0.6, 0.5)[2] - 0.3)
+        spathe = surfaces["calla"][0]
+        rim = [spathe.point(1.0, j / 24) for j in range(25)]
+        self.assertGreater(max(p[1] for p in rim) - min(p[1] for p in rim), 0.45)
+        self.assertGreater(max(p[2] for p in rim) - min(p[2] for p in rim), 1.1)
+        sunflower = surfaces["sunflower"]
+        self.assertTrue(all(s.kind == "sheet" for s in sunflower))
+        self.assertGreater(sunflower[48].point(0.0, 0.5)[2], sunflower[-1].point(0.0, 0.5)[2] + 0.15)
+        rose = generator.Geometry()
+        generator._rose(rose, (0.0, 0.0, 0.0), 1.0, (0.9, 0.6, 0.7))
+        outer = rose.sections["flowers"][-2]
+        self.assertGreater(outer.point(0.8, 0.5)[2] - outer.point(0.0, 0.5)[2], 0.4)
 
     def test_small_budgets_and_bad_inputs(self) -> None:
         for key in IDS:
@@ -174,9 +241,9 @@ class ParticleContractTests(unittest.TestCase):
             self.assertEqual(result, manifest)
             self.assertEqual(set(manifest), {"version", "count", "stride", "bouquets"})
             self.assertEqual((manifest["version"], manifest["count"], manifest["stride"]),
-                             (1, 52_000, 8))
+                             (2, 52_000, 11))
             self.assertEqual(tuple(item["id"] for item in manifest["bouquets"]), IDS)
-            self.assertEqual(len(list(output.iterdir())), 9)
+            self.assertEqual(len(list(output.iterdir())), 17)
             for item in manifest["bouquets"]:
                 self.assertEqual(set(item), {"id", "file", "title", "subtitle",
                                              "description", "color"})
@@ -205,7 +272,7 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(manifest["count"], 52_000)
         self.assertEqual(tuple(item["id"] for item in manifest["bouquets"]), IDS)
         for key in IDS:
-            self.assertEqual((output / f"{key}.bin").stat().st_size, 1_664_000)
+            self.assertEqual((output / f"{key}.bin").stat().st_size, 2_288_000)
             self.assertTrue((output / f"{key}.svg").is_file())
 
     def test_default_output_is_relative_to_current_directory(self) -> None:

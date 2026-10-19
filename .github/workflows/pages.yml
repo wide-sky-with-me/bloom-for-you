@@ -22,7 +22,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Test Python generator
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Test geometry and renderer contracts
         run: python -m unittest discover -s tests -v
       - name: Build deterministic particle bouquets
         run: python build.py
