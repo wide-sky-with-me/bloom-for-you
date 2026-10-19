@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
+import struct
 from pathlib import Path
+from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,7 +48,7 @@ with sync_playwright() as p:
     check('WebGL renders real particles, not the fallback', page.locator('body').get_attribute('data-mode') != 'illustration')
     page.wait_for_function("[...document.querySelectorAll('.thumbnail img')].every(image => image.complete && image.naturalWidth > 0)")
     check('All lightweight thumbnail images load')
-    check('Initial view skips the full SVG fallback assets', not any(url.endswith('/' + name + '.svg') for url in requests for name in FLOWERS))
+    check('Initial view skips the full SVG fallback assets', not any(urlparse(url).path.endswith('/' + name + '.svg') for url in requests for name in FLOWERS))
     page.wait_for_timeout(4000)
     page.screenshot(path=str(OUT / 'desktop.png'), full_page=True)
     canvas = page.locator('#bouquet')
@@ -147,9 +150,9 @@ with sync_playwright() as p:
     ready(backup)
     expect(backup.locator('#fallback-art')).to_be_visible()
     backup.locator('button[data-bouquet="hydrangea"]').click()
-    expect(backup.locator('#fallback-art')).to_have_attribute('src', './assets/hydrangea.svg')
+    expect(backup.locator('#fallback-art')).to_have_attribute('src', './assets/hydrangea.svg?v=3')
     backup.locator('button[data-bouquet="calla"]').click()
-    expect(backup.locator('#fallback-art')).to_have_attribute('src', './assets/calla.svg')
+    expect(backup.locator('#fallback-art')).to_have_attribute('src', './assets/calla.svg?v=3')
     check('Devices without WebGL still show new flower styles')
     fallback_context.close()
 
@@ -184,7 +187,7 @@ with sync_playwright() as p:
     held_tulip[0].continue_()
     expect(lost_page.locator('#fallback-art')).to_be_visible()
     lost_page.wait_for_timeout(300)
-    check('Context loss invalidates an in-flight selection', lost_page.locator('body').get_attribute('data-bouquet') == 'rose' and lost_page.locator('#fallback-art').get_attribute('src') == './assets/rose.svg')
+    check('Context loss invalidates an in-flight selection', lost_page.locator('body').get_attribute('data-bouquet') == 'rose' and lost_page.locator('#fallback-art').get_attribute('src') == './assets/rose.svg?v=3')
     lost_context.close()
 
     damaged = browser.new_context()
@@ -203,6 +206,45 @@ with sync_playwright() as p:
     ready(invalid_page)
     expect(invalid_page.locator('#fallback-art')).to_be_visible()
     check('Zero surface normals are detected instead of rendering a blank flower')
+    invalid_normals.close()
+
+    expanded_surface = browser.new_context(reduced_motion='reduce')
+    expanded_surface.add_init_script("window.__triangleDraws=0;const ext=WebGLRenderingContext.prototype.getExtension;const draw=WebGLRenderingContext.prototype.drawArrays;WebGLRenderingContext.prototype.getExtension=function(name){return name==='OES_element_index_uint'?null:ext.call(this,name)};WebGLRenderingContext.prototype.drawArrays=function(...args){if(args[0]===this.TRIANGLES)window.__triangleDraws++;return draw.apply(this,args)}")
+    expanded_page = expanded_surface.new_page()
+    ready(expanded_page)
+    expect(expanded_page.locator('#bouquet')).to_have_attribute('data-rendered', 'true')
+    check('Continuous petals render even without 32-bit index support', expanded_page.evaluate('window.__triangleDraws > 0') and expanded_page.locator('body').get_attribute('data-mode') != 'illustration')
+    expanded_surface.close()
+
+    corrupt_surface = browser.new_context()
+    corrupt_surface.route('**/assets/rose.mesh*', lambda route: route.fulfill(status=200, body=b'broken'))
+    surface_page = corrupt_surface.new_page()
+    ready(surface_page)
+    expect(surface_page.locator('#fallback-art')).to_be_visible()
+    check('Corrupt continuous petal data falls back without a partial bouquet')
+    corrupt_surface.close()
+
+    invalid_surface_indices = browser.new_context()
+    surface_fixture = bytearray((ROOT / 'dist/assets/rose.mesh').read_bytes())
+    vertex_count = struct.unpack_from('<I', surface_fixture, 4)[0]
+    struct.pack_into('<I', surface_fixture, 12 + vertex_count * 36, vertex_count)
+    invalid_surface_indices.route('**/assets/rose.mesh*', lambda route: route.fulfill(status=200, body=bytes(surface_fixture)))
+    surface_page = invalid_surface_indices.new_page()
+    ready(surface_page)
+    expect(surface_page.locator('#fallback-art')).to_be_visible()
+    check('Out-of-range petal indices are detected before GPU upload')
+    invalid_surface_indices.close()
+
+    for connection in ({'saveData': True, 'effectiveType': '4g'}, {'saveData': False, 'effectiveType': '3g'}):
+        limited = browser.new_context(reduced_motion='reduce')
+        limited.add_init_script(f"Object.defineProperty(navigator, 'connection', {{value: {json.dumps(connection)}}})")
+        limited_page = limited.new_page()
+        binary_requests = []
+        limited_page.on('request', lambda request: binary_requests.append(urlparse(request.url).path) if urlparse(request.url).path.endswith(('.bin', '.mesh')) else None)
+        ready(limited_page)
+        limited_page.wait_for_timeout(1100)
+        check(f'Connection {connection} skips speculative heavy downloads', len(binary_requests) == 2 and all('/rose.' in path for path in binary_requests))
+        limited.close()
     browser.close()
 
 check('No uncaught browser exceptions', not errors)

@@ -35,6 +35,35 @@ class ThumbnailTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             thumbnails.render_png(b'bad')
 
+    def test_continuous_surface_has_real_coverage_and_depth(self):
+        def surface(z, color):
+            vertices = [(-1, 0, z, *color, 0, 0, 1),
+                        (1, 0, z, *color, 0, 0, 1), (0, 2, z, *color, 0, 0, 1)]
+            return (struct.pack('<4sII', b'BFM1', 3, 3)
+                    + b''.join(struct.pack('<9f', *vertex) for vertex in vertices)
+                    + struct.pack('<III', 0, 1, 2))
+        mesh = surface(.5, (1, .5, .6))
+        rendered = thumbnails.render_png(b'', 64, 72, surface=mesh)
+        self.assertNotEqual(rendered, thumbnails.render_png(b'', 64, 72))
+        self.assertEqual(rendered, thumbnails.render_png(b'', 64, 72, surface=mesh))
+        behind = struct.pack('<11f', 0, 1, -1, 0, 0, 1, 1.2, 0, 0, 0, 1)
+        self.assertEqual(rendered, thumbnails.render_png(behind, 64, 72, surface=mesh))
+        for invalid in (b'bad', mesh[:-4], b'WRNG' + mesh[4:]):
+            with self.assertRaises(ValueError):
+                thumbnails.render_png(b'', surface=invalid)
+
+    def test_surface_depth_is_independent_of_triangle_order(self):
+        positions = ((-1, 0), (1, 0), (0, 2))
+        vertices = [(x, y, z, *color, 0, 0, 1)
+                    for z, color in ((.5, (1, .4, .5)), (-.5, (.3, .6, 1)))
+                    for x, y in positions]
+        body = struct.pack('<4sII', b'BFM1', 6, 6) + b''.join(
+            struct.pack('<9f', *vertex) for vertex in vertices)
+        near_then_far = body + struct.pack('<6I', 0, 1, 2, 3, 4, 5)
+        far_then_near = body + struct.pack('<6I', 3, 4, 5, 0, 1, 2)
+        self.assertEqual(thumbnails.render_png(b'', surface=near_then_far),
+                         thumbnails.render_png(b'', surface=far_then_near))
+
     def test_surface_normals_change_directional_lighting(self):
         facing = struct.pack('<11f', 0, 0, 0, 1, .8, .7, 1, 0, 0, 0, 1)
         side = struct.pack('<11f', 0, 0, 0, 1, .8, .7, 1, 0, 1, 0, 0)

@@ -24,8 +24,12 @@ class RendererContractTests(unittest.TestCase):
             for bouquet in generator.BOUQUETS:
                 particles = generator.generate_bouquet(bouquet["id"])
                 (assets / bouquet["file"]).write_bytes(generator.encode_particles(particles))
+                (assets / bouquet["surface"]).write_bytes(
+                    generator.encode_mesh(generator._build_geometry(bouquet["id"]))
+                )
             (assets / "manifest.json").write_text(json.dumps({
-                "version": 2, "stride": generator.STRIDE, "bouquets": generator.BOUQUETS,
+                "version": 2, "count": generator.COUNT, "stride": generator.STRIDE,
+                "bouquets": generator.BOUQUETS,
             }), encoding="utf-8")
             env = dict(os.environ, BLOOM_TEST_ASSETS_URL=assets.as_uri() + "/")
             result = subprocess.run(

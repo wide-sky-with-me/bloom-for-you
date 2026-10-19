@@ -4,6 +4,7 @@ __pycache__/
 dist/
 artifacts/
 site/assets/*.bin
+site/assets/*.mesh
 site/assets/manifest.json
 site/assets/rose.svg
 site/assets/tulip.svg

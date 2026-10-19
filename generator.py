@@ -9,7 +9,7 @@ x, y, z, r, g, b, size, phase, nx, ny, nz. Colors are unlit surface pigments.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import html
 import json
 import math
@@ -18,10 +18,12 @@ import random
 import struct
 from typing import Callable
 
-COUNT = 52_000
+COUNT = 120_000
 STRIDE = 11
 SEED = 20_260_214
 RECORD = struct.Struct("<11f")
+MESH_HEADER = struct.Struct("<4sII")
+MESH_VERTEX = struct.Struct("<9f")
 TAU = math.tau
 Vec3 = tuple[float, float, float]
 Particle = tuple[float, float, float, float, float, float, float, float,
@@ -33,65 +35,73 @@ BOUQUETS = (
     {
         "id": "rose",
         "file": "rose.bin",
+        "surface": "rose.mesh",
         "title": "把偏爱，都给你",
         "subtitle": "粉色多头玫瑰",
-        "description": "八朵层层舒展的粉玫瑰，藏着细小白花与一枚柔软的蝴蝶结。",
+        "description": "粉玫瑰与洋牡丹、大丽花、洋桔梗环绕相拥，雾蓝枝花、尤加利和蕨叶穿插成圆润花冠。",
         "color": "#e6a0b8",
     },
     {
         "id": "tulip",
         "file": "tulip.bin",
+        "surface": "tulip.mesh",
         "title": "和你慢慢盛开",
         "subtitle": "奶油粉郁金香",
-        "description": "奶油白与浅粉的郁金香相拥成束，杯口微开，长叶轻轻绕过花茎。",
+        "description": "奶油粉郁金香与洋牡丹、洋桔梗和浅色玫瑰前后交错，细枝小花与尤加利向四周舒展。",
         "color": "#efc4b9",
     },
     {
         "id": "hydrangea",
         "file": "hydrangea.bin",
+        "surface": "hydrangea.mesh",
         "title": "温柔，有了形状",
         "subtitle": "淡蓝紫绣球",
-        "description": "数百朵四瓣小花簇成蓝紫色的绣球，连同叶脉与缎带一起收藏。",
+        "description": "雾蓝绣球穿插浅粉玫瑰、奶油洋牡丹和淡紫洋桔梗，蓬松小花与蕨叶织成环绕花冠。",
         "color": "#a9b9e6",
     },
     {
         "id": "wildflower",
         "file": "wildflower.bin",
+        "surface": "wildflower.mesh",
         "title": "你在，就是花园",
         "subtitle": "香槟粉混合花园",
-        "description": "香槟玫瑰、粉色波斯菊与小郁金香，像把两个人的春天摘成一束。",
+        "description": "桃粉玫瑰、奶油与淡黄洋牡丹、珊瑚大丽花和洋桔梗密密相拥，少量雾蓝枝花与尤加利自然外伸。",
         "color": "#e8bea3",
     },
     {
         "id": "peony",
         "file": "peony.bin",
+        "surface": "peony.mesh",
         "title": "把盛大留给你",
         "subtitle": "绯粉重瓣牡丹",
-        "description": "宽圆花瓣层叠成深杯，褶皱的粉色花缘向外舒展，浓绿叶背托着盛大的心意。",
+        "description": "重瓣牡丹与玫瑰、洋牡丹、大丽花和洋桔梗高低错落，叶材与细枝在整圈花冠间舒展。",
         "color": "#efafc2",
     },
     {
         "id": "lily",
         "file": "lily.bin",
+        "surface": "lily.mesh",
         "title": "白昼的情书",
         "subtitle": "奶油白星形百合",
-        "description": "六枚修长的花瓣从深喉向外反卷，金色花药悬在奶油白的星形花口。",
+        "description": "反卷百合与奶油玫瑰、洋桔梗、洋牡丹相映，金色花药与细小枝花从圆润花冠中探出。",
         "color": "#f2ddcb",
     },
     {
         "id": "sunflower",
         "file": "sunflower.bin",
+        "surface": "sunflower.mesh",
         "title": "只向着你",
         "subtitle": "金色向日葵",
-        "description": "金黄尖瓣交错前后，棕金小籽沿螺旋隆起，宽大的心形绿叶绕着花茎。",
+        "description": "金黄向日葵交错珊瑚大丽花、浅黄洋牡丹和波斯菊，棕金小籽与尤加利衬出丰盛夏日。",
         "color": "#efc55b",
     },
     {
         "id": "calla",
         "file": "calla.bin",
+        "surface": "calla.mesh",
         "title": "温柔的回声",
         "subtitle": "月白淡紫马蹄莲",
-        "description": "单枚佛焰苞卷合成不对称的长杯，月白与淡紫花缘围住细长金色花序。",
+        "description": "月白淡紫马蹄莲与浅色玫瑰、洋桔梗、洋牡丹交错围合，纤细枝花与蕨叶轻轻探出花冠。",
         "color": "#e6d8ef",
     },
 )
@@ -151,10 +161,21 @@ class Surface:
     contour: bool = False
     kind: str = "sheet"
     resolution: int = 12
+    mesh_steps: tuple[int, int] | None = None
+
+
+@dataclass(frozen=True)
+class FlowerHead:
+    species: str
+    center: Vec3
+    axis: Vec3
+    radius: float
+    layer: str
 
 
 class Geometry:
     def __init__(self) -> None:
+        self.heads: list[FlowerHead] = []
         self.sections: dict[str, list[Surface]] = {
             "flowers": [], "leaves": [], "stems": [], "ribbon": [],
         }
@@ -162,12 +183,14 @@ class Geometry:
     def add(self, section: str, weight: float, point: PointFn,
             pigment: PigmentFn | Vec3, size: float = 1.0, shade: bool = True,
             edge_bias: float = 1.0, contour: bool = False,
-            kind: str = "sheet", resolution: int = 12) -> None:
+            kind: str = "sheet", resolution: int = 12,
+            mesh_steps: tuple[int, int] | None = None) -> None:
         if not callable(pigment):
             color = pigment
             pigment = lambda u, v, color=color: color
         self.sections[section].append(
-            Surface(weight, point, pigment, size, shade, edge_bias, contour, kind, resolution))
+            Surface(weight, point, pigment, size, shade, edge_bias, contour, kind,
+                    resolution, mesh_steps))
 
 
 def _allocate(count: int, weights: list[float]) -> list[int]:
@@ -193,8 +216,8 @@ def _petal_color(base: Vec3, tip: Vec3, root: Vec3 | None = None) -> PigmentFn:
 
 
 def _rose(model: Geometry, center: Vec3, radius: float, color: Vec3,
-          roll: float = 0.0) -> None:
-    transform = _frame(center, (center[0] * 0.42, 0.18, 1.0), radius, roll)
+          roll: float = 0.0, normal: Vec3 | None = None) -> None:
+    transform = _frame(center, normal or (center[0] * 0.42, 0.18, 1.0), radius, roll)
     pale = _mix(color, (1.0, 0.93, 0.89), 0.55)
     # Each ring has separate overlapping, cupped petals; the rim curls forward.
     for layer, petals in enumerate((5, 7, 9, 11, 13)):
@@ -235,12 +258,13 @@ def _rose(model: Geometry, center: Vec3, radius: float, color: Vec3,
         return transform((r * math.cos(angle), r * math.sin(angle), z))
 
     model.add("flowers", radius * radius * 0.17, spiral,
-              _petal_color(_mul(color, 0.88), pale), 0.84, resolution=72)
+              _petal_color(_mul(color, 0.88), pale), 0.84, resolution=72, mesh_steps=(24, 2))
 
 
 def _tulip(model: Geometry, center: Vec3, radius: float, color: Vec3,
-           roll: float = 0.0) -> None:
-    transform = _frame(center, (center[0] * 0.30, -0.20, 1.0), radius, roll)
+           roll: float = 0.0, normal: Vec3 | None = None) -> None:
+    frame = _frame(center, normal or (center[0] * 0.30, -0.20, 1.0), radius, roll)
+    transform = (lambda p: frame((p[0], -p[2], p[1]))) if normal else frame
     for j in range(6):
         theta = j * TAU / 6.0
         inner = j % 2 == 0
@@ -303,7 +327,8 @@ def _floret(model: Geometry, center: Vec3, normal: Vec3, radius: float,
         return transform((r * math.cos(TAU * v), r * math.sin(TAU * v),
                           0.10 + 0.06 * (1.0 - u)))
 
-    model.add("flowers", radius * radius * 0.06, eye, (0.83, 0.87, 0.69), 0.67)
+    model.add("flowers", radius * radius * 0.06, eye, (0.83, 0.87, 0.69), 0.67,
+              mesh_steps=(1, 4))
 
 
 def _hydrangea(model: Geometry, center: Vec3, radius: float, index: int) -> None:
@@ -324,8 +349,8 @@ def _hydrangea(model: Geometry, center: Vec3, radius: float, index: int) -> None
 
 
 def _cosmos(model: Geometry, center: Vec3, radius: float, color: Vec3,
-            roll: float = 0.0) -> None:
-    transform = _frame(center, (center[0] * 0.34, 0.22, 1.0), radius, roll)
+            roll: float = 0.0, normal: Vec3 | None = None) -> None:
+    transform = _frame(center, normal or (center[0] * 0.34, 0.22, 1.0), radius, roll)
     for j in range(9):
         angle = TAU * j / 9.0
 
@@ -350,12 +375,13 @@ def _cosmos(model: Geometry, center: Vec3, radius: float, color: Vec3,
                           0.15 * math.sqrt(1 - u) + corrugation))
 
     model.add("flowers", radius * radius * 0.20, center_point,
-              lambda u, v: _mix((0.60, 0.35, 0.10), (0.99, 0.78, 0.35), u), 0.77)
+              lambda u, v: _mix((0.60, 0.35, 0.10), (0.99, 0.78, 0.35), u), 0.77,
+              mesh_steps=(2, 8))
 
 
 def _peony(model: Geometry, center: Vec3, radius: float, color: Vec3,
-           roll: float = 0.0) -> None:
-    transform = _frame(center, (center[0] * 0.40, 0.24, 1.0), radius, roll)
+           roll: float = 0.0, normal: Vec3 | None = None) -> None:
+    transform = _frame(center, normal or (center[0] * 0.40, 0.24, 1.0), radius, roll)
     pale = _mix(color, (1.0, 0.91, 0.91), 0.52)
     for layer, petals in enumerate((7, 9, 11, 13, 15, 17)):
         for j in range(petals):
@@ -381,8 +407,8 @@ def _peony(model: Geometry, center: Vec3, radius: float, color: Vec3,
 
 
 def _lily(model: Geometry, center: Vec3, radius: float, color: Vec3,
-          roll: float = 0.0) -> None:
-    transform = _frame(center, (center[0] * 0.36, 0.27, 1.0), radius, roll)
+          roll: float = 0.0, normal: Vec3 | None = None) -> None:
+    transform = _frame(center, normal or (center[0] * 0.36, 0.27, 1.0), radius, roll)
     for j in range(6):
         theta = j * TAU / 6.0
 
@@ -419,8 +445,8 @@ def _lily(model: Geometry, center: Vec3, radius: float, color: Vec3,
 
 
 def _sunflower(model: Geometry, center: Vec3, radius: float, color: Vec3,
-               roll: float = 0.0) -> None:
-    transform = _frame(center, (center[0] * 0.42, 0.18, 1.0), radius, roll)
+               roll: float = 0.0, normal: Vec3 | None = None) -> None:
+    transform = _frame(center, normal or (center[0] * 0.42, 0.18, 1.0), radius, roll)
     for layer, petals in enumerate((21, 27)):
         for j in range(petals):
             theta = j * TAU / petals + layer * 0.13
@@ -455,12 +481,13 @@ def _sunflower(model: Geometry, center: Vec3, radius: float, color: Vec3,
 
         model.add("flowers", radius * radius * 0.005, seed,
                   _mix((0.23, 0.13, 0.075), (0.62, 0.39, 0.13), t),
-                  0.83, resolution=6)
+                  0.83, resolution=6, mesh_steps=(1, 4))
 
 
 def _calla(model: Geometry, center: Vec3, radius: float, color: Vec3,
-           roll: float = 0.0) -> None:
-    transform = _frame(center, (center[0] * 0.31, -0.26, 1.0), radius, roll)
+           roll: float = 0.0, normal: Vec3 | None = None) -> None:
+    frame = _frame(center, normal or (center[0] * 0.31, -0.26, 1.0), radius, roll)
+    transform = (lambda p: frame((p[0], -p[2], p[1]))) if normal else frame
 
     def spathe(u: float, v: float) -> Vec3:
         theta = (v - 0.5) * TAU * 0.94 + 0.48 * u
@@ -494,13 +521,19 @@ def _tube(model: Geometry, section: str, curve: Callable[[float], Vec3],
         p = curve(u)
         tangent = _unit(tuple(b - a for a, b in zip(
             curve(max(0.0, u - 0.001)), curve(min(1.0, u + 0.001)))))
-        x = _unit(_cross(tangent, (0.0, 0.0, 1.0)))
+        reference = (0.0, 0.0, 1.0) if abs(tangent[2]) < 0.95 else (1.0, 0.0, 0.0)
+        x = _unit(_cross(tangent, reference))
         y = _cross(tangent, x)
         angle = TAU * v
         return _add(p, _add(_mul(x, radius * math.cos(angle)),
                             _mul(y, radius * math.sin(angle))))
 
-    model.add(section, weight, point, color, size, kind="tube")
+    # Straight hairline branches need no intermediate axial rings.
+    a, b = curve(0.0), curve(1.0)
+    straight = radius <= 0.012 and all(math.dist(curve(t), _mix(a, b, t)) < 1e-9
+                                      for t in (0.25, 0.5, 0.75))
+    model.add(section, weight, point, color, size, kind="tube",
+              mesh_steps=(1, 4) if straight else None)
 
 
 def _leaf(model: Geometry, start: Vec3, end: Vec3, width: float,
@@ -527,33 +560,37 @@ def _leaf(model: Geometry, start: Vec3, end: Vec3, width: float,
         return _mix(color, (0.60, 0.68, 0.45), 0.32 * vein + 0.10 * branches)
 
     length = math.sqrt(sum(a * a for a in axis))
-    model.add("leaves", width * length, point, pigment, 0.88)
+    model.add("leaves", width * length, point, pigment, 0.88,
+              mesh_steps=(2 if width <= 0.05 else 3, 2))
 
     def backside(u: float, v: float) -> Vec3:
         return _add(point(u, 1.0 - v), _mul(normal, -0.014))
 
     model.add("leaves", width * length * 0.55, backside,
-              lambda u, v: _mix(pigment(u, 1.0 - v), (0.47, 0.57, 0.42), 0.30), 0.86)
+              lambda u, v: _mix(pigment(u, 1.0 - v), (0.47, 0.57, 0.42), 0.30), 0.86,
+              mesh_steps=(2, 2))
 
 
-def _stem(model: Geometry, head: Vec3, index: int, long_leaves: bool = False) -> None:
+def _stem(model: Geometry, head: Vec3, index: int, long_leaves: bool = False,
+          axis: Vec3 = (0.0, 1.0, 0.0)) -> None:
     phase = index * 2.39996
-    base = (0.27 * math.sin(phase), -2.55 + 0.12 * math.cos(phase),
-            0.12 * math.cos(phase))
-    curve = _bezier(base, (0.02 * math.sin(phase), -1.20, 0.02),
-                    (head[0] * 0.62, head[1] * 0.25 - 0.06, head[2] - 0.18),
-                    (head[0], head[1] - 0.16, head[2] - 0.22))
-    _tube(model, "stems", curve, 0.016 if long_leaves else 0.018,
-          (0.27, 0.40, 0.23), 1.0)
-    for k, t in enumerate((0.54, 0.75)):
+    base = (0.24 * math.sin(phase), -1.58 + 0.06 * math.cos(phase),
+            0.23 * math.cos(phase))
+    end = _add(head, _mul(axis, -0.23))
+    curve = _bezier(base, (base[0] * 0.8, -0.80, base[2] * 0.8),
+                    (end[0] * 0.65, end[1] - 0.35, end[2] * 0.65), end)
+    _tube(model, "stems", curve, 0.013 if long_leaves else 0.016,
+          (0.28, 0.41, 0.25), 0.30)
+    if index % 3:
+        return
+    for k, t in enumerate((0.45, 0.60)):
         start = curve(t)
-        sign = (1 if head[0] >= 0 else -1) * (-1 if k == 0 and index % 3 == 0 else 1)
-        reach = 0.52 + 0.14 * math.sin(phase + k)
-        end = (start[0] + sign * reach,
-               start[1] + (1.05 if long_leaves else 0.43 + 0.14 * k),
-               start[2] + 0.12 + 0.13 * math.sin(phase))
-        _leaf(model, start, end, 0.13 if long_leaves else 0.20 + 0.035 * k,
-              (0.25, 0.43, 0.32), roll=0.48 * math.sin(phase))
+        angle = phase + k * 1.1
+        reach = 0.43 if long_leaves else 0.30
+        end = _add(start, (reach * math.cos(angle), 0.42 + 0.13 * k,
+                           reach * math.sin(angle)))
+        _leaf(model, start, end, 0.10 if long_leaves else 0.15,
+              (0.27, 0.44, 0.33), roll=0.58 * math.sin(phase))
 
 
 def _filler_sprig(model: Geometry, side: int, color: Vec3, shift: float = 0.0) -> None:
@@ -590,15 +627,15 @@ def _ribbon(model: Geometry, color: Vec3) -> None:
     for side in (-1, 1):
         def loop(t: float, side=side) -> Vec3:
             return (side * (0.07 + 0.73 * math.sin(math.pi * t)),
-                    -1.40 + 0.27 * math.sin(TAU * t) + 0.10 * math.sin(math.pi * t),
+                    -1.00 + 0.23 * math.sin(TAU * t) + 0.08 * math.sin(math.pi * t),
                     0.42 + 0.18 * math.sin(math.pi * t) + 0.07 * math.cos(TAU * t))
         model.add("ribbon", 1.0, strip(loop, 0.105),
                   _petal_color(color, _mix(color, (1.0, 0.94, 0.88), 0.55)),
                   0.88, resolution=32)
-        tail = _bezier((side * 0.05, -1.48, 0.52),
-                       (side * 0.12, -1.94, 0.61),
-                       (side * 0.64, -2.02, 0.32),
-                       (side * 0.44, -2.48, 0.51))
+        tail = _bezier((side * 0.05, -1.08, 0.52),
+                       (side * 0.12, -1.48, 0.61),
+                       (side * 0.64, -1.56, 0.32),
+                       (side * 0.44, -1.78, 0.51))
         model.add("ribbon", 0.8, strip(tail, 0.10, True),
                   _petal_color(color, _mix(color, (1.0, 0.94, 0.88), 0.35)),
                   0.91, resolution=32)
@@ -606,120 +643,342 @@ def _ribbon(model: Geometry, color: Vec3) -> None:
     def knot(u: float, v: float) -> Vec3:
         theta, phi = TAU * u, math.pi * v
         return (0.14 * math.sin(phi) * math.cos(theta),
-                -1.43 + 0.115 * math.cos(phi),
+                -1.03 + 0.115 * math.cos(phi),
                 0.58 + 0.09 * math.sin(phi) * math.sin(theta))
 
     model.add("ribbon", 0.38, knot, _mix(color, (1.0, 0.90, 0.85), 0.22),
               0.90, kind="sphere")
 
 
+def _ranunculus(model: Geometry, center: Vec3, radius: float, color: Vec3,
+                roll: float = 0.0, normal: Vec3 = (0.0, 0.0, 1.0)) -> None:
+    transform = _frame(center, normal, radius, roll)
+    for layer in range(7):
+        petals = 8 + layer * 2
+        for j in range(petals):
+            theta = j * TAU / petals + layer * 0.71
+
+            def point(u: float, v: float, layer=layer, theta=theta, petals=petals) -> Vec3:
+                q = 2 * v - 1
+                r = 0.025 + layer * 0.115 + (0.14 + layer * 0.018) * math.sin(u * math.pi / 2)
+                r *= 1 - 0.08 * q * q
+                angle = theta + q * math.pi / petals * (0.7 + 0.75 * u)
+                z = (0.43 - layer * 0.071 - 0.29 * (1 - u) ** 2
+                     + 0.14 * u ** 5 + 0.035 * q * q * math.sin(math.pi * u))
+                return transform((r * math.cos(angle), r * math.sin(angle), z))
+
+            model.add("flowers", radius * radius * (0.30 + layer * 0.13) / petals,
+                      point, _petal_color(color, _mix(color, (1.0, 0.99, 0.88), 0.32)),
+                      0.95, edge_bias=1.35, contour=True, resolution=10)
+
+
+def _dahlia(model: Geometry, center: Vec3, radius: float, color: Vec3,
+            roll: float = 0.0, normal: Vec3 = (0.0, 0.0, 1.0)) -> None:
+    transform = _frame(center, normal, radius, roll)
+    for layer, petals in enumerate((8, 11, 14, 17, 20)):
+        for j in range(petals):
+            theta = j * TAU / petals + layer * 0.48
+
+            def point(u: float, v: float, layer=layer, theta=theta) -> Vec3:
+                q = 2 * v - 1
+                r = 0.025 + layer * 0.11 + (0.22 + layer * 0.09) * u
+                width = q * (0.075 + layer * 0.021) * math.sin(math.pi * u) ** 0.75
+                z = (0.43 - layer * 0.12 + 0.30 * math.sin(math.pi * u)
+                     - 0.15 * u ** 6 + 0.19 * q * q * math.sin(math.pi * u))
+                return transform((r * math.cos(theta) - width * math.sin(theta),
+                                  r * math.sin(theta) + width * math.cos(theta), z))
+
+            model.add("flowers", radius * radius * (0.24 + layer * 0.15) / petals,
+                      point, _petal_color(_mul(color, 0.96), _mix(color, (1.0, 0.85, 0.75), 0.23)),
+                      0.92, contour=True, resolution=10)
+
+
+def _lisianthus(model: Geometry, center: Vec3, radius: float, color: Vec3,
+                roll: float = 0.0, normal: Vec3 = (0.0, 0.0, 1.0)) -> None:
+    transform = _frame(center, normal, radius, roll)
+    for layer, petals in enumerate((5, 7)):
+        for j in range(petals):
+            theta = j * TAU / petals + layer * 0.50
+
+            def point(u: float, v: float, theta=theta, layer=layer) -> Vec3:
+                q = 2 * v - 1
+                r = 0.035 + (0.73 + layer * 0.14) * u
+                width = q * (0.40 + layer * 0.09) * math.sin(math.pi * u) ** 0.55
+                z = (-0.40 + 0.70 * u ** 0.65 - layer * 0.11
+                     + 0.10 * q * q * math.sin(math.pi * u)
+                     + 0.060 * math.sin(q * 5 * math.pi + theta) * u ** 5)
+                return transform((r * math.cos(theta) - width * math.sin(theta),
+                                  r * math.sin(theta) + width * math.cos(theta), z))
+
+            model.add("flowers", radius * radius / petals, point,
+                      _petal_color(color, _mix(color, (1.0, 0.97, 0.90), 0.45),
+                                   (0.77, 0.79, 0.45)), 1.02, contour=True, resolution=14)
+    _floret(model, _add(center, _mul(_unit(normal), -radius * 0.17)), normal,
+            radius * 0.15, (0.89, 0.76, 0.35), roll)
+
+
+_THEME_MIX = {
+    "rose": (("rose", 13), ("ranunculus", 8), ("lisianthus", 6), ("dahlia", 5), ("cosmos", 4)),
+    "tulip": (("tulip", 12), ("ranunculus", 8), ("lisianthus", 8), ("cosmos", 4), ("rose", 4)),
+    "hydrangea": (("hydrangea", 8), ("rose", 8), ("ranunculus", 8), ("lisianthus", 8), ("cosmos", 4)),
+    "wildflower": (("rose", 8), ("ranunculus", 8), ("dahlia", 6), ("cosmos", 7), ("lisianthus", 7)),
+    "peony": (("peony", 10), ("rose", 8), ("ranunculus", 8), ("dahlia", 6), ("lisianthus", 4)),
+    "lily": (("lily", 10), ("rose", 8), ("lisianthus", 8), ("ranunculus", 6), ("cosmos", 4)),
+    "sunflower": (("sunflower", 10), ("dahlia", 8), ("cosmos", 8), ("ranunculus", 6), ("lisianthus", 4)),
+    "calla": (("calla", 10), ("rose", 8), ("lisianthus", 8), ("ranunculus", 6), ("cosmos", 4)),
+}
+
+
+def _head_color(theme: str, species: str, index: int) -> Vec3:
+    cream, peach = (1.0, 0.94, 0.79), (0.99, 0.71, 0.55)
+    pink, butter = (0.95, 0.56, 0.68), (0.99, 0.87, 0.43)
+    colors = {
+        "rose": (pink, peach, (0.99, 0.77, 0.76)),
+        "tulip": (cream, peach, (0.98, 0.74, 0.77)),
+        "ranunculus": (cream, butter, (0.99, 0.89, 0.69)),
+        "lisianthus": ((0.94, 0.80, 0.84), cream, (0.87, 0.75, 0.88)),
+        "dahlia": ((0.91, 0.43, 0.57), (0.98, 0.66, 0.56), (0.96, 0.69, 0.75)),
+        "cosmos": (cream, (0.66, 0.79, 0.88), (0.98, 0.86, 0.67)),
+        "peony": (pink, (0.99, 0.73, 0.78), peach),
+        "lily": (cream, (1.0, 0.90, 0.85), (0.96, 0.82, 0.84)),
+        "sunflower": ((0.99, 0.73, 0.18), (1.0, 0.83, 0.28), (0.97, 0.66, 0.13)),
+        "calla": (cream, (0.92, 0.84, 0.96), (0.98, 0.95, 0.88)),
+        "hydrangea": ((0.65, 0.76, 0.90),),
+    }
+    palette = colors[species]
+    color = palette[index % len(palette)]
+    if theme == "rose" and species == "rose":
+        color = _mix(pink, (0.99, 0.78, 0.80), (index % 4) / 5)
+    elif theme == "wildflower" and species == "rose":
+        color = _mix(peach, cream, (index % 4) / 5)
+    elif theme == "sunflower" and species in ("dahlia", "cosmos", "ranunculus"):
+        color = _mix(color, butter, 0.42)
+    elif theme == "hydrangea" and species in ("rose", "lisianthus"):
+        color = _mix(color, (0.77, 0.79, 0.95), 0.36)
+    return color
+
+
+def _arrange_heads(bouquet_id: str) -> list[FlowerHead]:
+    """A filled, staggered floral crown, not a shell with an empty rear hemisphere."""
+    if bouquet_id not in _THEME_MIX:
+        raise ValueError(f"Unknown bouquet id: {bouquet_id}")
+    theme_index = tuple(_THEME_MIX).index(bouquet_id)
+    rng = random.Random(SEED + theme_index * 431)
+    species = [kind for kind, count in _THEME_MIX[bouquet_id] for _ in range(count)]
+    rng.shuffle(species)
+    primary = "rose" if bouquet_id == "wildflower" else bouquet_id
+    anchor_species = (("rose", "ranunculus", "dahlia") * 2 if bouquet_id == "wildflower"
+                      else (primary,) * 6)
+    for kind in anchor_species:
+        species.remove(kind)
+    anchors = {0, 2, 4, 6, 8, 10}
+    ordered_species = [anchor_species[i // 2] if i in anchors else species.pop()
+                       for i in range(36)]
+    heads = []
+    layers = (("outer", 12), ("middle", 12), ("top", 7), ("inner", 5))
+    for layer, count in layers:
+        phase = rng.uniform(0, TAU)
+        for j in range(count):
+            angle = phase + j * TAU / count + rng.uniform(-0.12, 0.12)
+            if layer == "outer":
+                radial, height, tilt = rng.uniform(1.12, 1.36), rng.uniform(0.44, 0.83), rng.uniform(0.12, 0.30)
+            elif layer == "middle":
+                radial, height, tilt = rng.uniform(0.95, 1.18), rng.uniform(1.15, 1.55), rng.uniform(0.35, 0.65)
+            elif layer == "top":
+                top_min = 0.60 if bouquet_id in ("rose", "calla") else 0.22
+                radial, height, tilt = rng.uniform(top_min, 0.75), rng.uniform(1.90, 2.20), rng.uniform(0.70, 1.15)
+            else:
+                radial, height, tilt = rng.uniform(0.16, 0.60), 0.85 + j * 0.18, rng.uniform(0.45, 1.10)
+            center = (radial * math.cos(angle), height, radial * math.sin(angle))
+            axis = _unit((math.cos(angle + rng.uniform(-0.16, 0.16)), tilt,
+                          math.sin(angle + rng.uniform(-0.16, 0.16))))
+            if bouquet_id in ("rose", "wildflower") and layer == "middle":
+                c, s = math.cos(math.pi / 12), math.sin(math.pi / 12)
+                center = (center[0] * c - center[2] * s, center[1], center[0] * s + center[2] * c)
+                axis = (axis[0] * c - axis[2] * s, axis[1], axis[0] * s + axis[2] * c)
+            kind = ordered_species[len(heads)]
+            if len(heads) in anchors:
+                radius = rng.uniform(0.65, 0.72)
+            elif kind == "cosmos":
+                radius = rng.uniform(0.25, 0.34)
+            elif bouquet_id == "rose" and layer in ("middle", "top"):
+                radius = rng.uniform(0.50, 0.58)
+            elif bouquet_id == "wildflower" and layer in ("middle", "top"):
+                radius = rng.uniform(0.46, 0.52)
+            else:
+                radius = rng.uniform(0.40, 0.52)
+            if bouquet_id == "calla" and layer in ("middle", "top") and kind not in ("calla", "cosmos"):
+                radius = 0.50 + (radius - 0.40) * (2 / 3)
+            heads.append(FlowerHead(kind, center, axis, radius, layer))
+    # Preserve sampling order and the fitted transform sequence.
+    if bouquet_id in ("peony", "sunflower"):
+        adjusted = []
+        for head in heads:
+            radius, center, axis = head.radius, head.center, head.axis
+            if (head.layer in ("middle", "top")
+                    and head.species in ("peony", "rose", "ranunculus", "dahlia", "lisianthus")):
+                radius = 0.5 + (0.58 - 0.5) * max(0.0, min(1.0, (radius - 0.40) / 0.12))
+            angle = {'peony': 30.0, 'sunflower': 0}[bouquet_id]
+            if angle and head.layer == "middle":
+                c, s = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+                x, y, z = center
+                nx, ny, nz = axis
+                center = (x * c - z * s, y, x * s + z * c)
+                axis = (nx * c - nz * s, ny, nx * s + nz * c)
+            minimum = 1.12
+            if bouquet_id == "peony" and minimum is not None and head.layer == "middle":
+                radial = math.hypot(center[0], center[2])
+                fraction = max(0.0, min(1.0, (radial - 0.95) / (1.18 - 0.95)))
+                target = minimum + (1.34 - minimum) * fraction
+                scale = target / radial
+                center = (center[0] * scale, center[1], center[2] * scale)
+            adjusted.append(replace(head, radius=radius, center=center, axis=axis))
+        heads = adjusted
+    return heads
+
+
+def _add_head(model: Geometry, head: FlowerHead, color: Vec3, index: int) -> None:
+    start = len(model.sections["flowers"])
+    if head.species == "hydrangea":
+        _hydrangea(model, head.center, head.radius, index)
+    else:
+        flower = {"rose": _rose, "tulip": _tulip, "peony": _peony, "lily": _lily,
+                  "sunflower": _sunflower, "calla": _calla, "cosmos": _cosmos,
+                  "ranunculus": _ranunculus, "dahlia": _dahlia, "lisianthus": _lisianthus}[head.species]
+        roll = index * 2.39996
+        if head.species == "calla":
+            roll = math.pi + 0.18 * math.sin(roll)
+        flower(model, head.center, head.radius, color, roll, normal=head.axis)
+    surfaces = model.sections["flowers"][start:]
+    total = sum(surface.weight for surface in surfaces)
+    def mesh_steps(surface: Surface, surface_index: int) -> tuple[int, int] | None:
+        if surface.mesh_steps is not None:
+            return surface.mesh_steps
+        if surface.kind != "sheet":
+            return None
+        if head.species == "hydrangea":
+            if surface_index % 5 == 4:
+                return (1, 4)
+            return (3, 2) if head.radius >= 0.65 else (2, 2)
+        if head.species in ("calla", "lily", "tulip"):
+            if head.radius >= 0.65:
+                return (16, 20) if head.species == "calla" else (7, 4)
+            return (12, 16) if head.species == "calla" else (6, 3)
+        if head.radius >= 0.65:
+            return (6, 4)
+        if head.species == "ranunculus":
+            # Narrow cupped florets retain their outer-ring longitudinal curvature.
+            return (3, 2) if surface_index < 30 else (4, 2)
+        micro_petals = {"rose": 12, "dahlia": 19, "peony": 16}
+        if surface_index < micro_petals.get(head.species, 0):
+            return (3, 2)
+        return (5, 3) if head.radius >= 0.40 else (3, 2)
+
+    # Allocate by head area, not by the number of petals/florets in that species.
+    model.sections["flowers"][start:] = [
+        replace(surface, weight=surface.weight / total * head.radius ** 2,
+                mesh_steps=mesh_steps(surface, j))
+        for j, surface in enumerate(surfaces)]
+    model.heads.append(head)
+    _stem(model, head.center, index, head.species in ("tulip", "lily", "calla"), head.axis)
+
+
+def _berry(model: Geometry, center: Vec3, radius: float, color: Vec3) -> None:
+    def point(u: float, v: float) -> Vec3:
+        phi, theta = math.pi * u, TAU * v
+        return _add(center, (radius * math.sin(phi) * math.cos(theta),
+                             radius * math.cos(phi), radius * math.sin(phi) * math.sin(theta)))
+    model.add("flowers", radius * radius * 1.1, point, color, 0.83, kind="sphere",
+              mesh_steps=(6, 8))
+
+
+def _greenery(model: Geometry, theme_index: int) -> None:
+    for j in range(12):
+        angle = j * TAU / 12 + theme_index * 0.19
+        radial = (math.cos(angle), 0.0, math.sin(angle))
+        side = (-radial[2], 0.0, radial[0])
+        start = _add(_mul(radial, 0.30), (0.0, -0.62, 0.0))
+        end = _add(_mul(radial, 1.92 + 0.08 * math.sin(j * 2.7)),
+                   (0.0, 0.08 + 0.09 * math.sin(j * 1.7), 0.0))
+        curve = _bezier(start, _add(start, (0.0, 0.5, 0.0)),
+                        _add(end, (0.0, -0.20, 0.0)), end)
+        _tube(model, "stems", curve, 0.009, (0.40, 0.52, 0.39), 0.09, 0.72)
+        for k in range(5):
+            root = curve(0.42 + k * 0.12)
+            for sign in (-1, 1):
+                tip = _add(root, _add(_mul(side, sign * (0.23 - k * 0.016)),
+                                      _add(_mul(radial, 0.12), (0.0, 0.12, 0.0))))
+                _leaf(model, root, tip, 0.12 - k * 0.007, (0.42, 0.56, 0.48),
+                      roll=sign * 0.48 + j * 0.17)
+    for j in range(6):
+        angle = j * TAU / 6 + 0.47 + theme_index * 0.13
+        radial = (math.cos(angle), 0.0, math.sin(angle))
+        side = (-radial[2], 0.0, radial[0])
+        a, b = _add(_mul(radial, 0.48), (0.0, 0.12, 0.0)), _add(_mul(radial, 2.10), (0.0, 1.28 + 0.24 * math.sin(j), 0.0))
+        curve = _bezier(a, _add(a, (0.0, 0.8, 0.0)), _add(b, (0.0, 0.25, 0.0)), b)
+        _tube(model, "stems", curve, 0.005, (0.38, 0.49, 0.32), 0.06, 0.65)
+        for k in range(9):
+            root = curve(0.22 + k * 0.085)
+            length = 0.28 * (1.0 - k / 11)
+            for sign in (-1, 1):
+                tip = _add(root, _add(_mul(side, sign * length), _mul(radial, 0.10)))
+                _leaf(model, root, tip, 0.035, (0.35, 0.49, 0.32), sign * 0.30)
+
+
+def _bud(model: Geometry, center: Vec3, axis: Vec3, radius: float, color: Vec3) -> None:
+    transform = _frame(center, axis, radius)
+    for j in range(4):
+        def point(u: float, v: float, j=j) -> Vec3:
+            theta = (j + v * 1.05) * math.pi / 2
+            r = 0.58 * math.sin(math.pi * u) * (1.0 - 0.12 * abs(v * 2 - 1))
+            return transform((r * math.cos(theta), r * math.sin(theta), 2 * u - 1))
+
+        model.add("flowers", radius * radius * 0.18, point,
+                  lambda u, v, color=color: _mix((0.45, 0.57, 0.32), color, min(1.0, u * 3)),
+                  0.83, contour=True, resolution=8)
+
+
+def _accent_sprigs(model: Geometry, theme_index: int) -> None:
+    for j in range(12):
+        angle = j * TAU / 12 + 0.22 + theme_index * 0.21
+        radial = (math.cos(angle), 0.0, math.sin(angle))
+        side = (-radial[2], 0.0, radial[0])
+        root = _add(_mul(radial, 0.70), (0.0, 0.72, 0.0))
+        tip = _add(_mul(radial, 1.65 + 0.12 * math.sin(j * 2.1)),
+                   (0.0, 2.25 + 0.35 * math.sin(j * 1.7), 0.0))
+        curve = _bezier(root, _add(root, (0.0, 0.7, 0.0)), _add(tip, (0.0, -0.18, 0.0)), tip)
+        _tube(model, "stems", curve, 0.006, (0.40, 0.51, 0.34), 0.07, 0.65)
+        for k in range(5):
+            base = curve(0.58 + k * 0.095)
+            end = _add(base, _add(_mul(side, (1 if k % 2 else -1) * 0.14), (0.0, 0.08, 0.0)))
+            _tube(model, "stems", lambda u, a=base, b=end: _mix(a, b, u),
+                  0.003, (0.46, 0.57, 0.38), 0.015, 0.60)
+            color = ((0.96, 0.94, 0.80), (0.59, 0.76, 0.87), (0.98, 0.85, 0.53))[j % 3]
+            axis = _unit(_add(radial, (0.0, 0.45, 0.0)))
+            if k == 4 and j % 2 == 0:
+                _bud(model, end, axis, 0.085, (0.98, 0.85, 0.79))
+            else:
+                _floret(model, end, axis, 0.065 + 0.009 * (k % 3), color, j + k * 0.7)
+        if j % 3 == 0:
+            for k in range(5):
+                base = curve(0.30 + k * 0.10)
+                end = _add(base, _add(_mul(side, (k % 2 * 2 - 1) * 0.17), (0.0, 0.10, 0.0)))
+                _tube(model, "stems", lambda u, a=base, b=end: _mix(a, b, u),
+                      0.003, (0.40, 0.46, 0.28), 0.01, 0.60)
+                _berry(model, end, 0.047, (0.56, 0.28, 0.27) if j % 2 else (0.76, 0.59, 0.26))
+
+
 def _build_geometry(bouquet_id: str) -> Geometry:
     model = Geometry()
-    if bouquet_id == "rose":
-        heads = ((0.0, 1.05, 0.67, 0.77), (-0.92, 1.27, -0.05, 0.70),
-                 (0.92, 1.30, 0.12, 0.70), (-0.61, 2.04, -0.54, 0.61),
-                 (0.64, 2.06, -0.48, 0.60), (-1.48, 0.54, -0.23, 0.55),
-                 (1.46, 0.55, -0.30, 0.55), (0.03, 2.38, -0.68, 0.46))
-        for i, (x, y, z, r) in enumerate(heads):
-            color = _mix((0.91, 0.47, 0.64), (0.99, 0.70, 0.75), (i % 4) / 3)
-            _rose(model, (x, y, z), r, color, i * 0.93)
-            _stem(model, (x, y, z), i)
-        _filler_sprig(model, -1, (0.94, 0.92, 0.80), 0.19)
-        _filler_sprig(model, 1, (0.98, 0.89, 0.85), 0.0)
-        ribbon = (0.68, 0.36, 0.45)
-    elif bouquet_id == "tulip":
-        heads = ((-0.12, 1.05, 0.68, 0.61), (-0.83, 1.43, 0.14, 0.62),
-                 (0.80, 1.49, 0.22, 0.61), (-0.37, 2.22, -0.47, 0.57),
-                 (0.44, 2.13, -0.56, 0.58), (-1.43, 0.70, -0.28, 0.55),
-                 (1.43, 0.80, -0.35, 0.54), (0.02, 1.77, -0.76, 0.57),
-                 (-0.69, 0.52, 0.57, 0.48), (0.66, 0.48, 0.55, 0.49))
-        for i, (x, y, z, r) in enumerate(heads):
-            color = _mix((0.99, 0.87, 0.68), (0.98, 0.64, 0.70), (i % 5) / 4)
-            _tulip(model, (x, y, z), r, color, x * -0.13)
-            _stem(model, (x, y, z), i, True)
-        ribbon = (0.78, 0.60, 0.47)
-    elif bouquet_id == "hydrangea":
-        heads = ((0.0, 1.04, 0.48, 0.86), (-0.91, 1.55, -0.30, 0.72),
-                 (0.92, 1.59, -0.32, 0.73), (-0.75, 0.40, 0.15, 0.64),
-                 (0.82, 0.38, 0.02, 0.63), (0.02, 2.12, -0.58, 0.60))
-        for i, (x, y, z, r) in enumerate(heads):
-            _hydrangea(model, (x, y, z), r, i)
-            _stem(model, (x, y, z), i)
-        for side in (-1, 1):
-            _leaf(model, (side * 0.55, 0.12, -0.12),
-                  (side * 1.95, 0.80, -0.10), 0.33, (0.26, 0.43, 0.35), side * 0.2)
-        ribbon = (0.54, 0.53, 0.70)
-    elif bouquet_id == "wildflower":
-        roses = ((-0.54, 1.15, 0.62, 0.60), (0.67, 1.48, 0.12, 0.56),
-                 (0.04, 2.10, -0.52, 0.54), (-1.18, 0.53, 0.24, 0.49),
-                 (1.19, 0.43, -0.10, 0.48))
-        for i, (x, y, z, r) in enumerate(roses):
-            _rose(model, (x, y, z), r,
-                  _mix((0.96, 0.72, 0.52), (0.98, 0.80, 0.70), i / 5), i * 1.5)
-            _stem(model, (x, y, z), i)
-        daisies = ((-1.20, 1.58, 0.13, 0.39), (1.27, 1.96, -0.14, 0.38),
-                   (0.12, 0.74, 0.70, 0.46), (-0.65, 2.47, -0.30, 0.34),
-                   (-1.65, 1.03, -0.04, 0.31), (1.72, 0.98, -0.13, 0.33),
-                   (0.65, 2.43, -0.25, 0.30))
-        for i, (x, y, z, r) in enumerate(daisies):
-            _cosmos(model, (x, y, z), r,
-                    _mix((0.94, 0.53, 0.65), (1.0, 0.88, 0.72), (i % 3) / 2), i)
-            _stem(model, (x, y, z), i + 5)
-        for i, (x, y, z) in enumerate(((-0.15, 1.57, -0.15), (0.66, 0.57, 0.50),
-                                      (-0.92, 2.03, -0.43))):
-            _tulip(model, (x, y, z), 0.39, (0.99, 0.87, 0.72), x * -0.2)
-            _stem(model, (x, y, z), i + 12, True)
-        _filler_sprig(model, -1, (0.98, 0.89, 0.70), 0.28)
-        _filler_sprig(model, 1, (0.99, 0.91, 0.82), -0.08)
-        ribbon = (0.70, 0.46, 0.40)
-    elif bouquet_id == "peony":
-        heads = ((0.0, 1.02, 0.65, 0.76), (-0.93, 1.43, 0.04, 0.68),
-                 (0.92, 1.47, 0.10, 0.68), (-0.51, 2.14, -0.58, 0.59),
-                 (0.59, 2.18, -0.53, 0.57), (-1.40, 0.46, -0.30, 0.56),
-                 (1.39, 0.49, -0.24, 0.56))
-        for i, (x, y, z, r) in enumerate(heads):
-            color = _mix((0.91, 0.43, 0.60), (1.0, 0.73, 0.79), (i % 4) / 3)
-            _peony(model, (x, y, z), r, color, i * 0.91)
-            _stem(model, (x, y, z), i)
-        _filler_sprig(model, -1, (0.98, 0.92, 0.83), 0.09)
-        _filler_sprig(model, 1, (0.99, 0.90, 0.86), 0.17)
-        ribbon = (0.73, 0.39, 0.50)
-    elif bouquet_id == "lily":
-        heads = ((0.0, 1.03, 0.65, 0.69), (-0.94, 1.56, 0.08, 0.61),
-                 (0.99, 1.54, -0.03, 0.61), (-0.49, 2.15, -0.57, 0.54),
-                 (0.57, 2.10, -0.48, 0.54), (-1.43, 0.56, -0.20, 0.51),
-                 (1.41, 0.57, -0.31, 0.52))
-        for i, (x, y, z, r) in enumerate(heads):
-            color = _mix((1.0, 0.96, 0.86), (0.98, 0.80, 0.77), (i % 4) / 5)
-            _lily(model, (x, y, z), r, color, i * 0.28)
-            _stem(model, (x, y, z), i, True)
-        ribbon = (0.73, 0.63, 0.49)
-    elif bouquet_id == "sunflower":
-        heads = ((0.0, 1.00, 0.64, 0.78), (-0.95, 1.51, 0.08, 0.66),
-                 (0.98, 1.54, -0.04, 0.65), (-0.46, 2.17, -0.57, 0.57),
-                 (0.60, 2.14, -0.52, 0.57), (-1.43, 0.44, -0.22, 0.52),
-                 (1.41, 0.47, -0.33, 0.54))
-        for i, (x, y, z, r) in enumerate(heads):
-            color = _mix((0.98, 0.68, 0.14), (1.0, 0.82, 0.25), (i % 4) / 3)
-            _sunflower(model, (x, y, z), r, color, i * 0.61)
-            _stem(model, (x, y, z), i)
-        for side in (-1, 1):
-            _leaf(model, (side * 0.53, -0.07, -0.16),
-                  (side * 1.90, 0.68, -0.08), 0.39, (0.30, 0.45, 0.25), side * 0.38)
-        ribbon = (0.68, 0.48, 0.25)
-    elif bouquet_id == "calla":
-        heads = ((-0.14, 1.04, 0.66, 0.65), (-0.85, 1.40, 0.03, 0.59),
-                 (0.86, 1.43, 0.10, 0.59), (-0.36, 2.02, -0.56, 0.51),
-                 (0.47, 1.99, -0.60, 0.52), (-1.43, 0.62, -0.26, 0.54),
-                 (1.44, 0.68, -0.30, 0.54), (-0.66, 0.44, 0.51, 0.47),
-                 (0.66, 0.43, 0.47, 0.47))
-        for i, (x, y, z, r) in enumerate(heads):
-            color = _mix((0.99, 0.97, 0.88), (0.87, 0.76, 0.94), (i % 4) / 4)
-            _calla(model, (x, y, z), r, color, -x * 0.16)
-            _stem(model, (x, y, z), i, True)
-        ribbon = (0.65, 0.53, 0.71)
-    else:
-        raise ValueError(f"Unknown bouquet id: {bouquet_id}")
+    heads = _arrange_heads(bouquet_id)
+    for i, head in enumerate(heads):
+        _add_head(model, head, _head_color(bouquet_id, head.species, i), i)
+    theme_index = tuple(_THEME_MIX).index(bouquet_id)
+    _greenery(model, theme_index)
+    _accent_sprigs(model, theme_index)
+    ribbon = ((0.72, 0.42, 0.52), (0.77, 0.62, 0.48), (0.59, 0.57, 0.74),
+              (0.76, 0.56, 0.43), (0.76, 0.45, 0.56), (0.73, 0.64, 0.51),
+              (0.72, 0.54, 0.29), (0.69, 0.58, 0.75))[theme_index]
     _ribbon(model, ribbon)
     return model
 
@@ -763,7 +1022,7 @@ def generate_bouquet(bouquet_id: str, count: int = COUNT) -> list[Particle]:
         raise ValueError(f"Unknown bouquet id: {bouquet_id}")
     rng = random.Random(SEED + ids.index(bouquet_id) * 7_919)
     model = _build_geometry(bouquet_id)
-    section_weights = (0.745, 0.125, 0.065, 0.065)
+    section_weights = (0.830, 0.080, 0.025, 0.065)
     budgets = _allocate(count, list(section_weights))
     particles: list[Particle] = []
     for surfaces, budget in zip(model.sections.values(), budgets):
@@ -785,6 +1044,67 @@ def encode_particles(particles: list[Particle]) -> bytes:
     data = bytearray(len(particles) * RECORD.size)
     for index, particle in enumerate(particles):
         RECORD.pack_into(data, index * RECORD.size, *particle)
+    return bytes(data)
+
+
+def _tessellate_geometry(geometry: Geometry) -> tuple[list[tuple[float, ...]], list[int]]:
+    """Evaluate the very same sheets as a compact, indexed, unlit triangle mesh."""
+    vertices: list[tuple[float, ...]] = []
+    indices: list[int] = []
+    for surfaces in geometry.sections.values():
+        for surface in surfaces:
+            nu, nv = surface.mesh_steps or (
+                ((8, 6) if surface.weight >= 0.15 else (4, 4)) if surface.kind == "tube" else
+                (8, 10) if surface.kind == "sphere" else
+                (6, 4) if surface.weight >= 0.02 else (3, 2))
+            base = len(vertices)
+            for i in range(nu + 1):
+                u = i / nu
+                for j in range(nv + 1):
+                    v = j / nv
+                    values = (*surface.point(u, v), *_surface_color(surface, u, v),
+                              *_surface_normal(surface, u, v))
+                    # Reject pole/seam triangles using the actual stored Float32 positions.
+                    vertices.append(MESH_VERTEX.unpack(MESH_VERTEX.pack(*values)))
+            for i in range(nu):
+                for j in range(nv):
+                    a = base + i * (nv + 1) + j
+                    b, d = a + nv + 1, a + 1
+                    c = b + 1
+                    for triangle in ((a, b, c), (a, c, d)):
+                        p, q, r = (vertices[index][:3] for index in triangle)
+                        cross = _cross(tuple(y - x for x, y in zip(p, q)),
+                                       tuple(y - x for x, y in zip(p, r)))
+                        if sum(value * value for value in cross) > 1e-18:
+                            indices.extend(triangle)
+    # Keep the first u/v occurrence; weld only identical stored position/color/normal.
+    used = set(indices)
+    remap = {}
+    packed = []
+    unique = {}
+    for old_index, vertex in enumerate(vertices):
+        if old_index in used:
+            new_index = unique.get(vertex)
+            if new_index is None:
+                new_index = len(packed)
+                unique[vertex] = new_index
+                packed.append(vertex)
+            remap[old_index] = new_index
+    return packed, [remap[index] for index in indices]
+
+
+def encode_mesh(geometry: Geometry) -> bytes:
+    vertices, indices = _tessellate_geometry(geometry)
+    size = MESH_HEADER.size + len(vertices) * MESH_VERTEX.size + len(indices) * 4
+    data = bytearray(size)
+    MESH_HEADER.pack_into(data, 0, b"BFM1", len(vertices), len(indices))
+    offset = MESH_HEADER.size
+    for vertex in vertices:
+        MESH_VERTEX.pack_into(data, offset, *vertex)
+        offset += MESH_VERTEX.size
+    for index in indices:
+        struct.pack_into("<I", data, offset, index)
+        offset += 4
     return bytes(data)
 
 
@@ -870,7 +1190,7 @@ def render_svg(particles: list[Particle], title: str, description: str,
     """
     lines = [
         '<svg xmlns="http://www.w3.org/2000/svg" width="636" height="714" '
-        'viewBox="-2.65 -3.12 5.3 5.95" role="img" aria-labelledby="title desc">',
+        'viewBox="-2.65 -3.30 5.3 5.85" role="img" aria-labelledby="title desc">',
         f'<title id="title">{html.escape(title)}</title>',
         f'<desc id="desc">{html.escape(description)}</desc>',
     ]
@@ -896,9 +1216,10 @@ def generate_assets(output: str | Path = Path("site/assets")) -> dict:
     for item in BOUQUETS:
         particles = generate_bouquet(item["id"])
         (output / item["file"]).write_bytes(encode_particles(particles))
+        geometry = _build_geometry(item["id"])
+        (output / item["surface"]).write_bytes(encode_mesh(geometry))
         (output / f'{item["id"]}.svg').write_text(
-            render_svg(particles, item["title"], item["description"],
-                       _build_geometry(item["id"])), encoding="utf-8")
+            render_svg(particles, item["title"], item["description"], geometry), encoding="utf-8")
     (output / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return manifest

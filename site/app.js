@@ -1,4 +1,5 @@
-import { ParticleGarden } from "./particles.js?v=2";
+import { ParticleGarden } from "./particles.js?v=3";
+import { decodeSurface } from "./surface-data.js?v=3";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("bouquet");
@@ -75,10 +76,13 @@ function toast(message) {
 
 async function fetchResource(url, type = "json") {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    type === "arrayBuffer" ? 45000 : 20000,
+  );
   try {
     const resource = new URL(url, location.href);
-    resource.searchParams.set("v", "2");
+    resource.searchParams.set("v", "3");
     const response = await fetch(resource, { signal: controller.signal });
     if (!response.ok) throw new Error(`Resource ${response.status}: ${url}`);
     return await response[type]();
@@ -103,7 +107,7 @@ function showFallback() {
   selectionVersion++;
   $("gallery").setAttribute("aria-busy", "false");
   fallback.hidden = false;
-  fallback.src = `./assets/${activeId}.svg`;
+  fallback.src = `./assets/${activeId}.svg?v=3`;
   canvas.hidden = true;
   loading.classList.add("is-loaded");
   $("interaction-hint").textContent = "心意一直在，挑一束你喜欢的花。";
@@ -136,10 +140,13 @@ function updateCaption(id) {
 async function loadBouquet(id) {
   if (cache.has(id)) return cache.get(id);
   const record = manifest.bouquets.find((bouquet) => bouquet.id === id);
-  if (!record || !/^[a-z]+\.bin$/.test(record.file))
+  if (!record || record.file !== `${id}.bin` || record.surface !== `${id}.mesh`)
     throw new Error("Invalid bouquet manifest");
-  const promise = fetchResource(`./assets/${record.file}`, "arrayBuffer")
-    .then((buffer) => {
+  const promise = Promise.all([
+    fetchResource(`./assets/${record.file}`, "arrayBuffer"),
+    fetchResource(`./assets/${record.surface}`, "arrayBuffer"),
+  ])
+    .then(([buffer, surfaceBuffer]) => {
       if (buffer.byteLength !== manifest.count * manifest.stride * 4)
         throw new Error("Invalid particle data length");
       const data = new Float32Array(buffer);
@@ -151,7 +158,7 @@ async function loadBouquet(id) {
         if (normalLength < 0.95 || normalLength > 1.05)
           throw new Error("Invalid particle surface normal");
       }
-      return data;
+      return { particles: data, surface: decodeSurface(surfaceBuffer) };
     })
     .catch((error) => {
       cache.delete(id);
@@ -170,7 +177,7 @@ async function selectBouquet(id, immediate = false) {
   const version = ++selectionVersion;
   if (fallbackMode) {
     updateCaption(id);
-    fallback.src = `./assets/${id}.svg`;
+    fallback.src = `./assets/${id}.svg?v=3`;
     history.replaceState(null, "", `#${id}`);
     return;
   }
@@ -178,7 +185,7 @@ async function selectBouquet(id, immediate = false) {
   try {
     const data = await loadBouquet(id);
     if (version !== selectionVersion) return;
-    garden.setBouquet(data, immediate);
+    garden.setBouquet(data.particles, immediate, data.surface);
     updateCaption(id);
     history.replaceState(null, "", `#${id}`);
     document.body.dataset.bouquet = id;
@@ -374,15 +381,18 @@ async function initialize() {
     )
       throw new Error("Invalid manifest schema");
     await selectBouquet(activeId, true);
-    // Low priority preloading is bounded; failed entries remain retryable.
-    if (!fallbackMode && !navigator.connection?.saveData) {
+    // Larger all-around bouquets preload one neighbor, only on a fast connection.
+    const connection = navigator.connection;
+    if (
+      !fallbackMode &&
+      !connection?.saveData &&
+      !/^(slow-)?[23]g$/.test(connection?.effectiveType ?? "")
+    ) {
       const preload = () => {
         const ids = Object.keys(bouquets);
         const start = ids.indexOf(activeId);
-        for (let offset = 1; offset <= 2; offset++) {
-          const id = ids[(start + offset) % ids.length];
-          loadBouquet(id).catch(() => {});
-        }
+        const id = ids[(start + 1) % ids.length];
+        loadBouquet(id).catch(() => {});
       };
       if ("requestIdleCallback" in window)
         requestIdleCallback(preload, { timeout: 3000 });
