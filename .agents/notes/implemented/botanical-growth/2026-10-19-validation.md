@@ -1,6 +1,6 @@
 # 含苞到盛开：本轮验收
 
-日期：2026-10-19。状态：本地验收通过，待发布确认。范围：同色系细密花瓣、同源闭合姿态、点面同步绽放与既有环绕饱满度。
+日期：2026-10-19。状态：已发布，线上复核通过。范围：同色系细密花瓣、同源闭合姿态、点面同步绽放与既有环绕饱满度。
 
 ## 样本与环境
 
@@ -46,11 +46,15 @@
 
 [首轮 CI](https://github.com/wide-sky-with-me/bloom-for-you/actions/runs/39239275597) 未发布：56 项中 53 项通过，三个 ERROR 均为 `subprocess.TimeoutExpired`，不是数值断言失败。同一 CI 的完整资产生成在 manifest 检查耗时约 102 秒，超过旧 CLI wrapper 的 90 秒；Node wrapper 另在 30 秒截断，该限额不包含此前约 108 秒的 Python fixture 生成。
 
-保留所有输出、确定性、metadata、画面和坐标断言，仅把有界子进程执行预算调整为 CLI 180 秒、Node 120 秒；这些 wrapper 限额不是产品性能基准。正式运行资源 32 个 SHA256 不变。受影响类本地复测通过：CLI 三项 158.956 秒，Renderer 一项 73.598 秒（包含重新生成八组 fixture 及完整 Node 契约）。完整 CI 随本次新提交重跑；旧截断日志不当作 Node 契约通过。
+保留所有输出、确定性、metadata、画面和坐标断言，仅把有界子进程执行预算调整为 CLI 180 秒、Node 120 秒；这些 wrapper 限额不是产品性能基准。正式运行资源 32 个 SHA256 不变。受影响类本地复测通过：CLI 三项 158.956 秒，Renderer 一项 73.598 秒（包含重新生成八组 fixture 及完整 Node 契约）。后续完整 CI 的 56 项全部通过，510.168 秒；旧截断日志不当作 Node 契约通过。
 
 ## 发布与线上
 
-本轮尚待推送和线上验收；历史发布结果不作为本轮通过证明。后续记录新提交、成功的 Pages Actions、正式站点 32 个核心资源与验收构建的 SHA256 对应，以及正式 URL 的初始花苞、重放、深链接、触碰、信件与页面异常结果。
+部署提交为 [9840860b7ee1d0dc65ded56bf828845a9ed3d222](https://github.com/wide-sky-with-me/bloom-for-you/commit/9840860b7ee1d0dc65ded56bf828845a9ed3d222)：包含功能提交 381cdf3 及随后仅测试执行预算和证据的修补。[Pages 工作流 39241498576](https://github.com/wide-sky-with-me/bloom-for-you/actions/runs/39241498576) 重新执行完整测试、构建并成功部署；首次失败工作流未曾发布。
+
+在[正式站点](https://wide-sky-with-me.github.io/bloom-for-you/)实际验证了 32 个核心资源 SHA256 与本地验收构建逐字节相同。Chromium 145.0.7632.6 桌面观察到初始花苞进度 0 到盛开 1，信件可打开/关闭；390×844、DPR2 触屏模拟验证 calla 深链接、触碰重放、暂停中切换、无横向溢出。两端均实际绘制 WebGL，未降级为插图，页面异常为零。见本地[线上报告](../../../../artifacts/botanical-live/live.json)、[桌面截图](../../../../artifacts/botanical-live/desktop.png)与[手机截图](../../../../artifacts/botanical-live/mobile.png)。
+
+上线证据以纯文档提交补记，依照 [GitHub 的 skip-workflow 规则](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/skip-workflow-runs) 使用 `[skip ci]`，避免为未变更的应用再次启动完整发布。实际 Pages 部署仍对应上述 9840860，后续文档提交不改变任何运行资源。
 
 ## 限制
 
