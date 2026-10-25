@@ -1,6 +1,6 @@
 # 自然花园完整整合与线上发布
 
-日期：2026-10-25（Asia/Shanghai）。状态：用户认可样张后授权完整优化和部署；现已完成完整功能与本地验收，正进入发布。实际选择见[已实施决策](../../implemented/floral-style/2026-10-26-natural-garden-release.md)，当前结果与线上状态见[验收/发布记录](../../implemented/floral-style/2026-10-26-validation-and-deployment.md)。本页保留方案形成时约束，不把授权当作部署成功。
+日期：2026-10-25（Asia/Shanghai）。状态：已实施并发布，用户认可样张后授权完整优化与部署。实际选择见[已实施决策](../../implemented/floral-style/2026-10-26-natural-garden-release.md)，本轮CI及公网验证见[验收/发布记录](../../implemented/floral-style/2026-10-26-validation-and-deployment.md)。本页保留方案形成时约束，不以授权或push冒称部署。
 
 ## 范围与继承
 

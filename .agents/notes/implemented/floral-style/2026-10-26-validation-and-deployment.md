@@ -1,6 +1,6 @@
 # 自然花园：当前验收与发布记录
 
-日期：2026-10-26（Asia/Shanghai）。状态：本地当前源的几何、真实渲染、交互与构建均通过，正在准备提交/推送与CI部署；尚未将本地结果冒称公网已上线。
+日期：2026-10-26（Asia/Shanghai）。状态：已上线并完成公网验证。已部署功能提交为`3baf69df56ed7022692f639a97866450a51c841f`；CI、独立资源字节及真实公网桌面/手机/近看均通过，不以本地完成或push代替上线。
 
 范围见[完整实现决策](2026-10-26-natural-garden-release.md)；授权来自用户认可样张后明确要求完整优化并部署，不把旧本地授权代替本轮发布授权。
 
@@ -30,6 +30,12 @@
 
 完整浏览器前两次失败属于探针：旧v6精确路径/准备中提前观察body，以及关闭旧context后使用page.request取夹具。改为当前v7/请求意图字段/各active context请求正式资源，原交互/坏包断言仍在。增长初始静态盛开后改由真实重放按钮到达花苞，保留0–.05闭态检查，不将产品恢复为加载即动画以躲测试。
 
-## 发布检查（待填）
+## 已发布与公网实际核验
 
-待记录：功能提交SHA、Actions run/deploy结论、公网revision/style/manifest及全部资源字节核验、实际公网桌面/手机/近看页面结果。必须这些结果成功后才改状态为已上线。纯文档补充可用项目既有`[skip ci]`方式，不将文档HEAD误报成已部署功能提交。
+功能提交：`3baf69df56ed7022692f639a97866450a51c841f`，普通push至既有main，不强推、不改全局凭据配置。[Pages run 40221163977](https://github.com/wide-sky-with-me/bloom-for-you/actions/runs/40221163977)的build/deploy均success，2026-10-26 02:51:52 +08:00完成；CI实际107项Python（1369.663s）及应用Node步骤通过。[已结算run](../../../../artifacts/natural-garden-release/2026-10-25/public/actions-run.json)和[完整日志](../../../../artifacts/natural-garden-release/2026-10-25/public/actions-full.log)保留。
+
+公网[原地址](https://wide-sky-with-me.github.io/bloom-for-you/)已验证：revision精确匹配功能提交，style为natural-garden-v1、assetVersion7、manifest SHA匹配；78个运行模块、官方库/许可、字体、三资源/SVG/8缩略图与本地已验收产物逐字节相同。[资源报告](../../../../artifacts/natural-garden-release/2026-10-25/public/resource-verification.json)不是mock或仅HTTP200声明。
+
+对公网原地址另跑Native浏览器64项，真实Three物理Mesh、四16k绑定、桌面/390触屏、暂停/混切/分享与新context深链、缓存和释放、全禁WebGL四SVG全部通过，无page/console/shader错误。[实际报告](../../../../artifacts/natural-garden-release/2026-10-25/public/native-browser/report.json)、[桌面截图](../../../../artifacts/natural-garden-release/2026-10-25/public/native-browser/desktop.png)与[原始输出](../../../../artifacts/natural-garden-release/2026-10-25/public-browser.log)保存。公网检查未改shader、clock或RAF，不只是看CDN文件名。
+
+暂存审查核对73个源码/许可/文档文件，无研究照片、GLB、生成大数据或密钥入git；官方vendor原文件含上游空格/Tab，用固定vendor路径的`-text -whitespace`保字节完整性，其余diff检查照常。本次CI仅有Node20官方action被平台强制使用Node24及ubuntu-latest迁移的非阻断提醒，没有据此盲换未测action大版本。纯文档回填用`[skip ci]`，已部署功能提交仍是上面的3baf69d，不将文档HEAD误报成新部署。
