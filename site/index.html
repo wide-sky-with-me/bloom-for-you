@@ -6,10 +6,10 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#191119" />
+    <meta name="theme-color" content="#232b28" />
     <meta
       name="description"
-      content="把花期交给时间，把浪漫留给你。一座只为你盛开的立体粒子花束画廊。"
+      content="奶油与香槟色的花，盛在安静的灰绿花房里。一座只为你盛开的立体花园。"
     />
     <meta property="og:title" content="花间来信 · 给最爱的你" />
     <meta
@@ -17,11 +17,11 @@
       content="有些喜欢，要用一整座花园来表达。点开，收下属于你的花。"
     />
     <title>花间来信 · 给最爱的你</title>
-    <link rel="icon" href="./assets/flower.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./style.css?v=4" />
-    <script type="module" src="./app.js?v=4"></script>
+    <link rel="icon" href="./assets/flower.svg?v=7" type="image/svg+xml" />
+    <link rel="stylesheet" href="./style.css?v=7" />
+    <script type="module" src="./app.js?v=7"></script>
   </head>
-  <body>
+  <body data-bouquet="rose" data-view="bouquet">
     <div class="ambient" aria-hidden="true"></div>
     <header class="site-header">
       <a class="brand" href="./" aria-label="花间来信首页">
@@ -69,15 +69,13 @@
         <p class="intro-footnote">不止今天，往后的每一天。</p>
       </section>
 
-      <section class="artwork" aria-label="可互动的立体粒子花束">
+      <section class="artwork" aria-label="可互动的立体自然花园">
         <div class="flower-halo" aria-hidden="true"></div>
-        <div class="orbit orbit-one" aria-hidden="true"></div>
-        <div class="orbit orbit-two" aria-hidden="true"></div>
         <div class="canvas-wrap" id="canvas-wrap">
           <canvas
             id="bouquet"
             tabindex="0"
-            aria-label="粉雾来信粒子花束，拖动旋转，点击绽放，方向键旋转，空格绽放"
+            aria-label="粉雾来信立体花束，拖动旋转，点击绽放，方向键旋转，空格绽放"
           ></canvas>
           <img
             class="fallback-art"
@@ -86,8 +84,12 @@
             hidden
           />
           <div class="loading" id="loading" role="status">
-            <span class="loading-flower">✳</span
+            <span class="loading-flower" aria-hidden="true">❧</span
             ><span>正在把心意编织成花…</span>
+          </div>
+          <div class="gallery-error" id="gallery-error" hidden role="status">
+            <p>这束心意暂时没有准备好。<br />再试一次，或在下方挑另一束花。</p>
+            <button type="button" id="retry-bouquet">再试一次</button>
           </div>
         </div>
         <div class="artwork-caption" aria-live="polite" aria-atomic="true">
@@ -98,12 +100,18 @@
           </div>
           <span class="flower-tag" id="flower-tag">玫瑰</span>
         </div>
-        <p class="interaction-hint" id="interaction-hint">
-          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <path
-              d="m8 10 1-7a1 1 0 0 1 2 0v6l1-2a1 1 0 0 1 2 1l-1 7-3 2-4-5a1.2 1.2 0 0 1 2-2Z"
-            /></svg
-          >轻轻拖动，看花的另一面<span></span>点一下，看花苞慢慢盛开
+        <div class="view-selection" aria-label="花束与单花近看">
+          <div class="view-choices" id="view-selection" role="group" aria-label="选择整束或单花" aria-describedby="view-note">
+            <button type="button" data-view="bouquet" aria-pressed="true">看整束</button>
+            <button type="button" data-view="champagne_ranunculus" aria-pressed="false" disabled>近看洋牡丹</button>
+            <button type="button" data-view="garden_rose" aria-pressed="false" disabled>近看花园玫瑰</button>
+            <button type="button" data-view="anemone" aria-pressed="false" disabled>近看银莲花</button>
+            <button type="button" data-view="sweet_pea" aria-pressed="false" disabled>近看香豌豆</button>
+          </div>
+          <p class="view-note" id="view-note">近看一朵花，也能再回到这束心意。</p>
+        </div>
+        <p class="interaction-hint" id="interaction-hint" role="status" aria-live="polite">
+          轻轻拖动，看花的另一面；点一下，让心意再绽放。
         </p>
         <div class="artwork-tools" role="group" aria-label="画廊设置">
           <button
@@ -138,6 +146,7 @@
           <span>总有一束，像你</span
           ><span class="collection-count">八束花 · 八种喜欢</span>
         </div>
+        <p class="collection-ingredients" id="bouquet-ingredients" aria-live="polite"></p>
         <div class="bouquet-options" role="group" aria-label="花束收藏">
           <button
             class="bouquet-option is-selected"
@@ -146,7 +155,7 @@
           >
             <span class="thumbnail"
               ><img
-                src="./assets/rose-thumb.png?v=4"
+                src="./assets/rose-thumb.png?v=7"
                 alt=""
                 width="68"
                 height="78" /></span
@@ -162,7 +171,7 @@
           >
             <span class="thumbnail"
               ><img
-                src="./assets/tulip-thumb.png?v=4"
+                src="./assets/tulip-thumb.png?v=7"
                 alt=""
                 width="68"
                 height="78" /></span
@@ -178,7 +187,7 @@
           >
             <span class="thumbnail"
               ><img
-                src="./assets/hydrangea-thumb.png?v=4"
+                src="./assets/hydrangea-thumb.png?v=7"
                 alt=""
                 width="68"
                 height="78" /></span
@@ -196,7 +205,7 @@
           >
             <span class="thumbnail"
               ><img
-                src="./assets/wildflower-thumb.png?v=4"
+                src="./assets/wildflower-thumb.png?v=7"
                 alt=""
                 width="68"
                 height="78" /></span
@@ -212,7 +221,7 @@
           >
             <span class="thumbnail"
               ><img
-                src="./assets/peony-thumb.png?v=4"
+                src="./assets/peony-thumb.png?v=7"
                 alt=""
                 width="68"
                 height="78"
@@ -230,7 +239,7 @@
           >
             <span class="thumbnail"
               ><img
-                src="./assets/lily-thumb.png?v=4"
+                src="./assets/lily-thumb.png?v=7"
                 alt=""
                 width="68"
                 height="78"
@@ -248,7 +257,7 @@
           >
             <span class="thumbnail"
               ><img
-                src="./assets/sunflower-thumb.png?v=4"
+                src="./assets/sunflower-thumb.png?v=7"
                 alt=""
                 width="68"
                 height="78"
@@ -266,7 +275,7 @@
           >
             <span class="thumbnail"
               ><img
-                src="./assets/calla-thumb.png?v=4"
+                src="./assets/calla-thumb.png?v=7"
                 alt=""
                 width="68"
                 height="78"

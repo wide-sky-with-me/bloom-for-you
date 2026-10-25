@@ -221,50 +221,154 @@ def _petal_color(base: Vec3, tip: Vec3, root: Vec3 | None = None) -> PigmentFn:
     return pigment
 
 
+@dataclass(frozen=True)
+class PetalPlan:
+    """A rooted blade, not a sector of the flower's global polar coordinates.
+
+    Adapted from tantaneity/rose-gen Petals.cs and Blade.cs (MIT, 2026).
+    See THIRD_PARTY_NOTICES.md and the frozen modeling research proposal.
+    Angles are radians; roll is confined to the distal half of the blade.
+    """
+    root: Vec3
+    heading: Vec3
+    flank: Vec3
+    length: float
+    width: float
+    curl: float
+    roll: float
+    cup: float
+    shoulder: float = 0.28
+    sweep: float = 0.0
+
+
+def _rose_petal_plan(index: int, count: int = 28) -> PetalPlan:
+    # Inside-out ordering retains the existing outer-first growth delays.
+    outer = index / max(1, count - 1)
+    angle = index * math.pi * (3.0 - math.sqrt(5.0)) + .065 * math.sin(index * 1.7)
+    radial = (math.cos(angle), math.sin(angle), 0.0)
+    flank = (-radial[1], radial[0], 0.0)
+    tilt = math.radians(8 + 38 * outer ** .8 + 1.4 * math.sin(index * 2.3))
+    root = _add(_mul(radial, .028 + .13 * outer ** .65), (0., 0., -.025 - .34 * outer))
+    return PetalPlan(
+        root, _add(_mul(radial, math.sin(tilt)), (0., 0., math.cos(tilt))), flank,
+        (.82 + .30 * outer) * (1 + .022 * math.sin(index * 1.13)),
+        (.32 + .78 * outer) * (1 + .028 * math.cos(index * 1.91)),
+        -.60 + .73 * outer, 1.30 * outer ** 1.8, .82 - .58 * outer,
+        .28 + .020 * math.sin(index * .73), .024 * (1 - outer))
+
+
+def _petal_sweep(plan: PetalPlan, transform: Callable[[Vec3], Vec3]) -> PointFn:
+    """Arc-length sweep with a C1 spine and an elliptical, round shoulder cap.
+
+    Simpson integration + Hermite evaluation avoids row-wise tangent jumps from
+    the reference's discrete sweep. The tiny table is built once per petal, not
+    per particle. All samplers and derivative normals use this same evaluator.
+    The distal boundary is an ellipse, so no rectangular/pointed paper corners
+    remain. Cup and roll are independent; there is deliberately no noise ruffle.
+    """
+    heading, flank = plan.heading, plan.flank
+    inward = _unit(_cross(heading, flank))
+    rows = 32
+
+    def bend(t: float) -> float:
+        late = max(0.0, 2 * t - 1)
+        return plan.curl * t + plan.roll * late * late * (3 - 2 * late)
+
+    def tangent(t: float) -> tuple[float, float]:
+        angle = bend(t)
+        return plan.length * math.cos(angle), -plan.length * math.sin(angle)
+
+    x = y = 0.0
+    spine = [(x, y, *tangent(0.0))]
+    for row in range(rows):
+        a, mid, b = (tangent(t / rows) for t in (row, row + .5, row + 1))
+        x += (a[0] + 4 * mid[0] + b[0]) / (6 * rows)
+        y += (a[1] + 4 * mid[1] + b[1]) / (6 * rows)
+        spine.append((x, y, *b))
+
+    def point(u: float, v: float) -> Vec3:
+        # Leave a 3.6-degree collar at either shoulder: a perfect square-to-disk
+        # corner has a singular Jacobian and an arbitrary derivative normal.
+        phi = (v - .5) * math.pi * .96
+        across, cap = math.sin(phi), math.cos(phi)
+        along = u * (1 - plan.shoulder * (1 - cap))
+        at = min(rows - 1, int(along * rows))
+        t = along * rows - at
+        a, b = spine[at], spine[at + 1]
+        h0, h1 = 2 * t ** 3 - 3 * t * t + 1, -2 * t ** 3 + 3 * t * t
+        h2, h3 = (t ** 3 - 2 * t * t + t) / rows, (t ** 3 - t * t) / rows
+        forward = h0 * a[0] + h1 * b[0] + h2 * a[2] + h3 * b[2]
+        bendward = h0 * a[1] + h1 * b[1] + h2 * a[3] + h3 * b[3]
+        half = plan.width * .5 * (.045 + .955 * math.sin(math.pi * u / 2))
+        angle = bend(along)
+        lift = plan.cup * (1 - cap) * half
+        forward += math.sin(angle) * lift
+        bendward += math.cos(angle) * lift
+        side = across * half + plan.sweep * along * along
+        return transform(tuple(plan.root[k] + heading[k] * forward
+                               + inward[k] * bendward + flank[k] * side for k in range(3)))
+
+    return point
+
+
+def _rose_bud(plan: PetalPlan, outer: float, transform: Callable[[Vec3], Vec3]) -> PointFn:
+    """Overlapping ovoid wrappers in each petal's own root/flank frame.
+
+    Full-width upright open blades cross the centre: a shredded paper ball.
+    Bud wrappers instead follow a narrow nested envelope, without a solid cap.
+    """
+    root_radius = math.hypot(*plan.root[:2])
+    radial = (plan.root[0] / root_radius, plan.root[1] / root_radius, 0.)
+    root_spread = plan.width * .0225 / root_radius
+
+    def point(u: float, v: float) -> Vec3:
+        q = 2 * v - 1
+        radius = (root_radius * (1 - u) + .022 * u
+                  + (.045 + .17 * outer) * math.sin(math.pi * u) ** .85)
+        spread = root_spread * (1 - u) + 1.12 * math.sin(math.pi * u / 2)
+        angle = q * spread + .10 * u * (1 - outer)
+        height = (plan.root[2] + plan.length * .88 * math.sin(math.pi * u / 2)
+                  - .035 * (1 - math.cos(q * math.pi / 2)) * u)
+        local = tuple(radial[k] * radius * math.cos(angle)
+                      + plan.flank[k] * radius * math.sin(angle) for k in range(2))
+        return transform((*local, height))
+
+    return point
+
+
 def _rose(model: Geometry, center: Vec3, radius: float, color: Vec3,
           roll: float = 0.0, normal: Vec3 | None = None) -> None:
-    transform = _frame(center, normal or (center[0] * 0.42, 0.18, 1.0), radius, roll)
-    pale = _mix(color, (1.0, 0.93, 0.89), 0.55)
-    # Each ring has separate overlapping, cupped petals; the rim curls forward.
-    for layer, petals in enumerate((5, 7, 9, 11, 13)):
-        outer = 0.20 + layer * 0.185
-        inner = 0.015 + layer * 0.061
-        depth = 0.28 - layer * 0.14
-        spread = math.pi / petals * 1.37
-        for j in range(petals):
-            theta = j * TAU / petals + layer * 1.13
+    # Decision: .agents/notes/implemented/floral-refinement/2026-10-20-rooted-petals-and-prepared-switching.md
+    # Fewer, broader individually rooted petals buy real curvature within BFM1's
+    # existing byte budget. No central spiral strip or repeated concentric fans.
+    transform = _frame(center, normal or (center[0] * .42, .18, 1.0), radius, roll)
+    pale = _mix(color, (1.0, .93, .89), .55)
+    # Rank-aware companion allocation: maximum sampled triangle error remains
+    # below 2% of head diameter, while a rose costs less than its old 46 sheets.
+    companion_steps = ((3, 4),) * 13 + ((4, 4),) * 3 + ((5, 4),) + ((5, 5),) * 5 + (
+        ((6, 6),) * 2 + ((7, 7),) * 2 + ((8, 8),) * 2)
+    for index in range(28):
+        plan = _rose_petal_plan(index)
+        point = _petal_sweep(plan, transform)
+        # Preserve the original attachment collar and its derivative normals.
+        closed_sweep = _rose_bud(plan, index / 27, transform)
 
-            def point(u: float, v: float, outer=outer, inner=inner, depth=depth,
-                      spread=spread, theta=theta, layer=layer) -> Vec3:
-                q = 2.0 * v - 1.0
-                opening = math.sin(u * math.pi / 2.0)
-                r = inner + (outer - inner) * opening * (1.0 - 0.22 * q * q)
-                angle = (theta + q * spread * (0.30 + 0.70 * opening)
-                         + 0.28 * u + 0.10 * q * q * u)
-                z = (depth + (0.40 + layer * 0.05) * opening ** 1.65
-                     - 0.17 * u ** 8 + 0.13 * q * q * math.sin(math.pi * u)
-                     + 0.035 * math.cos(3.0 * q + theta) * u ** 4)
-                return transform((r * math.cos(angle), r * math.sin(angle), z))
+        def closed(u: float, v: float, opened=point, target=closed_sweep) -> Vec3:
+            if u <= .03:
+                return opened(u, v)
+            if u >= .13:
+                return target(u, v)
+            t = (u - .03) / .10
+            return _mix(opened(u, v), target(u, v), t * t * (3 - 2 * t))
 
-            base_pigment = _petal_color(
-                _mix(color, (0.72, 0.22, 0.37), 0.045 * (4 - layer)), pale)
-
-            def pigment(u: float, v: float, base=base_pigment) -> Vec3:
-                crease = 0.045 * math.exp(-((u - 0.875) / 0.045) ** 2)
-                side = 0.035 * abs(2 * v - 1) ** 10 * u
-                return _mul(base(u, v), 1.0 - crease - side)
-
-            model.add("flowers", radius * radius * (0.34 + layer * 0.19) / petals,
-                      point, pigment, 0.91, edge_bias=2.25, contour=True)
-
-    def spiral(u: float, v: float) -> Vec3:
-        angle = 5.5 * math.pi * u
-        r = 0.018 + 0.19 * u + (v - 0.5) * 0.056
-        z = 0.55 - 0.06 * u + 0.025 * math.sin(math.pi * v)
-        return transform((r * math.cos(angle), r * math.sin(angle), z))
-
-    model.add("flowers", radius * radius * 0.17, spiral,
-              _petal_color(_mul(color, 0.88), pale), 0.84, resolution=72, mesh_steps=(24, 2))
+        pigment = _petal_color(_mix(color, (.72, .22, .37), .12 * (1 - index / 27)), pale)
+        if radius >= .65:
+            steps = (6, 6) if index < 8 else (8, 8) if index < 20 else (10, 12)
+        else:
+            steps = companion_steps[index]
+        model.add("flowers", radius * radius * plan.length * plan.width,
+                  point, pigment, .91, edge_bias=1.4, contour=True, resolution=24,
+                  mesh_steps=steps, closed_point=closed)
 
 
 def _tulip(model: Geometry, center: Vec3, radius: float, color: Vec3,
@@ -272,19 +376,22 @@ def _tulip(model: Geometry, center: Vec3, radius: float, color: Vec3,
     frame = _frame(center, normal or (center[0] * 0.30, -0.20, 1.0), radius, roll)
     transform = (lambda p: frame((p[0], -p[2], p[1]))) if normal else frame
     for j in range(6):
-        theta = j * TAU / 6.0
+        # Three outer tepals alternate with three slightly taller inner tepals.
+        theta = j * TAU / 6.0 + .024 * math.sin(j * 2.1)
         inner = j % 2 == 0
 
-        def point(u: float, v: float, theta=theta, inner=inner) -> Vec3:
-            q = v * 2.0 - 1.0
-            angle = theta + q * 0.68 * (0.58 + 0.42 * math.sin(u * math.pi / 2))
-            r = (0.13 + 0.65 * math.sin(u * math.pi * 0.67)
-                 + 0.09 * u ** 8 + 0.055 * q * q * u ** 4)
-            r *= 0.92 if inner else 1.02
-            height = -0.60 + 1.48 * u - 0.17 * q * q * u ** 3
-            height += 0.045 * math.cos(q * math.pi) * u ** 6
-            if inner:
-                height += 0.045 * u
+        def point(u: float, v: float, theta=theta, inner=inner, j=j) -> Vec3:
+            phi = (v - .5) * math.pi * .96
+            q, cap = math.sin(phi), math.cos(phi)
+            along = u * (1 - .17 * (1 - cap))
+            angle = theta + q * .74 * (.40 + .60 * math.sin(u * math.pi / 2))
+            r = (.10 + .63 * math.sin(along * math.pi * .73)
+                 + (.075 if inner else .13) * along ** 6)
+            r *= .94 if inner else 1.04
+            height = (-.60 + (1.54 if inner else 1.47) * along
+                      + .035 * math.sin(j * 1.9) * along ** 2)
+            # A rounded shoulder and a gently splayed lip leave a real open mouth.
+            r += .028 * q * along ** 3 + .035 * q * q * along ** 4
             return transform((r * math.sin(angle), height, r * math.cos(angle)))
 
         pale = _mix(color, (1.0, 0.97, 0.87), 0.62)
@@ -298,15 +405,30 @@ def _tulip(model: Geometry, center: Vec3, radius: float, color: Vec3,
             return _mul(base(u, v), 1.0 - seam - vein)
 
         model.add("flowers", radius * radius * (0.90 if inner else 1.0), point,
-                  pigment, 1.03, edge_bias=1.2, contour=True)
-    # Visible anthers live inside the open cup, rather than a solid sphere cap.
+                  pigment, 1.03, edge_bias=1.2, contour=True,
+                  mesh_steps=(10, 8) if radius >= .65 else (8, 6))
+    # Separate slender filaments and dark elongated anthers below the six lips.
     for j in range(6):
         angle = TAU * j / 6.0
-        start = transform((0.08 * math.cos(angle), -0.15, 0.08 * math.sin(angle)))
-        end = transform((0.16 * math.cos(angle), 0.40, 0.16 * math.sin(angle)))
+        start = transform((.065 * math.cos(angle), -.42, .065 * math.sin(angle)))
+        end = transform((.19 * math.cos(angle), .34 + .025 * math.sin(j), .19 * math.sin(angle)))
         _tube(model, "flowers", lambda t, a=start, b=end: _mix(a, b, t),
-              radius * 0.024, (0.61, 0.46, 0.16), weight=radius * radius * 0.04,
-              size=0.72)
+              radius * .011, (.68, .63, .35), radius * radius * .025, .69)
+        a = transform((.19 * math.cos(angle), .28 + .025 * math.sin(j), .19 * math.sin(angle)))
+        b = transform((.21 * math.cos(angle), .44 + .025 * math.sin(j), .21 * math.sin(angle)))
+        _tube(model, "flowers", lambda t, a=a, b=b: _mix(a, b, t),
+              radius * .032, (.31, .22, .12), radius * radius * .04, .78)
+    a, b = transform((0., -.42, 0.)), transform((0., .47, 0.))
+    _tube(model, "flowers", lambda t: _mix(a, b, t), radius * .021,
+          (.64, .70, .36), radius * radius * .035, .73)
+
+    def stigma(u: float, v: float) -> Vec3:
+        phi, theta = math.pi * u, TAU * v
+        r = .065 * math.sin(phi) * (1 + .16 * math.cos(3 * theta))
+        return transform((r * math.cos(theta), .48 + .035 * math.cos(phi), r * math.sin(theta)))
+
+    model.add("flowers", radius * radius * .035, stigma, (.76, .76, .43), .72,
+              kind="sphere", mesh_steps=(3, 6))
 
 
 def _floret(model: Geometry, center: Vec3, normal: Vec3, radius: float,
@@ -385,31 +507,69 @@ def _cosmos(model: Geometry, center: Vec3, radius: float, color: Vec3,
               mesh_steps=(2, 8))
 
 
+def _double_petal_plan(species: str, index: int, count: int = 42) -> PetalPlan:
+    """Independent spoon blades: irregular peony bowl versus nested ranunculus.
+
+    Phyllotactic attachments vary continuously in depth and radius, not in
+    repeated equal-height rings. Fewer blades spend the budget on round lips.
+    """
+    outer = index / (count - 1)
+    theta = index * math.pi * (3 - math.sqrt(5)) + .11 * math.sin(index * 1.83)
+    radial = (math.cos(theta), math.sin(theta), 0.)
+    flank = (-radial[1], radial[0], 0.)
+    if species == "peony":
+        tilt = math.radians(9 + 48 * outer + 4 * math.sin(index * 1.71))
+        root = _add(_mul(radial, .035 + .17 * outer),
+                    (0., 0., .12 - .53 * outer + .035 * math.sin(index * 2.17)))
+        return PetalPlan(root, _add(_mul(radial, math.sin(tilt)), (0., 0., math.cos(tilt))),
+                         flank, (.48 + .76 * outer) * (1 + .045 * math.sin(index * 1.13)),
+                         (.24 + .88 * outer ** .75) * (1 + .075 * math.cos(index * 1.91)),
+                         -.62 + .73 * outer, 1.04 * outer ** 1.6, .90 - .48 * outer,
+                         .24 + .045 * math.sin(index * .73), .035 * math.sin(index * 1.37))
+    tilt = math.radians(7 + 40 * outer + 2 * math.sin(index * 1.71))
+    root = _add(_mul(radial, .025 + .40 * outer ** 1.3),
+                (0., 0., .16 - .43 * outer + .018 * math.sin(index * 2.17)))
+    return PetalPlan(root, _add(_mul(radial, math.sin(tilt)), (0., 0., math.cos(tilt))),
+                     flank, .36 + .48 * outer, .22 + .67 * outer,
+                     -.62 + .28 * outer, .10 * outer, .98 - .20 * outer,
+                     .30, .015 * math.sin(index * 1.37))
+
+
+def _double_flower(model: Geometry, species: str, transform: Callable[[Vec3], Vec3],
+                   radius: float, color: Vec3) -> None:
+    pale = _mix(color, (1.0, .95, .88) if species == "ranunculus" else (1., .91, .91), .44)
+    for index in range(42):
+        plan = _double_petal_plan(species, index)
+        opened = _petal_sweep(plan, transform)
+        target = _rose_bud(plan, index / 41, transform)
+
+        def closed(u: float, v: float, opened=opened, target=target) -> Vec3:
+            if u <= .03:
+                return opened(u, v)
+            if u >= .13:
+                return target(u, v)
+            t = (u - .03) / .10
+            return _mix(opened(u, v), target(u, v), t * t * (3 - 2 * t))
+
+        if radius >= .65:
+            steps = (6, 6) if index < 12 else (7, 6) if index < 30 else (9, 8)
+        elif species == "peony":
+            # The broad reflexed shoulders need their own transverse samples.
+            steps = ((3, 3) if index < 10 else (4, 4) if index < 14 else
+                     (5, 5) if index < 28 else (6, 6) if index < 36 else (7, 7))
+        else:
+            steps = (3, 3) if index < 14 else (4, 4) if index < 28 else (5, 5)
+        pigment = _petal_color(_mix(color, (.74, .29, .39),
+                                    .12 * (1 - index / 41) if species == "peony" else .025), pale)
+        model.add("flowers", radius * radius * plan.length * plan.width,
+                  opened, pigment, .94, edge_bias=1.35, contour=True, resolution=20,
+                  mesh_steps=steps, closed_point=closed)
+
+
 def _peony(model: Geometry, center: Vec3, radius: float, color: Vec3,
            roll: float = 0.0, normal: Vec3 | None = None) -> None:
-    transform = _frame(center, normal or (center[0] * 0.40, 0.24, 1.0), radius, roll)
-    pale = _mix(color, (1.0, 0.91, 0.91), 0.52)
-    for layer, petals in enumerate((7, 9, 11, 13, 15, 17)):
-        for j in range(petals):
-            theta = j * TAU / petals + layer * 0.69
-
-            def point(u: float, v: float, layer=layer, theta=theta, petals=petals) -> Vec3:
-                q = 2.0 * v - 1.0
-                opening = math.sin(u * math.pi / 2.0)
-                reach = 0.18 + layer * 0.157
-                r = (0.025 + layer * 0.037 + reach * opening
-                     * (1.0 - 0.19 * abs(q) ** 2.5))
-                angle = theta + q * math.pi / petals * 1.75 * (0.2 + opening)
-                r += 0.035 * math.cos(q * 4.5 * math.pi + theta) * u ** 7
-                z = (0.16 - layer * 0.11 + (0.42 + layer * 0.055) * opening ** 1.8
-                     - 0.16 * u ** 8 + 0.095 * q * q * math.sin(math.pi * u)
-                     + 0.065 * math.sin(q * 5 * math.pi + theta) * u ** 5)
-                return transform((r * math.cos(angle), r * math.sin(angle), z))
-
-            model.add("flowers", radius * radius * (0.48 + layer * 0.21) / petals,
-                      point, _petal_color(_mix(color, (0.77, 0.27, 0.42),
-                                               0.035 * (5 - layer)), pale),
-                      0.93, edge_bias=1.65, contour=True, resolution=18)
+    transform = _frame(center, normal or (center[0] * .40, .24, 1.0), radius, roll)
+    _double_flower(model, "peony", transform, radius, color)
 
 
 def _lily(model: Geometry, center: Vec3, radius: float, color: Vec3,
@@ -453,41 +613,42 @@ def _lily(model: Geometry, center: Vec3, radius: float, color: Vec3,
 def _sunflower(model: Geometry, center: Vec3, radius: float, color: Vec3,
                roll: float = 0.0, normal: Vec3 | None = None) -> None:
     transform = _frame(center, normal or (center[0] * 0.42, 0.18, 1.0), radius, roll)
-    for layer, petals in enumerate((21, 27)):
+    for layer, petals in enumerate((14, 18)):
         for j in range(petals):
-            theta = j * TAU / petals + layer * 0.13
+            theta = j * TAU / petals + layer * .17 + .028 * math.sin(j * 2.3)
+            length = (.66 + layer * .13) * (1 + .09 * math.sin(j * 1.7 + layer))
 
-            def point(u: float, v: float, theta=theta, layer=layer) -> Vec3:
+            def point(u: float, v: float, theta=theta, layer=layer, length=length) -> Vec3:
                 q = 2 * v - 1
-                r = 0.30 + (0.66 + layer * 0.13) * u
-                width = q * (0.115 + layer * 0.012) * math.sin(math.pi * u) ** 0.78
-                r += 0.025 * math.sin(theta * 7) * u
-                z = (0.07 - layer * 0.12 + 0.28 * math.sin(math.pi * u)
-                     - 0.23 * u * u + 0.12 * q * q * math.sin(math.pi * u)
-                     + 0.06 * math.cos(theta * 3) * u ** 3)
+                r = .40 + length * u - .035 * q * q * u ** 5
+                width = q * (.155 + layer * .018) * math.sin(math.pi * u) ** .78
+                z = (.04 - layer * .10 + .26 * math.sin(math.pi * u)
+                     - .24 * u * u + .11 * q * q * math.sin(math.pi * u)
+                     + .065 * math.cos(theta * 3) * u ** 3 + .035 * q * u * u)
                 return transform((r * math.cos(theta) - width * math.sin(theta),
                                   r * math.sin(theta) + width * math.cos(theta), z))
 
-            model.add("flowers", radius * radius * 0.67 / petals, point,
-                      _petal_color(color, (1.0, 0.90, 0.40), (0.85, 0.47, 0.10)),
-                      0.96, contour=True, resolution=14)
-    # Individually raised florets, not one flat painted center disk.
+            model.add("flowers", radius * radius * .67 / petals, point,
+                      _petal_color(color, (1.0, .90, .40), (.85, .47, .10)),
+                      .96, contour=True, resolution=14,
+                      mesh_steps=(8, 4) if radius >= .65 else (6, 4))
+    # The raised brown phyllotactic disc meets, but does not hide, the ray roots.
     for j in range(128):
-        t = (j + 0.5) / 128
+        t = (j + .5) / 128
         theta = j * math.pi * (3.0 - math.sqrt(5.0))
-        r = 0.345 * math.sqrt(t)
+        r = .43 * math.sqrt(t)
         cx, cy = r * math.cos(theta), r * math.sin(theta)
-        cz = 0.09 + 0.21 * (1.0 - t) ** 0.75
+        cz = .09 + .21 * (1.0 - t) ** .75
 
         def seed(u: float, v: float, cx=cx, cy=cy, cz=cz, theta=theta) -> Vec3:
-            reach = 0.026 * math.sqrt(u)
+            reach = .032 * math.sqrt(u)
             angle = TAU * v + theta
             return transform((cx + reach * math.cos(angle), cy + reach * math.sin(angle),
-                              cz + 0.040 * math.sqrt(1 - u)))
+                              cz + .040 * math.sqrt(1 - u)))
 
-        model.add("flowers", radius * radius * 0.005, seed,
-                  _mix((0.23, 0.13, 0.075), (0.62, 0.39, 0.13), t),
-                  0.83, resolution=6, mesh_steps=(1, 4))
+        model.add("flowers", radius * radius * .005, seed,
+                  _mix((.23, .13, .075), (.62, .39, .13), t),
+                  .83, resolution=6, mesh_steps=(1, 4))
 
 
 def _calla(model: Geometry, center: Vec3, radius: float, color: Vec3,
@@ -658,24 +819,7 @@ def _ribbon(model: Geometry, color: Vec3) -> None:
 
 def _ranunculus(model: Geometry, center: Vec3, radius: float, color: Vec3,
                 roll: float = 0.0, normal: Vec3 = (0.0, 0.0, 1.0)) -> None:
-    transform = _frame(center, normal, radius, roll)
-    for layer in range(7):
-        petals = 8 + layer * 2
-        for j in range(petals):
-            theta = j * TAU / petals + layer * 0.71
-
-            def point(u: float, v: float, layer=layer, theta=theta, petals=petals) -> Vec3:
-                q = 2 * v - 1
-                r = 0.025 + layer * 0.115 + (0.14 + layer * 0.018) * math.sin(u * math.pi / 2)
-                r *= 1 - 0.08 * q * q
-                angle = theta + q * math.pi / petals * (0.7 + 0.75 * u)
-                z = (0.43 - layer * 0.071 - 0.29 * (1 - u) ** 2
-                     + 0.14 * u ** 5 + 0.035 * q * q * math.sin(math.pi * u))
-                return transform((r * math.cos(angle), r * math.sin(angle), z))
-
-            model.add("flowers", radius * radius * (0.30 + layer * 0.13) / petals,
-                      point, _petal_color(color, _mix(color, (1.0, 0.99, 0.88), 0.32)),
-                      0.95, edge_bias=1.35, contour=True, resolution=10)
+    _double_flower(model, "ranunculus", _frame(center, normal, radius, roll), radius, color)
 
 
 def _dahlia(model: Geometry, center: Vec3, radius: float, color: Vec3,
@@ -963,12 +1107,15 @@ def _add_head(model: Geometry, head: FlowerHead, color: Vec3, index: int, *, ext
         steps = mesh_steps(surface, j)
         pigment = (surface.pigment if surface.kind == "tube" or steps == (1, 4)
                    else _tonal_pigment(surface.pigment, color))
-        if extra_cup and surface.kind == "sheet" and steps != (1, 4):
+        # Root-axis flowers own both their transverse cup and matching bud sweep.
+        # A second global-axis bend would separate their attachment collars.
+        if (extra_cup and surface.closed_point is None and surface.kind == "sheet"
+                and steps != (1, 4)):
             surface = replace(surface, point=_cupped_surface(surface, head))
         surface = replace(surface, pigment=pigment, mesh_steps=steps)
         delay = .08 + .46 * (1 - j / max(1, len(surfaces) - 1)) + .05 * ((index * 3) % 7) / 6
         shaped.append(replace(surface, weight=surface.weight / total * head.radius ** 2,
-                              closed_point=_closed_petal(surface, head, j, len(surfaces), floret_frame),
+                              closed_point=surface.closed_point or _closed_petal(surface, head, j, len(surfaces), floret_frame),
                               growth_delay=delay))
     model.sections["flowers"][start:] = shaped
     model.heads.append(head)
@@ -1367,11 +1514,20 @@ def render_svg(particles: list[Particle], title: str, description: str,
     return "\n".join(lines)
 
 
+def _head_composition(bouquet_id: str) -> list[dict[str, str | int]]:
+    """Manifest metadata follows actual arranged heads, not marketing copy."""
+    counts: dict[str, int] = {}
+    for head in _arrange_heads(bouquet_id):
+        counts[head.species] = counts.get(head.species, 0) + 1
+    return [{"species": species, "count": count} for species, count in counts.items()]
+
+
 def generate_assets(output: str | Path = Path("site/assets"), *, include_growth: bool = True) -> dict:
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     manifest = {"version": 2, "count": COUNT, "stride": STRIDE,
-                "bouquets": [dict(item, **({"growth": f'{item["id"]}.growth'} if include_growth else {}))
+                "bouquets": [dict(item, composition=_head_composition(item["id"]),
+                                  **({"growth": f'{item["id"]}.growth'} if include_growth else {}))
                              for item in BOUQUETS]}
     for item in BOUQUETS:
         if include_growth:

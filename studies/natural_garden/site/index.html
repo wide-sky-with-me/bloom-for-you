@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#232b28">
+  <title>花园的一页新样张 · 花间来信</title>
+  <link rel="stylesheet" href="./study.css?v=1">
+  <script type="module" src="./app.js?v=1"></script>
+</head>
+<body>
+  <header class="page-header"><a class="wordmark" href="http://127.0.0.1:8911/"><svg width="24" height="28" viewBox="0 0 28 32" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><path d="M14 16C-2 16 2 1 9 3c5 1 5 7 5 13Zm0 0C30 16 26 1 19 3c-5 1-5 7-5 13Zm0 0C-1 16 3 29 10 27c4-1 4-6 4-11Zm0 0c15 0 11 13 4 11-4-1-4-6-4-11Zm0 0v16"/></svg><span>花间来信</span></a><a class="return-link" href="http://127.0.0.1:8911/">回到原花园</a></header>
+  <main class="study-layout">
+    <section class="introduction" aria-labelledby="page-title">
+      <p class="study-label">一束新的心意</p>
+      <h1 id="page-title">让花，<br>长得自在一些。</h1>
+      <p class="introduction-copy">奶油与香槟，卷起的薄瓣，<br>还有几朵不急着盛开的花。</p>
+      <p class="study-note">自然花园 · 独立花型样张</p>
+    </section>
+    <section class="flower-study" aria-label="自然花园交互样张" aria-busy="true" id="gallery">
+      <div class="stage">
+        <canvas id="bouquet" tabindex="0" aria-label="奶油香槟自然花束。拖动或用方向键旋转，轻点重新绽放。"></canvas>
+        <p class="loading-note" id="loading-note" role="status">在整理一束新花……</p>
+        <div class="failure" id="failure" hidden><p id="failure-message"></p><button id="retry">重新加载</button><a href="http://127.0.0.1:8911/">看看原来的花园</a></div>
+        <button class="motion-button" id="motion" aria-label="暂停花束动画" aria-pressed="false">暂停</button>
+      </div>
+      <div class="specimen-caption" aria-live="polite"><h2 id="specimen-title">奶油香槟的花园</h2><p id="specimen-description">把盛开、半开与花苞，放在同一阵温柔的风里。</p></div>
+      <div class="view-selection" id="view-selection" role="group" aria-label="选择看整束或近看单花"></div>
+      <div class="flower-actions"><button id="bloom">再绽放一次</button><button id="reset-view">回到正面</button><span>拖动，看看花的另一面。</span></div>
+    </section>
+  </main>
+  <footer class="page-footer"><span>先让一束花，接近心里的模样。</span><span>手工曲面样张 · 非实拍</span></footer>
+</body>
+</html>

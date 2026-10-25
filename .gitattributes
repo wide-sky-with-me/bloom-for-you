@@ -1,0 +1,3 @@
+# Preserve the pinned upstream bundle byte-for-byte for its integrity check.
+# Upstream whitespace is not project formatting; never patch the vendored code.
+site/vendor/three-0.186.1/** -text -whitespace

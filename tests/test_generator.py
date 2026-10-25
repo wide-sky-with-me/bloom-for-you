@@ -98,13 +98,16 @@ class ParticleContractTests(unittest.TestCase):
     def test_geometry_is_petal_surfaces_not_random_volume(self) -> None:
         model = generator.Geometry()
         generator._rose(model, (0.0, 0.0, 0.0), 1.0, (0.9, 0.6, 0.7))
-        self.assertEqual(len(model.sections["flowers"]), 46)
+        # Rooted broad blades replace 45 concentric sectors plus a spiral strip.
+        # Their curvature and finer exposed rims are checked in test_petal_geometry.
+        self.assertEqual(len(model.sections["flowers"]), 28)
+        self.assertTrue(all(surface.closed_point is not None for surface in model.sections["flowers"]))
         petal = model.sections["flowers"][20]
         root, rim = petal.point(0.0, 0.5), petal.point(1.0, 0.5)
         self.assertGreater(math.hypot(*rim[:2]), math.hypot(*root[:2]) * 2)
         model = generator.Geometry()
         generator._tulip(model, (0.0, 0.0, 0.0), 1.0, (1.0, 0.8, 0.7))
-        self.assertEqual(len(model.sections["flowers"]), 12)
+        self.assertEqual(len(model.sections["flowers"]), 20)
         bottom = model.sections["flowers"][0].point(0.0, 0.5)
         lip = model.sections["flowers"][0].point(1.0, 0.5)
         self.assertGreater(lip[1] - bottom[1], 1.0)
@@ -156,7 +159,9 @@ class ParticleContractTests(unittest.TestCase):
 
     def test_new_flower_silhouettes_have_distinct_construction_and_real_depth(self) -> None:
         surfaces = {}
-        expected_counts = {"peony": 72, "lily": 19, "sunflower": 176, "calla": 2}
+        # Rooted double blooms trade repeated rings for broader curved blades;
+        # sunflower uses fewer, wider rays while retaining 128 raised disc florets.
+        expected_counts = {"peony": 42, "lily": 19, "sunflower": 160, "calla": 2}
         for key in expected_counts:
             model = generator.Geometry()
             getattr(generator, "_" + key)(model, (0.0, 0.0, 0.0), 1.0, (0.96, 0.80, 0.72))
@@ -175,7 +180,7 @@ class ParticleContractTests(unittest.TestCase):
         self.assertGreater(max(p[2] for p in rim) - min(p[2] for p in rim), 1.1)
         sunflower = surfaces["sunflower"]
         self.assertTrue(all(s.kind == "sheet" for s in sunflower))
-        self.assertGreater(sunflower[48].point(0.0, 0.5)[2], sunflower[-1].point(0.0, 0.5)[2] + 0.15)
+        self.assertGreater(sunflower[32].point(0.0, 0.5)[2], sunflower[-1].point(0.0, 0.5)[2] + 0.15)
         rose = generator.Geometry()
         generator._rose(rose, (0.0, 0.0, 0.0), 1.0, (0.9, 0.6, 0.7))
         outer = rose.sections["flowers"][-2]
@@ -275,7 +280,7 @@ class ParticleContractTests(unittest.TestCase):
             points = [s.point(u, v) for s in model.sections["flowers"]
                       for u, v in ((0.1, 0.3), (0.6, 0.7), (1.0, 0.5))]
             self.assertGreater(max(p[2] for p in points) - min(p[2] for p in points), 0.4)
-        self.assertEqual(counts, {"ranunculus": 98, "dahlia": 70, "lisianthus": 17})
+        self.assertEqual(counts, {"ranunculus": 42, "dahlia": 70, "lisianthus": 17})
 
     def test_growth_sampling_preserves_the_exact_open_particle_stream(self) -> None:
         for key in IDS:
@@ -383,7 +388,16 @@ class ParticleContractTests(unittest.TestCase):
                              {f"{key}.{suffix}" for key in IDS for suffix in ("bin", "mesh", "svg", "growth")})
             for item in manifest["bouquets"]:
                 self.assertEqual(set(item), {"id", "file", "surface", "title", "subtitle",
-                                             "description", "color", "growth"})
+                                             "description", "color", "growth", "composition"})
+                composition = item["composition"]
+                actual = {}
+                for head in generator._arrange_heads(item["id"]):
+                    actual[head.species] = actual.get(head.species, 0) + 1
+                self.assertEqual({entry["species"]: entry["count"] for entry in composition}, actual)
+                self.assertEqual(len(composition), 5)
+                self.assertEqual(sum(entry["count"] for entry in composition), 36)
+                self.assertTrue(all(set(entry) == {"species", "count"} and entry["count"] > 0
+                                    for entry in composition))
                 filename = item["file"]
                 self.assertEqual(filename, f'{item["id"]}.bin')
                 self.assertEqual(Path(filename).name, filename)
@@ -481,15 +495,17 @@ class MeshContractTests(unittest.TestCase):
         self.assertEqual(indices[:24], indices[24:48])
 
     def test_real_rotated_petals_keep_exact_source_positions_pigments_and_normals(self) -> None:
-        for species, surface_index in (("rose", 30), ("peony", 50), ("calla", 0),
-                                       ("dahlia", 50), ("ranunculus", 90)):
+        for species, surface_index in (("rose", 24), ("peony", 35), ("calla", 0),
+                                       ("dahlia", 50), ("ranunculus", 35)):
             with self.subTest(species=species):
                 model = generator.Geometry()
                 head = generator.FlowerHead(species, (1.2, 0.8, -0.7),
                                             generator._unit((0.2, 0.5, 0.8)), 0.70, "outer")
                 generator._add_head(model, head, (0.98, 0.84, 0.70), 0)
                 surface = model.sections["flowers"][surface_index]
-                self.assertEqual(surface.mesh_steps, (16, 20) if species == "calla" else (6, 4))
+                expected_steps = {"calla": (16, 20), "rose": (10, 12),
+                                  "peony": (9, 8), "ranunculus": (9, 8)}.get(species, (6, 4))
+                self.assertEqual(surface.mesh_steps, expected_steps)
                 source = generator.Geometry()
                 source.sections["flowers"] = [surface]
                 vertices, indices = self._decode(generator.encode_mesh(source))
@@ -523,7 +539,7 @@ class MeshContractTests(unittest.TestCase):
                 self.assertEqual(indices, tuple(remap[index] for index in reference))
 
     def test_hero_petals_and_medium_broad_petals_keep_their_detail(self) -> None:
-        counts = {"rose": 45, "peony": 72, "dahlia": 70, "ranunculus": 98, "sunflower": 48}
+        counts = {"rose": 28, "peony": 42, "dahlia": 70, "ranunculus": 42, "sunflower": 32}
         for key in IDS:
             for index, head in enumerate(generator._arrange_heads(key)):
                 if head.radius < 0.65 or head.species not in counts:
@@ -532,13 +548,24 @@ class MeshContractTests(unittest.TestCase):
                     model = generator.Geometry()
                     generator._add_head(model, head, (0.98, 0.84, 0.70), index)
                     petals = model.sections["flowers"][:counts[head.species]]
-                    self.assertTrue(all(surface.mesh_steps == (6, 4) for surface in petals))
-        for species, micro, count in (("rose", 12, 45), ("peony", 16, 72), ("dahlia", 19, 70)):
+                    expected = ([(6, 6)] * 8 + [(8, 8)] * 12 + [(10, 12)] * 8
+                                if head.species == "rose" else
+                                [(6, 6)] * 12 + [(7, 6)] * 18 + [(9, 8)] * 12
+                                if head.species in ("peony", "ranunculus") else
+                                [(8, 4)] * 32 if head.species == "sunflower" else
+                                [(6, 4)] * counts[head.species])
+                    self.assertEqual([surface.mesh_steps for surface in petals], expected)
+        for species, micro, count in (("rose", 0, 28), ("peony", 0, 42), ("dahlia", 19, 70)):
             model = generator.Geometry()
             head = generator.FlowerHead(species, (0.0, 0.0, 0.0), (0.0, 0.0, 1.0), 0.52, "middle")
             generator._add_head(model, head, (0.98, 0.84, 0.70), 0)
-            self.assertTrue(all(surface.mesh_steps == (5, 3)
-                                for surface in model.sections["flowers"][micro:count]))
+            expected = ([(3, 4)] * 13 + [(4, 4)] * 3 + [(5, 4)] + [(5, 5)] * 5
+                        + [(6, 6)] * 2 + [(7, 7)] * 2 + [(8, 8)] * 2 if species == "rose"
+                        else [(3, 3)] * 10 + [(4, 4)] * 4 + [(5, 5)] * 14 + [(6, 6)] * 8 + [(7, 7)] * 6
+                        if species == "peony"
+                        else [(5, 3)] * (count - micro))
+            self.assertEqual([surface.mesh_steps for surface in model.sections["flowers"][micro:count]],
+                             expected)
         for radius, steps in ((0.70, (16, 20)), (0.52, (12, 16))):
             model = generator.Geometry()
             head = generator.FlowerHead("calla", (0.0, 0.0, 0.0), (0.0, 0.0, 1.0), radius, "outer")

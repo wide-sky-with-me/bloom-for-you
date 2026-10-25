@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const source = await readFile(
-  new URL("../site/particles.js", import.meta.url),
-  "utf8",
-);
-const { ParticleGarden } = await import(
-  `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
-);
+const moduleURL = (source) => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
+const prepareSource = await readFile(new URL('../site/prepare-data.js', import.meta.url), 'utf8');
+const prepareURL = moduleURL(prepareSource);
+const clientSource = (await readFile(new URL('../site/prepare-client.js', import.meta.url), 'utf8'))
+  .replace(/\.\/prepare-data\.js\?v=\d+/, prepareURL);
+// Preserve every native/WebGL1 assertion against the still-production compatibility renderer.
+const source = (await readFile(new URL('../site/legacy-garden.js', import.meta.url), 'utf8'))
+  .replace(/\.\/prepare-data\.js\?v=\d+/, prepareURL)
+  .replace(/\.\/prepare-client\.js\?v=\d+/, moduleURL(clientSource));
+const { ParticleGarden } = await import(moduleURL(source));
+const { prepareSync } = await import(prepareURL);
 
 const surfaceSource = await readFile(
   new URL("../site/surface-data.js", import.meta.url),
@@ -1439,7 +1443,35 @@ test("surface triangles precede grains with eight packed mesh attributes and rea
   assert.ok(
     fragment.indexOf("if (uSurface > .5)") < fragment.indexOf("gl_PointCoord"),
   );
-  assert.match(fragment, /vec4\(vColor \* micrograin, surfaceAlpha\)/);
+  assert.match(fragment, /vec4\(petalColor \* micrograin, surfaceAlpha\)/);
+});
+
+test("curled surfaces normalize and orient interpolated normals per fragment without changing point coverage", () => {
+  const r = rig();
+  const vertex = r.gl.shaders[0].source;
+  const fragment = r.gl.shaders[1].source;
+  assert.match(vertex, /vPetalNormal = normal;/);
+  assert.ok(vertex.indexOf('vPetalNormal = normal;') < vertex.indexOf('normal *= front'));
+  assert.match(vertex, /vViewDirection = vec3\(0\.0, 0\.0, uCameraDistance\) - p;/);
+  assert.match(vertex, /vPigment = pigment;/);
+  for (const shader of [vertex, fragment]) {
+    const varyings = [...shader.matchAll(/varying mediump (vec3|float) (\w+);/g)];
+    assert.equal(varyings.length, 6);
+    assert.ok(varyings.length <= 8, 'WebGL1 guarantees at least eight varying vectors');
+  }
+  const lighting = fragment.slice(fragment.indexOf('vec3 shadePetal'), fragment.indexOf('void main()'));
+  assert.match(lighting, /float front = step\(0\.0, dot\(normal, view\)\);/);
+  assert.match(lighting, /normal \*= front \* 2\.0 - 1\.0;/);
+  assert.match(lighting, /float key = clamp\(\(dot\(normal, keyDirection\) \+ \.10\) \/ 1\.10, 0\.0, 1\.0\);/);
+  assert.match(lighting, /pow\(light \* mix\(\.91, 1\.0, front\), vec3\(1\.0 \/ 2\.2\)\)/);
+  assert.match(lighting, /normalize\(interpolatedNormal\)/);
+  assert.match(lighting, /\* \.018 \* petal;/);
+  assert.doesNotMatch(lighting, /uPointAlpha|uSurfaceAlpha|gl_PointCoord|gl_FragColor/);
+  assert.match(fragment, /shadePetal\(vPigment, vPetalNormal, vViewDirection\)/);
+  assert.match(fragment, /float surfaceAlpha = uSurfaceAlpha \* vAlpha;/);
+  // Preserve the earlier numerical point-lighting and particle-depth contracts.
+  assert.match(vertex, /pow\(light \* mix\(\.91, 1\.0, front\), vec3\(1\.0 \/ 2\.2\)\)/);
+  assert.match(fragment, /\.975 \+ \.025/);
 });
 
 test("fading surfaces blend color without writing depth until they are nearly opaque", () => {
@@ -2245,4 +2277,174 @@ test("actual growth assets synchronize all eight full-size point and mesh bouque
   console.log(
     `GROWTH eight full-size bouquets: ${(performance.now() - began).toFixed(1)}ms`,
   );
+});
+
+function preparedFlower(r, offset = 0) {
+  const data = particles(offset), surface = triangleSurface(offset);
+  return prepareSync({particles: data, surface, growth: growthBundle(data, surface)},
+    {octBase: r.garden.octBase, uintIndices: r.garden.uintIndices});
+}
+
+test('prepared supports and GPU layouts exactly retain synchronous full-scan contracts', () => {
+  for (const uintIndices of [true, false]) for (const precision of [23, 10]) {
+    const r = rig({uintIndices, precision}), p = preparedFlower(r);
+    const data = particles(), surface = triangleSurface();
+    r.garden.setBouquet(data, true, surface, growthBundle(data, surface));
+    assert.deepEqual(p.packed, r.garden.gpuTargetData);
+    assert.deepEqual(p.mesh.packed, r.garden.surfacePacked);
+    assert.deepEqual(p.projectionIndices, r.garden.projectionIndices);
+    assert.deepEqual(p.mesh.support, r.garden.surfaceSupportPoints);
+    assert.deepEqual(new Set(p.growthProjectionIndices), new Set(r.garden.growthProjectionIndices));
+    assert.deepEqual(p.mesh.projectionIndices, r.garden.surfaceGrowthIndices);
+    r.garden.dispose();
+  }
+});
+
+test('async retarget waits for full crossfade, retains visible source and commits latest only', async () => {
+  const r = rig(), a = preparedFlower(r), b = preparedFlower(r, .1), c = preparedFlower(r, .2), d = preparedFlower(r, .3);
+  await r.garden.queuePrepared(a, true); r.step(1000); r.step(3000);
+  const progress = r.garden.bloomProgress;
+  await r.garden.queuePrepared(b);
+  assert.equal(r.garden.sourceGrowth, progress);
+  assert.equal(r.garden.gpuData, a.packed);
+  assert.equal(r.garden.outgoingSurface.packed, a.mesh.packed);
+  r.step(3100); r.step(3500);
+  const uploads = r.gl.uploads.length;
+  const pending = r.garden.queuePrepared(c);
+  const rejected = assert.rejects(pending, {name: 'AbortError'});
+  const final = r.garden.queuePrepared(d);
+  await rejected;
+  assert.equal(r.garden.targetData, b.particles);
+  assert.equal(r.gl.uploads.length, uploads, 'waiting does not copy/upload or erase visible faces');
+  r.step(5100); await final;
+  assert.equal(r.garden.targetData, d.particles);
+  assert.equal(r.garden.outgoingSurface.packed, b.mesh.packed);
+  assert.equal(r.garden.outgoingSurface.indices.length, b.mesh.indices.length);
+  assert.equal(r.garden.mix, 0);
+  r.step(100000);
+  assert.ok(r.garden.mix < .001, 'first frame excludes all preparation and queue wall time');
+  r.garden.dispose();
+});
+
+test('waiting selection lands on pause, blur, hidden and reduced motion without a stalled clock', async () => {
+  for (const stop of ['pause', 'blur', 'hidden', 'reduce']) {
+    const r = rig();
+    await r.garden.queuePrepared(preparedFlower(r), true); r.step(1000);
+    await r.garden.queuePrepared(preparedFlower(r, .1)); r.step(1100);
+    const final = preparedFlower(r, .2), pending = r.garden.queuePrepared(final);
+    if (stop === 'pause') r.garden.setPaused(true);
+    if (stop === 'blur') window.emit('blur');
+    if (stop === 'hidden') {r.document.hidden = true; r.document.emit('visibilitychange');}
+    if (stop === 'reduce') r.garden.setReducedMotion(true);
+    await pending;
+    assert.equal(r.garden.targetData, final.particles, stop);
+    assert.equal(r.garden.mix, 1, stop);
+    assert.equal(r.garden.outgoingSurface, null, stop);
+    assert.equal(r.garden.bloomProgress, 1, stop);
+    if (stop === 'blur') {
+      const elapsed = r.garden.elapsed, time = r.garden.time, draws = r.gl.draws.length;
+      assert.equal(r.queue.size, 1, 'visible static blur commit must keep its final draw');
+      r.step(900000);
+      assert.ok(r.gl.draws.length > draws, 'the committed bouquet actually draws');
+      assert.equal(r.garden.elapsed, elapsed, 'unfocused draw does not advance growth');
+      assert.equal(r.garden.time, time, 'unfocused draw does not advance wind');
+      assert.equal(r.queue.size, 0, 'unfocused static selection does not start an idle loop');
+    }
+    r.garden.dispose();
+  }
+});
+
+test('dispose and context loss cancel queued preparation without late GPU writes', async () => {
+  for (const stop of ['dispose', 'lost']) {
+    const r = rig();
+    await r.garden.queuePrepared(preparedFlower(r), true); r.step(1000);
+    await r.garden.queuePrepared(preparedFlower(r, .1)); r.step(1100);
+    const pending = r.garden.queuePrepared(preparedFlower(r, .2));
+    const rejected = assert.rejects(pending, {name: 'AbortError'});
+    const uploads = r.gl.uploads.length;
+    if (stop === 'dispose') r.garden.dispose(); else r.canvas.emit('webglcontextlost', {preventDefault() {}});
+    await rejected;
+    await assert.rejects(r.garden.prepareBouquet('late', {particles: particles()}), {name: 'AbortError'});
+    assert.equal(r.gl.uploads.length, uploads);
+    assert.equal(r.queue.size, 0);
+  }
+});
+
+test('all eight immutable prepared targets exactly match legacy packed and full-support results', async () => {
+  const r = rig();
+  for (const {id, data, surface, growth} of await bouquetData()) {
+    r.garden.setBouquet(data, true, surface, growth);
+    const p = prepareSync({particles: data, surface, growth}, {octBase: r.garden.octBase, uintIndices: true});
+    assert.deepEqual(p.packed, r.garden.gpuTargetData, id);
+    assert.deepEqual(p.mesh.packed, r.garden.surfacePacked, id);
+    assert.deepEqual(p.projectionIndices, r.garden.projectionIndices, id);
+    assert.deepEqual(p.mesh.support, r.garden.surfaceSupportPoints, id);
+    assert.deepEqual(p.mesh.projectionIndices, r.garden.surfaceGrowthIndices, id);
+    assert.deepEqual(new Set(p.growthProjectionIndices), new Set(r.garden.growthProjectionIndices), id);
+  }
+  r.garden.dispose();
+});
+
+test('synchronous selection invalidates async canonical identity only after successful validation', async () => {
+  const r = rig(), a = preparedFlower(r), b = preparedFlower(r, .2);
+  await r.garden.queuePrepared(a, true); r.step(1000);
+  assert.throws(() => r.garden.setBouquet(new Float32Array(1)), /stride/);
+  assert.equal(r.garden.preparedCurrent, a);
+  r.garden.setBouquet(particles(.5), true, triangleSurface(.5));
+  assert.equal(r.garden.preparedCurrent, null);
+  await r.garden.queuePrepared(b);
+  assert.equal(r.garden.data, b.particles, 'mixed API route safely selects directly, never reuses mismatched source buffers');
+  assert.equal(r.garden.outgoingSurface, null);
+  r.step(1100);
+  await r.garden.queuePrepared(a);
+  const superseded = r.garden.queuePrepared(b);
+  const rejected = assert.rejects(superseded, {name: 'AbortError'});
+  r.garden.setBouquet(particles(.7), true);
+  await rejected;
+  assert.equal(r.garden.pendingPrepared, null);
+  r.garden.dispose();
+});
+
+test('real prepared rose to tulip preserves the lens and actual canonical growth envelopes', async () => {
+  const r = rig();
+  const [a, b] = (await bouquetData()).slice(0, 2).map(({data, surface, growth}) =>
+    prepareSync({particles: data, surface, growth}, {octBase: r.garden.octBase, uintIndices: true}));
+  await r.garden.queuePrepared(a, true); r.step(1000); r.step(4000);
+  const sourceProgress = r.garden.bloomProgress;
+  const previous = {...r.garden.projectionState, center: [...r.garden.projectionState.center]};
+  await r.garden.queuePrepared(b);
+  assert.equal(r.garden.sourceGrowth, sourceProgress);
+  const focal = r.garden.fitProjection(previous.yaw, previous.pitch);
+  assert.ok(Math.abs(focal - previous.focal) < 1e-9, 'the first new-state lens remains continuous');
+  for (let axis = 0; axis < 2; axis++) assert.ok(Math.abs(r.garden.frameCenter[axis] - previous.center[axis]) < 1e-9);
+  const pointPose = new Float32Array(a.particles.length);
+  function meshPose(packed, progress) {
+    const posed = new Float32Array(packed.length / 16 * 9);
+    for (let vertex = 0; vertex < packed.length / 16; vertex++) posed.set(packedPose(packed, vertex * 16, progress), vertex * 9);
+    return posed;
+  }
+  for (const age of [0, .4, .8, 1.2, 1.6]) {
+    const t = age / 1.6;
+    r.garden.elapsed = r.garden.transitionAt + age;
+    r.garden.mix = t * t * (3 - 2 * t);
+    r.garden.updateGrowth();
+    for (let vertex = 0; vertex < a.particles.length / 11; vertex++) {
+      const source = packedPose(a.packed, vertex * 16, r.garden.sourceGrowth);
+      const target = packedPose(b.packed, vertex * 16, r.garden.bloomProgress);
+      for (let axis = 0; axis < 3; axis++) pointPose[vertex * 11 + axis] = source[axis] * (1 - r.garden.mix) + target[axis] * r.garden.mix;
+      pointPose[vertex * 11 + 7] = a.packed[vertex * 16 + 7];
+    }
+    const meshes = [];
+    if (r.garden.mix < .995) meshes.push(meshPose(a.mesh.packed, r.garden.sourceGrowth));
+    if (r.garden.mix > .005) meshes.push(meshPose(b.mesh.packed, r.garden.bloomProgress));
+    for (const aspect of [.65, 1.5]) for (const yaw of [0, Math.PI / 2, Math.PI]) {
+      r.garden.aspect = aspect;
+      const pitch = -.15, focal = r.garden.fitProjection(yaw, pitch);
+      for (const [data, stride] of [[pointPose, 11], ...meshes.map(data => [data, 9])]) {
+        const bounds = projectedEnvelope(data, yaw, pitch, focal, aspect, r.garden.time, stride, r.garden.frameCenter);
+        assert.ok(Object.values(bounds).every(value => Math.abs(value) < .98), `async envelope age${age} aspect${aspect} yaw${yaw}: ${JSON.stringify(bounds)}`);
+      }
+    }
+  }
+  r.garden.dispose();
 });

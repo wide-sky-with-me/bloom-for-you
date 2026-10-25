@@ -27,7 +27,11 @@ jobs:
           node-version: "22"
       - name: Test geometry and renderer contracts
         run: python -m unittest discover -s tests -v
-      - name: Build deterministic particle bouquets
+      - name: Test gallery selection and close-up contracts
+        run: node tests/app_natural.mjs
+      - name: Build deterministic natural flower garden
+        env:
+          BLOOM_BUILD_REVISION: ${{ github.sha }}
         run: python build.py
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4

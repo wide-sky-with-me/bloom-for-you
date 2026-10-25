@@ -1,6 +1,4 @@
-import { ParticleGarden } from "./particles.js?v=4";
-import { decodeSurface } from "./surface-data.js?v=4";
-import { decodeGrowth } from "./growth-data.js?v=4";
+import { ParticleGarden } from "./particles.js?v=7";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("bouquet");
@@ -12,58 +10,79 @@ const bouquets = {
     title: "粉雾来信",
     description: "玫瑰替我说，那些藏不住的喜欢。",
     tag: "玫瑰",
-    color: "#edb4c5",
+    color: "#e2b49a",
   },
   tulip: {
     title: "把晴天给你",
     description: "你一笑，我的世界便有了好天气。",
     tag: "郁金香",
-    color: "#f1cfad",
+    color: "#e8d7b9",
   },
   hydrangea: {
     title: "月光的拥抱",
     description: "把细碎的温柔，攒成一个拥抱。",
     tag: "绣球",
-    color: "#b7c7ed",
+    color: "#c7c9c4",
   },
   wildflower: {
     title: "和你有个春天",
     description: "日子慢慢过，花和你慢慢爱。",
     tag: "花园",
-    color: "#efc4b5",
+    color: "#d6c3ac",
   },
   peony: {
     title: "把盛大留给你",
     description: "最盛大的温柔，只为你层层盛开。",
     tag: "牡丹",
-    color: "#efafc2",
+    color: "#d5b1a9",
   },
   lily: {
     title: "白昼的情书",
     description: "把清晨的光，折成一封写给你的信。",
     tag: "百合",
-    color: "#f2ddcb",
+    color: "#eadfc9",
   },
   sunflower: {
     title: "只向着你",
     description: "我的晴天，永远朝着你的方向。",
     tag: "向日葵",
-    color: "#efc55b",
+    color: "#d8c08a",
   },
   calla: {
     title: "温柔的回声",
     description: "一句喜欢，在岁月里轻轻回响。",
     tag: "马蹄莲",
-    color: "#e6d8ef",
+    color: "#d4cbcf",
   },
 };
+const flowerNames = Object.freeze({
+  rose: '玫瑰', tulip: '郁金香', hydrangea: '绣球', cosmos: '波斯菊',
+  peony: '牡丹', lily: '百合', sunflower: '向日葵', calla: '马蹄莲',
+  ranunculus: '洋牡丹', dahlia: '大丽花', lisianthus: '洋桔梗',
+  champagne_ranunculus: '洋牡丹', garden_rose: '花园玫瑰',
+  anemone: '银莲花', sweet_pea: '香豌豆',
+});
+const closeupNames = Object.freeze({
+  champagne_ranunculus: '洋牡丹', garden_rose: '花园玫瑰',
+  anemone: '银莲花', sweet_pea: '香豌豆',
+});
 let garden = null;
-let activeId = "rose";
+let activeId = 'rose';
+let activeView = 'bouquet';
+let requestedId = activeId;
+let requestedView = activeView;
 let selectionVersion = 0;
+let motionPreference = null;
+let systemMotionChange = false;
 let manifest = null;
 let fallbackMode = false;
+let hasCommitted = false;
+let disposed = false;
+let currentRequest = null;
+let preloadRequest = null;
 let toastTimeout;
 const cache = new Map();
+const RAW_CACHE_LIMIT = 4;
 
 function toast(message) {
   $("toast").textContent = message;
@@ -75,20 +94,25 @@ function toast(message) {
   );
 }
 
-async function fetchResource(url, type = "json") {
+function resourceURL(url) {
+  const resource = new URL(url, location.href);
+  resource.searchParams.set('v', '7');
+  return resource;
+}
+
+async function fetchResource(url, type = 'json', signal) {
   const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    type === "arrayBuffer" ? 45000 : 20000,
-  );
+  const abort = () => controller.abort();
+  signal?.addEventListener('abort', abort, {once: true});
+  if (signal?.aborted) controller.abort();
+  const timeout = setTimeout(abort, type === 'arrayBuffer' ? 45000 : 20000);
   try {
-    const resource = new URL(url, location.href);
-    resource.searchParams.set("v", "4");
-    const response = await fetch(resource, { signal: controller.signal });
+    const response = await fetch(resourceURL(url), {signal: controller.signal});
     if (!response.ok) throw new Error(`Resource ${response.status}: ${url}`);
     return await response[type]();
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener('abort', abort);
   }
 }
 
@@ -103,120 +127,275 @@ function updateMotionButton() {
   $("motion-toggle").title = paused ? "播放动画" : "暂停动画";
 }
 
-function showFallback() {
-  fallbackMode = true;
-  selectionVersion++;
-  $("gallery").setAttribute("aria-busy", "false");
-  fallback.hidden = false;
-  fallback.src = `./assets/${activeId}.svg?v=4`;
-  canvas.hidden = true;
-  loading.classList.add("is-loaded");
-  $("interaction-hint").textContent = "心意一直在，挑一束你喜欢的花。";
-  updateMotionButton();
-  $("motion-toggle").disabled = true;
-  $("motion-toggle").setAttribute("aria-label", "当前为花束插画模式");
-  document.body.dataset.mode = "illustration";
+function validComposition(record) {
+  const expected = record.headCount ?? 36;
+  const items = record.composition;
+  return Number.isSafeInteger(expected) && expected > 0 && Array.isArray(items)
+    && items.length > 0 && items.length <= 12
+    && items.every(item => item && Object.hasOwn(flowerNames, item.species)
+      && Number.isSafeInteger(item.count) && item.count > 0)
+    && new Set(items.map(item => item.species)).size === items.length
+    && items.reduce((sum, item) => sum + item.count, 0) === expected;
 }
 
-function updateCaption(id) {
+function validateManifest(value) {
+  if (!value || value.version !== 2 || value.count !== 120000 || value.stride !== 11
+      || !Array.isArray(value.bouquets) || value.bouquets.length !== Object.keys(bouquets).length
+      || new Set(value.bouquets.map(record => record?.id)).size !== value.bouquets.length)
+    throw new Error('Invalid manifest schema');
+  for (const record of value.bouquets) {
+    if (!record || !Object.hasOwn(bouquets, record.id)) throw new Error('Invalid bouquet id');
+    validatePaths(record, record.id);
+    if ((record.headCount !== undefined || record.composition !== undefined) && !validComposition(record))
+      throw new Error('Invalid bouquet composition');
+  }
+  if (value.closeups !== undefined) {
+    if (!Array.isArray(value.closeups) || value.closeups.length !== Object.keys(closeupNames).length
+        || new Set(value.closeups.map(record => record?.id)).size !== value.closeups.length)
+      throw new Error('Invalid closeup manifest');
+    for (const record of value.closeups) {
+      if (!record || !Object.hasOwn(closeupNames, record.id) || record.pointCount !== 16000
+          || typeof record.title !== 'string' || !record.title.trim() || record.title.length > 100
+          || typeof record.description !== 'string' || record.description.length > 300)
+        throw new Error('Invalid closeup record');
+      validatePaths(record, `closeup-${record.id}`);
+    }
+  }
+  return value;
+}
+
+function validatePaths(record, prefix) {
+  if (record.file !== `${prefix}.bin` || record.surface !== `${prefix}.mesh`
+      || record.growth !== `${prefix}.growth` || (record.svg !== undefined && record.svg !== `${prefix}.svg`))
+    throw new Error('Invalid bouquet resource paths');
+}
+
+function closeupRecord(id) { return manifest?.closeups?.find(record => record.id === id); }
+function assetRecord(id, view) {
+  return view === 'bouquet' ? manifest?.bouquets.find(record => record.id === id) : closeupRecord(view);
+}
+function assetKey(id, view) { return view === 'bouquet' ? `bouquet:${id}` : `closeup:${view}`; }
+function fallbackPath(id, view) {
+  return view === 'bouquet' ? (assetRecord(id, view)?.svg ?? `${id}.svg`) : closeupRecord(view)?.svg;
+}
+
+function syncViewControls() {
+  let unavailable = false;
+  document.querySelectorAll('button[data-view]').forEach(button => {
+    const view = button.dataset.view;
+    const available = view === 'bouquet' || (!!closeupRecord(view) && (!fallbackMode || !!fallbackPath(activeId, view)));
+    button.disabled = !available;
+    button.setAttribute('aria-pressed', String(view === activeView));
+    button.classList.toggle('is-selected', view === activeView);
+    if (view !== 'bouquet' && !available) unavailable = true;
+  });
+  $('view-note').textContent = fallbackMode && unavailable
+    ? '当前为花束插画；未提供插画的单花暂不支持近看，仍可挑选下方八束花。'
+    : '近看一朵花，也能再回到这束心意。';
+}
+
+function updateCaption(id, view = 'bouquet') {
   activeId = id;
+  activeView = view;
+  const bouquet = bouquets[id], specimen = view === 'bouquet' ? bouquet : closeupRecord(view);
   document.body.dataset.bouquet = id;
-  const bouquet = bouquets[id];
-  $("bouquet-title").textContent = bouquet.title;
-  $("bouquet-description").textContent = bouquet.description;
-  $("flower-tag").textContent = bouquet.tag;
-  canvas.setAttribute(
-    "aria-label",
-    `${bouquet.title}粒子花束，拖动旋转，点击绽放，方向键旋转，空格绽放`,
-  );
-  fallback.alt = `${bouquet.title}立体花束投影`;
-  document.documentElement.style.setProperty("--rose", bouquet.color);
-  document.querySelectorAll("button[data-bouquet]").forEach((button) => {
+  document.body.dataset.view = view;
+  $('bouquet-title').textContent = specimen.title;
+  $('bouquet-description').textContent = specimen.description;
+  $('flower-tag').textContent = view === 'bouquet' ? bouquet.tag : '近看';
+  const record = assetRecord(id, 'bouquet');
+  const composition = record && validComposition(record) ? record.composition : null;
+  const ingredients = $('bouquet-ingredients');
+  ingredients.textContent = composition ? `花材：${composition.map(item => flowerNames[item.species]).join('、')}` : '';
+  ingredients.setAttribute('aria-label', composition
+    ? `本束花材：${composition.map(item => `${flowerNames[item.species]}${item.count}朵`).join('、')}` : '');
+  canvas.setAttribute('aria-label', `${specimen.title}立体${view === 'bouquet' ? '花束' : '单花'}，拖动旋转，点击绽放，方向键旋转，空格绽放`);
+  fallback.alt = `${specimen.title}${view === 'bouquet' ? '花束' : '单花'}投影`;
+  document.documentElement.style.setProperty('--rose', bouquet.color);
+  document.querySelectorAll('button[data-bouquet]').forEach(button => {
     const selected = button.dataset.bouquet === id;
-    button.classList.toggle("is-selected", selected);
-    button.setAttribute("aria-pressed", String(selected));
+    button.classList.toggle('is-selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
+  syncViewControls();
+}
+
+function updateLocation(id, view) {
+  const url = new URL(location.href);
+  url.hash = id;
+  if (view === 'bouquet') url.searchParams.delete('view');
+  else url.searchParams.set('view', view);
+  history.replaceState(null, '', url.href);
+}
+
+function setPending(id, view, pending) {
+  document.body.dataset.requestedBouquet = id;
+  document.body.dataset.requestedView = view;
+  document.querySelectorAll('button[data-bouquet]').forEach(button => {
+    button.dataset.pending = String(pending && button.dataset.bouquet === id);
+  });
+  document.querySelectorAll('button[data-view]').forEach(button => {
+    button.dataset.pending = String(pending && button.dataset.view === view);
   });
 }
 
-async function loadBouquet(id) {
-  if (cache.has(id)) return cache.get(id);
-  const record = manifest.bouquets.find((bouquet) => bouquet.id === id);
-  if (
-    !record ||
-    record.file !== `${id}.bin` ||
-    record.surface !== `${id}.mesh` ||
-    record.growth !== `${id}.growth`
-  )
-    throw new Error("Invalid bouquet manifest");
-  const promise = Promise.all([
-    fetchResource(`./assets/${record.file}`, "arrayBuffer"),
-    fetchResource(`./assets/${record.surface}`, "arrayBuffer"),
-    fetchResource(`./assets/${record.growth}`, "arrayBuffer"),
-  ])
-    .then(([buffer, surfaceBuffer, growthBuffer]) => {
-      if (buffer.byteLength !== manifest.count * manifest.stride * 4)
-        throw new Error("Invalid particle data length");
-      const data = new Float32Array(buffer);
-      for (const value of data)
-        if (!Number.isFinite(value))
-          throw new Error("Invalid particle coordinate");
-      for (let i = 0; i < data.length; i += manifest.stride) {
-        const normalLength = Math.hypot(data[i + 8], data[i + 9], data[i + 10]);
-        if (normalLength < 0.95 || normalLength > 1.05)
-          throw new Error("Invalid particle surface normal");
-      }
-      const surface = decodeSurface(surfaceBuffer);
-      const growth = decodeGrowth(
-        growthBuffer,
-        manifest.count,
-        surface.vertices.length / 9,
-      );
-      return { particles: data, surface, growth };
-    })
-    .catch((error) => {
-      cache.delete(id);
-      throw error;
-    });
-  cache.set(id, promise);
-  return promise;
+function cancelSelection() {
+  currentRequest?.abort();
+  preloadRequest?.abort();
+  garden?.cancelPreparation();
 }
 
-async function selectBouquet(id, immediate = false) {
-  if (!Object.hasOwn(bouquets, id)) return;
-  if (!manifest && !fallbackMode) {
-    updateCaption(id);
-    return;
+async function feedbackPaint() {
+  await new Promise(resolve => {
+    if (document.hidden) return setTimeout(resolve, 0);
+    let frame;
+    const timer = setTimeout(() => { cancelAnimationFrame(frame); resolve(); }, 80);
+    frame = requestAnimationFrame(() => { clearTimeout(timer); setTimeout(resolve, 0); });
+  });
+}
+
+async function loadAsset(id, view, signal) {
+  const key = assetKey(id, view);
+  if (cache.has(key)) {
+    const cached = cache.get(key);
+    cache.delete(key); cache.set(key, cached);
+    return cached;
+  }
+  const record = assetRecord(id, view);
+  if (!record) throw new Error('Unavailable flower view');
+  const buffers = await Promise.all([record.file, record.surface, record.growth]
+    .map(file => fetchResource(`./assets/${file}`, 'arrayBuffer', signal)));
+  if (signal?.aborted) throw new DOMException('Selection superseded', 'AbortError');
+  const input = {buffers, count: view === 'bouquet' ? manifest.count : record.pointCount, stride: manifest.stride};
+  cache.set(key, input);
+  while (cache.size > RAW_CACHE_LIMIT) cache.delete(cache.keys().next().value);
+  return input;
+}
+
+function loadIllustration(file, signal) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    let timer, settled = false;
+    const finish = error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal.removeEventListener('abort', abort);
+      image.onload = image.onerror = null;
+      if (error) reject(error); else resolve(image.src);
+    };
+    const abort = () => { finish(new DOMException('Illustration aborted', 'AbortError')); image.src = ''; };
+    signal.addEventListener('abort', abort, {once: true});
+    if (signal.aborted) return abort();
+    image.onload = () => finish();
+    image.onerror = () => finish(new Error('Illustration unavailable'));
+    timer = setTimeout(() => finish(new Error('Illustration timed out')), 20000);
+    image.src = resourceURL(`./assets/${file}`).href;
+  });
+}
+
+async function showFallback() {
+  if (disposed) return;
+  const id = hasCommitted ? activeId : requestedId;
+  let view = hasCommitted ? activeView : requestedView;
+  if (!fallbackPath(id, view)) view = 'bouquet';
+  fallbackMode = true;
+  selectionVersion++;
+  cancelSelection();
+  garden?.dispose();
+  cache.clear();
+  canvas.hidden = true;
+  $('motion-toggle').disabled = true;
+  $('motion-toggle').setAttribute('aria-label', '当前为花束插画模式');
+  document.body.dataset.mode = 'illustration';
+  syncViewControls();
+  await selectScene(id, view, true);
+}
+
+async function selectScene(id, view = 'bouquet', immediate = false) {
+  if (disposed || !Object.hasOwn(bouquets, id)
+      || (view !== 'bouquet' && !Object.hasOwn(closeupNames, view))) return false;
+  if (view !== 'bouquet' && ((manifest && !closeupRecord(view)) || (fallbackMode && !fallbackPath(id, view)))) {
+    toast('这朵花暂不支持近看，可以先看看整束。');
+    return false;
   }
   const version = ++selectionVersion;
-  if (fallbackMode) {
-    updateCaption(id);
-    fallback.src = `./assets/${id}.svg?v=4`;
-    history.replaceState(null, "", `#${id}`);
-    return;
-  }
-  $("gallery").setAttribute("aria-busy", "true");
+  requestedId = id; requestedView = view;
+  cancelSelection();
+  const gallery = $('gallery'), hint = $('interaction-hint');
+  gallery.setAttribute('aria-busy', 'true');
+  gallery.dataset.prepareState = 'preparing';
+  setPending(id, view, true);
+  $('gallery-error').hidden = true;
+  const name = view === 'bouquet' ? bouquets[id].tag : closeupNames[view];
+  hint.textContent = `正在准备${name}，眼前的花仍为你盛开。`;
+  // Remember startup intent; the manifest continuation uses this same route.
+  if (!manifest && !fallbackMode) return false;
+  const controller = new AbortController();
+  currentRequest = controller;
+  if (!hasCommitted) loading.classList.remove('is-loaded');
   try {
-    const data = await loadBouquet(id);
-    if (version !== selectionVersion) return;
-    garden.setBouquet(data.particles, immediate, data.surface, data.growth);
-    updateCaption(id);
-    history.replaceState(null, "", `#${id}`);
-    document.body.dataset.bouquet = id;
-    loading.classList.add("is-loaded");
+    await feedbackPaint();
+    if (version !== selectionVersion || disposed) return false;
+    if (fallbackMode) {
+      const file = fallbackPath(id, view);
+      await loadIllustration(file, controller.signal);
+      if (version !== selectionVersion || disposed) return false;
+      fallback.src = `./assets/${file}?v=7`;
+      fallback.hidden = false;
+    } else {
+      const input = await loadAsset(id, view, controller.signal);
+      if (version !== selectionVersion || disposed) return false;
+      const prepared = await garden.prepareBouquet(assetKey(id, view), input);
+      if (version !== selectionVersion || disposed) return false;
+      // A change of specimen/count is an explicit static view, not a pause toggle.
+      await garden.queuePrepared(prepared, immediate || view !== activeView || !hasCommitted, () => {
+        if (version !== selectionVersion) return;
+        gallery.dataset.prepareState = 'waiting';
+        hint.textContent = `已备好${name}，等眼前这次交叠轻轻结束。`;
+      });
+      if (version !== selectionVersion || disposed) return false;
+    }
+    updateCaption(id, view);
+    updateLocation(id, view);
+    hasCommitted = true;
+    gallery.dataset.prepareState = 'committed';
+    hint.textContent = fallbackMode ? '心意一直在，挑一束你喜欢的花。' : '拖动看看花的另一面，轻点让心意再绽放。';
+    loading.classList.add('is-loaded');
+    if (!fallbackMode) updateMotionButton();
+    return true;
   } catch (error) {
-    if (version !== selectionVersion) return;
-    if (!garden?.data) showFallback();
-    else toast("这束花还在路上，轻点再试一次。");
-    console.warn("Bouquet load:", error.message);
+    // A current timeout is a real failure, not a superseded selection.
+    if (version !== selectionVersion || disposed) return false;
+    controller.abort();
+    cache.delete(assetKey(id, view));
+    gallery.dataset.prepareState = 'error';
+    if (!fallbackMode && !garden?.data) await showFallback();
+    else {
+      hint.textContent = '眼前的花还在，轻点再试一次。';
+      toast('这朵花还在路上，轻点再试一次。');
+      if (!hasCommitted) {
+        loading.classList.add('is-loaded');
+        $('gallery-error').hidden = false;
+      }
+    }
+    console.warn('Flower view:', error.message);
+    return false;
   } finally {
-    if (version === selectionVersion)
-      $("gallery").setAttribute("aria-busy", "false");
+    if (currentRequest === controller) currentRequest = null;
+    if (version === selectionVersion && !disposed) {
+      gallery.setAttribute('aria-busy', 'false');
+      setPending(id, view, false);
+    }
   }
 }
+
+function selectBouquet(id, immediate = false) { return selectScene(id, 'bouquet', immediate); }
+function selectView(view) { return selectScene(requestedId, view); }
 
 function bloom() {
   if (fallbackMode) {
-    if (!motionQuery.matches)
+    if (!motionQuery.matches && motionPreference !== true)
       fallback.animate(
         [
           { transform: "scale(1)" },
@@ -305,13 +484,23 @@ document
       selectBouquet(button.dataset.bouquet),
     ),
   );
-$("motion-toggle").addEventListener("click", () => {
-  if (!garden) return;
-  garden.setPaused(!garden.paused);
+document.querySelectorAll('button[data-view]').forEach(button =>
+  button.addEventListener('click', () => selectView(button.dataset.view)));
+$('retry-bouquet').addEventListener('click', () => selectScene(requestedId, requestedView, true));
+$('motion-toggle').addEventListener('click', () => {
+  if (!garden || fallbackMode) return;
+  const paused = !garden.paused;
+  if (!paused && garden.reducedMotion) garden.setReducedMotion(false);
+  garden.setPaused(paused);
+  motionPreference = paused;
   updateMotionButton();
 });
-motionQuery.addEventListener("change", (event) => {
-  garden?.setReducedMotion(event.matches);
+motionQuery.addEventListener('change', event => {
+  if (!garden || fallbackMode) return;
+  const paused = event.matches || (motionPreference ?? false);
+  systemMotionChange = true;
+  try { garden.setReducedMotion(event.matches); garden.setPaused(paused); }
+  finally { systemMotionChange = false; }
   updateMotionButton();
 });
 
@@ -346,7 +535,7 @@ document.addEventListener("keydown", (event) => {
 });
 window.addEventListener("hashchange", () => {
   const id = location.hash.slice(1);
-  if (Object.hasOwn(bouquets, id) && id !== activeId) selectBouquet(id);
+  if (Object.hasOwn(bouquets, id)) selectBouquet(id);
 });
 $("share-button").addEventListener("click", async () => {
   const url = location.href;
@@ -367,54 +556,67 @@ $("share-button").addEventListener("click", async () => {
   }
 });
 
+function disposePage(event) {
+  if (event?.persisted || disposed) return;
+  disposed = true;
+  selectionVersion++;
+  cancelSelection();
+  cache.clear();
+  clearTimeout(toastTimeout);
+  garden?.dispose();
+}
+window.addEventListener('pagehide', disposePage);
+
 async function initialize() {
   loadGift();
-  const initialId = Object.hasOwn(bouquets, location.hash.slice(1))
-    ? location.hash.slice(1)
-    : "rose";
-  updateCaption(initialId);
+  const initialId = Object.hasOwn(bouquets, location.hash.slice(1)) ? location.hash.slice(1) : 'rose';
+  requestedId = initialId;
+  const viewParam = new URLSearchParams(location.search).get('view');
+  requestedView = Object.hasOwn(closeupNames, viewParam) ? viewParam : 'bouquet';
+  updateCaption(initialId, 'bouquet');
+  let rendererError;
   try {
     garden = new ParticleGarden(canvas, {
       reducedMotion: motionQuery.matches,
-      onLost: showFallback,
-      onMotionChange: updateMotionButton,
+      onLost: () => { void showFallback(); },
+      onMotionChange: paused => {
+        if (!systemMotionChange) motionPreference = paused;
+        updateMotionButton();
+      },
     });
     updateMotionButton();
-    manifest = await fetchResource("./assets/manifest.json");
-    if (
-      manifest.version !== 2 ||
-      manifest.stride !== 11 ||
-      !Array.isArray(manifest.bouquets) ||
-      !Object.keys(bouquets).every((id) =>
-        manifest.bouquets.some((entry) => entry.id === id),
-      ) ||
-      !Number.isSafeInteger(manifest.count) ||
-      manifest.count < 1 ||
-      manifest.count > 200000
-    )
-      throw new Error("Invalid manifest schema");
-    await selectBouquet(activeId, true);
-    // Larger all-around bouquets preload one neighbor, only on a fast connection.
+  } catch (error) { rendererError = error; }
+  try {
+    manifest = validateManifest(await fetchResource('./assets/manifest.json'));
+    if (disposed) return;
+    syncViewControls();
+    if (requestedView !== 'bouquet' && !closeupRecord(requestedView)) requestedView = 'bouquet';
+    if (rendererError) await showFallback();
+    else await selectScene(requestedId, requestedView, true);
     const connection = navigator.connection;
-    if (
-      !fallbackMode &&
-      !connection?.saveData &&
-      !/^(slow-)?[23]g$/.test(connection?.effectiveType ?? "")
-    ) {
-      const preload = () => {
-        const ids = Object.keys(bouquets);
-        const start = ids.indexOf(activeId);
-        const id = ids[(start + 1) % ids.length];
-        loadBouquet(id).catch(() => {});
+    if (!fallbackMode && !connection?.saveData && !/^(slow-)?[23]g$/.test(connection?.effectiveType ?? '')) {
+      const preload = async () => {
+        if (disposed || fallbackMode || $('gallery').getAttribute('aria-busy') === 'true') return;
+        const ids = Object.keys(bouquets), id = ids[(ids.indexOf(activeId) + 1) % ids.length];
+        const version = selectionVersion, controller = new AbortController();
+        preloadRequest = controller;
+        try {
+          const input = await loadAsset(id, 'bouquet', controller.signal);
+          if (version === selectionVersion && !disposed && !fallbackMode && !controller.signal.aborted
+              && $('gallery').getAttribute('aria-busy') !== 'true')
+            await garden.prepareBouquet(assetKey(id, 'bouquet'), input);
+        } catch { /* Optional prefetch never changes the chosen flower or its status. */ }
+        finally { if (preloadRequest === controller) preloadRequest = null; }
       };
-      if ("requestIdleCallback" in window)
-        requestIdleCallback(preload, { timeout: 3000 });
+      if ('requestIdleCallback' in window) requestIdleCallback(preload, {timeout: 3000});
       else setTimeout(preload, 1000);
     }
   } catch (error) {
-    console.warn("Garden initialization:", error.message);
-    showFallback();
+    if (disposed) return;
+    console.warn('Garden initialization:', error.message);
+    await showFallback();
+  } finally {
+    if (!disposed) document.body.dataset.ready = 'true';
   }
-  document.body.dataset.ready = "true";
 }
 initialize();

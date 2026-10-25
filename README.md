@@ -1,20 +1,20 @@
 # 花间来信
 
-一座送给老婆的粒子花束画廊。把一颗颗光写成花瓣，让心意在指尖盛开。
+一座送给老婆的立体花束画廊。宽圆薄瓣、错落花材，让心意在指尖慢慢盛开。
 
 **在线花园： https://wide-sky-with-me.github.io/bloom-for-you/**
 
 ## 花会动，心意也会
 
-粉雾玫瑰、奶油粉郁金香、月光绣球、香槟混合花园，以及牡丹、百合、向日葵、马蹄莲。每束由 Python 确定性生成 120,000 个三维粒子，并从同一套参数曲面生成连续花瓣、枝叶与蝴蝶结。主花、重瓣配花和细枝小花交错组成环绕花冠，拖到背面也有完整花头，不是前面一排花、后面一层叶。
+粉雾玫瑰、奶油粉郁金香、月光绣球、香槟混合花园，以及牡丹、百合、向日葵、马蹄莲。每束从 Python 确定性参数曲面生成连续花瓣、细叶、弯茎与亚麻结，主花与不同轮廓的配花组成环绕花冠。四种代表花型——洋牡丹、花园玫瑰、银莲花和香豌豆——可以独立近看，也能随时回到刚才选中的整束。
 
-连续花瓣与细粒共享曲面法线光照、透视和深度遮挡；同主题花材收拢到主色、邻近色与少量奶白，细密采样优先落在花瓣上。加载时花瓣从包裹的花苞逐层展开，点击花束或「让心意绽放」可重放收拢到盛开的过程，不再爆散重聚。点和面共享同源闭合姿态、法线与展开延迟，枝叶和丝带留在原位。盛开后保留风场与呼吸轻摆，拖动可绕整束观察，右上角还藏着一封信。
+现代浏览器由自托管 Three.js 呈现柔和哑光实体花瓣。默认不再用可见粒子覆盖花面，避免细碎亮砂遮住卷曲层次；点记录仍用于准备、取景和明确的兼容路径，不宣传为十二万个可见光点。每束花材说明来自实际花头计数。初次展示完整盛开造型，点击花束或「让心意绽放」可重放真正闭合、逐层展开的过程；花瓣共享同源闭态、法线与延迟，枝叶和亚麻结留在原位。盛开后保留轻摆，拖动可绕整束观察，右上角还藏着一封信。
 
-手机可触碰、滑动和挑花；支持沉浸模式、暂停与键盘操作。页面跟随系统「减弱动态效果」设置，默认静止，可手动播放。设备未启用 WebGL 或首组数据加载失败时，显示由相同曲面与粒子生成的 SVG 花束投影。
+手机可触碰、滑动和挑花；支持沉浸模式、暂停与键盘操作。页面跟随系统「减弱动态效果」设置，默认静止，可手动播放。Three.js 主路径需要 WebGL2；仅有 WebGL1 时使用明确的原生兼容渲染（没有新的物理材质），无 WebGL 或数据/着色器失败时显示同源 SVG 投影，不将降级假称为 Three 成功。
 
 ## 运行
 
-只需要 Python 3.10 或更新版本，无第三方 Python 运行依赖，也没有 Node 构建依赖。
+构建只需要 Python 3.10 或更新版本，无第三方 Python 运行依赖，也没有 Node 构建依赖。Three.js 0.186.1 的官方 ESM 和 MIT 许可已锁版本自托管，运行不访问 CDN；构建会先核对 vendor 文件哈希。
 
 ```bash
 python3 build.py
@@ -27,35 +27,44 @@ python3 -m http.server 8000 --directory dist
 
 编辑 [site/gift.json](site/gift.json)，修改 `recipient`、`salutation`、`signature` 和 `letter`，重新构建后即可生效。正文每项为一段，`\n` 表示换行。
 
-也支持链接参数 `?to=你的称呼&from=你的署名&message=想说的话`，参数应使用 URL 编码；`#rose`、`#tulip`、`#hydrangea`、`#wildflower`、`#peony`、`#lily`、`#sunflower`、`#calla` 可指定初始花束。
+也支持链接参数 `?to=你的称呼&from=你的署名&message=想说的话`，参数应使用 URL 编码；`#rose`、`#tulip`、`#hydrangea`、`#wildflower`、`#peony`、`#lily`、`#sunflower`、`#calla` 指定花束。可加 `view=champagne_ranunculus`、`garden_rose`、`anemone` 或 `sweet_pea` 打开单花近看；分享保留实际选中的花束、近看方式与个性化文字。
 
-GitHub 仓库与 Pages 是公开的。信件配置、URL 参数和站点内容都可被访问，请只放适合公开分享的文字。页面没有统计追踪、第三方脚本、远程字体或后台账号。
+GitHub 仓库与 Pages 是公开的。信件配置、URL 参数和站点内容都可被访问，请只放适合公开分享的文字。页面没有统计追踪、第三方远程脚本、远程字体或后台账号。
 
 ## 发布到 GitHub Pages
 
-仓库设置中，进入 **Settings → Pages → Build and deployment → Source**，选择 **GitHub Actions**。推送 `main` 后，[Pages 工作流](.github/workflows/pages.yml) 会运行测试、生成花束并发布 `dist`。后续修改情书或代码后，提交推送即可自动更新。
+仓库设置中，进入 **Settings → Pages → Build and deployment → Source**，选择 **GitHub Actions**。推送 `main` 后，[Pages 工作流](.github/workflows/pages.yml) 会运行 Python 与选型契约、生成花束并发布 `dist`。CI 构建标记包含提交 revision、资源修订和清单 SHA，可据此核对公网确实是该次发布，而不仅是推送成功。
 
 ## 实现
 
-- [generator.py](generator.py)：标准库参数曲面、同源开放/闭合花瓣、固定种子与预算，生成点、曲面、紧凑生长数据和 SVG 投影。
+- [garden_generator.py](garden_generator.py)：正式八主题与四近景的确定性生成入口，输出实际 `headCount`/`composition`、点、曲面、生长数据和 SVG。
+- [generator.py](generator.py)：仍使用的公共数学/协议编码与明确的旧布局兼容实现；手动运行它不是生成当前完整自然花园的入口。
+- [共享花型曲面](studies/natural_garden/flowers.py)：已认可的根轴花型与细分实现，正式生成器只读复用，研究页面不进入正式分发。
 - [build.py](build.py)：生成花束、校验情书配置、生成同源曲面 PNG 缩略图，并构建可独立托管的 `dist`。
-- [site/particles.js](site/particles.js)：原生 WebGL 点面同步生长、八属性 GPU 布局、动态光照、暂停和旋转，不依赖 CDN。
+- [site/particles.js](site/particles.js)：选择真正 Three.js/WebGL2 主路径或明确的 WebGL1 兼容分支。
+- [site/botanical-garden.js](site/botanical-garden.js)、[botanical-materials.js](site/botanical-materials.js)：正式自然花园主路径，连续实体花瓣拥有深度，默认关闭可见细粒和点core，保留清晰的渲染诊断。
+- [site/three-garden.js](site/three-garden.js)、[three-materials.js](site/three-materials.js)：真实 Three 场景、透视相机、共享 GPU 生长/法线与暂停/旋转/释放的兼容基类。
+- [site/legacy-garden.js](site/legacy-garden.js)：仍供 WebGL1-only 设备使用的原生兼容路径；旧断言继续测试该分支。
+- [scripts/vendor_three.py](scripts/vendor_three.py)：重现/校验官方 ESM、SRI、精确 commit 与许可，`--check` 离线运行。
 - [site/surface-data.js](site/surface-data.js)：验证 BFM1 曲面头、长度、颜色、法线及索引。
 - [site/growth-data.js](site/growth-data.js)：验证 BFG1 数量绑定、紧凑坐标、闭合法线和展开延迟。
-- [site/app.js](site/app.js)：同步加载点、面与生长数据，处理竞态、个性化、情书、分享与降级。
+- [site/prepare-data.js](site/prepare-data.js)、[prepare-client.js](site/prepare-client.js)、[prepare-worker.js](site/prepare-worker.js)：完整校验、GPU 数据与支持扫描异步准备；无 Worker 时按预算分任务执行，缓存与取消生命周期有界。
+- [site/app.js](site/app.js)：原子加载三资源，区分准备/等待/提交，只在真实提交后切标题；处理竞态、个性化、情书、分享与降级。
 
-点记录沿用 version 2 / stride 11，每束原始点数据 5.28 MB，另附同源 `.mesh` 与 `.growth`，两者各控制在 3 MB 内。BFG1 以 14 字节定点记录保存闭合坐标、法线与延迟，绑定点数和焊接后的网格顶点数；GPU 重包只在内存中发生。资源缓存修订为 `v=4`，点、面、生长、清单与客户端须一并构建发布。首束优先，空闲时最多预取相邻一束；省流量或报告低速移动网络时不预取。预览为盛开终态的轻量 PNG，SVG 只在降级时加载。移动端像素比限制在 1.8，页面切至后台和暂停后冻结生长时钟并停止空转。Python 只负责静态生成，GitHub Pages 不需要常驻服务。
+点记录沿用 version 2 / stride 11，整束120k记录为5.28 MB，近景16k记录为0.704 MB；另附同源 `.mesh` 与 `.growth`，两者各控制在3 MB内。清单扩展 `headCount`、`composition` 与四个 `closeups`，不将不同数量的近景误按整束解码。BFG1保存闭合坐标、法线与延迟，绑定点数与网格顶点数；GPU重包只在后台准备。资源修订为 `v=7`，官方Three模块另以锁版本目录标识，全部模块/资产须一并构建发布。fetch与prepared LRU各四项，连切只保留最新pending，等待当前交叠结束再提交；暂停/隐藏/失焦/减弱动态静态落地，常规交叠最多两份canonical mesh。显式同步兼容API可做较重的中途快照，app不走该路径。空闲最多预取相邻一束，省流量/低速网络不预取。缩略图来自盛开曲面，SVG仅降级加载；近景也有同源SVG。移动DPR上限1.8，后台与暂停冻结时钟并停止空转。Python交付独立静态站点，无常驻后端；自托管Three未压缩约2.12 MB，冷加载和首次GL编译仍有成本。[第三方notices](THIRD_PARTY_NOTICES.md)及完整许可随产物分发。
 
-环绕构图、实拍参考、纯点方案的视觉失败，以及透明深度取舍见[环绕花束决策](.agents/notes/implemented/round-bouquets/2026-10-19-all-around-garden-composition.md)；其[历史验收](.agents/notes/implemented/round-bouquets/2026-10-19-validation.md)仅代表该轮版本。本轮实现取舍见[含苞到盛开决策](.agents/notes/implemented/botanical-growth/2026-10-19-bud-to-bloom.md)，当前检查与发布状态见[本轮验收](.agents/notes/implemented/botanical-growth/2026-10-19-validation.md)。仍有效的法线、透视和生命周期背景见[此前实现决策](.agents/notes/implemented/particle-depth/2026-10-19-normal-lit-bouquets.md)。
+当前架构见[完整自然花园决策](.agents/notes/implemented/floral-style/2026-10-26-natural-garden-release.md)，实际验证与发布状态见[当前验收/部署记录](.agents/notes/implemented/floral-style/2026-10-26-validation-and-deployment.md)。[独立样张记录](.agents/notes/implemented/floral-style/2026-10-25-natural-garden-study.md)保留造型形成与取舍；[Three场景](.agents/notes/implemented/three-gallery/2026-10-25-three-scene-and-floral-richness.md)、[根轴/异步准备](.agents/notes/implemented/floral-refinement/2026-10-20-rooted-petals-and-prepared-switching.md)、[环绕](.agents/notes/implemented/round-bouquets/2026-10-19-all-around-garden-composition.md)及[增长时钟](.agents/notes/implemented/botanical-growth/2026-10-19-bud-to-bloom.md)继续解释底层选择，其历史验收不代替当前版本验证。
+
 
 ## 验证
 
 ```bash
 python3 -m unittest discover -s tests -v
+node tests/app_natural.mjs
 python3 build.py
 ```
 
-安装 Node.js 时，单元测试会在临时目录生成独立的真实花束夹具，并执行渲染器与暂停等生命周期契约；不依赖工作目录内已有的生成资产。Node.js 仅用于开发测试，构建和站点运行仍不需要它。
+安装 Node.js 时，单元测试会在临时目录生成独立的真实花束夹具，分别执行原生兼容路径与 Three 的生命周期/同步 API、实际透视矩阵和全增长包络契约，不依赖工作目录已有资产。CPU 契约使用真实 Three 类，但 GPU 边界注入测试对象；下面的浏览器检查才证明真实 Three/WebGL2 绘制。Node.js 仅用于开发测试，构建和站点运行不需要它。
 
 浏览器端检查使用独立开发依赖 `requirements-dev.txt`（Playwright 与 Chromium）；用 `python3 -m pip install -r requirements-dev.txt` 和 `python3 -m playwright install chromium` 安装。在另一个终端启动静态服务器后运行：
 
@@ -63,13 +72,13 @@ python3 build.py
 python3 tests/browser_smoke.py --url http://localhost:8000
 ```
 
-检查真实曲面绘制、粒子深度通道及整圈彩色花冠，默认每束捕获完整环绕视角：
+检查实际实体深度通道及整圈彩色花冠，默认每束捕获完整环绕视角；兼容渲染分支仍检查它原来的点core合同：
 
 ```bash
 python3 tests/visual_depth.py --url http://localhost:8000
 ```
 
-覆盖真实 WebGL 点面绘制、生长、暂停、切花与快速点击、拖动、键盘、信件、沉浸、分享、手机尺寸、触碰、减弱动态、文本转义、缺少 uint 索引扩展、省流量、无 WebGL 与损坏点/面/生长数据降级。环绕验图检查花冠面积、宽度和花材占比，避免靠绿叶撑满背面；数值通过仍需人工看图。生长阶段可用 `python3 tests/visual_growth.py --url http://localhost:8000` 检查真实 GL 花苞、半开与盛开、重放和暂停，时钟由测试控制而着色器与数据均为正式实现。截图在 `artifacts/`，不提交。手机检查为 Chromium 触屏模拟，非 iPhone / Android 真机测试。
+覆盖真实Three/WebGL2物理曲面、同源生长、暂停、切花与连点、拖动、键盘、花材计数、信件、沉浸、分享、手机尺寸、触碰、减弱动态、文本转义、省流量、超时恢复，以及WebGL1/无uint扩展、无WebGL与破损数据降级。环绕验图保留花冠面积/宽度/花材占比门槛，真实像素观察兼容WebGL1/2；数值通过仍需人工看图。`python3 tests/visual_growth.py --url http://localhost:8000` 从真实重放操作检查花苞、半开、盛开和暂停，只控制时钟，不替换着色器或资产。截图在 `artifacts/`，不提交；手机检查是Chromium触屏模拟，不是真机横评。当前造型仍为艺术化曲面，没有照片级细脉、碰撞求解或物理SSS。
 
 ## 字体
 

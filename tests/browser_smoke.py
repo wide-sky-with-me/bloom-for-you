@@ -10,11 +10,12 @@ from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'artifacts'
-OUT.mkdir(exist_ok=True)
 parser = argparse.ArgumentParser()
 parser.add_argument('--url', default='http://127.0.0.1:8765')
+parser.add_argument('--output', type=Path, default=ROOT / 'artifacts')
 args = parser.parse_args()
+OUT = args.output
+OUT.mkdir(parents=True, exist_ok=True)
 FLOWERS = ['rose', 'tulip', 'hydrangea', 'wildflower', 'peony', 'lily', 'sunflower', 'calla']
 errors: list[str] = []
 checks: list[str] = []
@@ -44,8 +45,10 @@ with sync_playwright() as p:
     page.on('request', lambda request: requests.append(request.url))
     ready(page)
     expect(page.locator('#bouquet')).to_have_attribute('data-rendered', 'true', timeout=15000)
-    check('The renderer exposes real surface normals', page.evaluate("(() => {const gl=document.querySelector('canvas').getContext('webgl');return gl.getAttribLocation(gl.getParameter(gl.CURRENT_PROGRAM),'aNormal')>=0;})()"))
-    check('WebGL renders real particles, not the fallback', page.locator('body').get_attribute('data-mode') != 'illustration')
+    check('The renderer exposes real surface normals', page.evaluate("(() => {const c=document.querySelector('canvas'),gl=c.getContext('webgl2')||c.getContext('webgl');return gl.getAttribLocation(gl.getParameter(gl.CURRENT_PROGRAM),'aNormal')>=0;})()"))
+    check('Modern browsers use the real Three.js WebGL2 renderer', page.locator('#bouquet').get_attribute('data-engine') == 'three-webgl2')
+    check('Three.js draws physical petal meshes', page.evaluate("(() => {let physical=false;document.querySelector('canvas').__bloomGarden.scene.traverse(o=>{if(o.isMesh&&o.material.isMeshPhysicalMaterial&&o.geometry.index?.count>0)physical=true});return physical})()"))
+    check('WebGL renders real 3D petals, not the fallback', page.locator('body').get_attribute('data-mode') != 'illustration')
     page.wait_for_function("[...document.querySelectorAll('.thumbnail img')].every(image => image.complete && image.naturalWidth > 0)")
     check('All lightweight thumbnail images load')
     check('Initial view skips the full SVG fallback assets', not any(urlparse(url).path.endswith('/' + name + '.svg') for url in requests for name in FLOWERS))
@@ -62,6 +65,14 @@ with sync_playwright() as p:
         expect(page.locator(f'button[data-bouquet="{flower}"]')).to_have_attribute('aria-pressed', 'true')
         page.wait_for_function("document.querySelector('#gallery').getAttribute('aria-busy') === 'false'")
     check('All eight bouquets load and select')
+    composition = page.request.get(args.url.rstrip('/') + '/assets/manifest.json?v=7').json()['bouquets']
+    current_record = next(record for record in composition if record['id'] == 'calla')
+    current = current_record['composition']
+    # Exact revised head budgets are independently asserted by the production generator tests.
+    check('Flower composition is derived from real counted heads',
+          len(current) == 5 and sum(item['count'] for item in current) == current_record.get('headCount', 36)
+          and '马蹄莲' in page.locator('#bouquet-ingredients').inner_text()
+          and all(str(item['count']) in page.locator('#bouquet-ingredients').get_attribute('aria-label') for item in current))
     page.evaluate("['rose','tulip','hydrangea','wildflower'].forEach(id => document.querySelector('button[data-bouquet='+id+']').click())")
     expect(page.locator('body')).to_have_attribute('data-bouquet', 'wildflower')
     check('Rapid selection keeps the final choice')
@@ -150,28 +161,28 @@ with sync_playwright() as p:
     ready(backup)
     expect(backup.locator('#fallback-art')).to_be_visible()
     backup.locator('button[data-bouquet="hydrangea"]').click()
-    expect(backup.locator('#fallback-art')).to_have_attribute('src', './assets/hydrangea.svg?v=4')
+    expect(backup.locator('#fallback-art')).to_have_attribute('src', './assets/hydrangea.svg?v=7')
     backup.locator('button[data-bouquet="calla"]').click()
-    expect(backup.locator('#fallback-art')).to_have_attribute('src', './assets/calla.svg?v=4')
+    expect(backup.locator('#fallback-art')).to_have_attribute('src', './assets/calla.svg?v=7')
     check('Devices without WebGL still show new flower styles')
     fallback_context.close()
 
     slow_context = browser.new_context()
-    slow_context.add_init_script("const names=new WeakMap();const get=WebGLRenderingContext.prototype.getUniformLocation;const set=WebGLRenderingContext.prototype.uniform1f;WebGLRenderingContext.prototype.getUniformLocation=function(...args){const location=get.apply(this,args);if(location)names.set(location,args[1]);return location;};WebGLRenderingContext.prototype.uniform1f=function(location,value){if(names.get(location)==='uAppear')window.__flowerAppearance=value;return set.call(this,location,value);};")
+    slow_context.add_init_script("for(const C of [window.WebGLRenderingContext,window.WebGL2RenderingContext]){if(!C)continue;const names=new WeakMap(),get=C.prototype.getUniformLocation,set=C.prototype.uniform1f;C.prototype.getUniformLocation=function(...args){const location=get.apply(this,args);if(location)names.set(location,args[1]);return location};C.prototype.uniform1f=function(location,value){if(names.get(location)==='uAppear')window.__flowerAppearance=value;return set.call(this,location,value)}}")
     held_manifest = []
     slow_context.route('**/assets/manifest.json*', lambda route: held_manifest.append(route))
     slow = slow_context.new_page()
     slow.on('pageerror', lambda error: errors.append(str(error)))
     slow.goto(args.url.rstrip('/') + '/', wait_until='domcontentloaded')
     slow.locator('button[data-bouquet="tulip"]').click()
-    slow.wait_for_function("document.body.dataset.bouquet === 'tulip'")
+    slow.wait_for_function("document.body.dataset.requestedBouquet === 'tulip'")
     slow.get_by_role('button', name='暂停花束动画').click()
     assert held_manifest
     held_manifest[0].continue_()
     slow.wait_for_function("document.body.dataset.ready === 'true'")
     expect(slow.locator('#bouquet')).to_have_attribute('data-rendered', 'true')
     check('A selection during slow startup is retained', slow.locator('body').get_attribute('data-bouquet') == 'tulip' and slow.locator('body').get_attribute('data-mode') != 'illustration')
-    check('Pausing before first load still shows an opaque bouquet', slow.evaluate('window.__flowerAppearance === 1'))
+    check('Pausing before first load still shows an opaque bouquet', slow.evaluate("(() => {const c=document.querySelector('canvas'),g=c.__bloomGarden;if(c.dataset.engine!=='three-webgl2')return window.__flowerAppearance===1;let opaque=false;g.scene.traverse(o=>{if(o.isMesh&&o.visible&&o.material.opacity===1)opaque=true});return g.appearance===1&&opaque})()"))
     slow_context.close()
 
     lost_context = browser.new_context()
@@ -187,7 +198,7 @@ with sync_playwright() as p:
     held_tulip[0].continue_()
     expect(lost_page.locator('#fallback-art')).to_be_visible()
     lost_page.wait_for_timeout(300)
-    check('Context loss invalidates an in-flight selection', lost_page.locator('body').get_attribute('data-bouquet') == 'rose' and lost_page.locator('#fallback-art').get_attribute('src') == './assets/rose.svg?v=4')
+    check('Context loss invalidates an in-flight selection', lost_page.locator('body').get_attribute('data-bouquet') == 'rose' and lost_page.locator('#fallback-art').get_attribute('src') == './assets/rose.svg?v=7')
     lost_context.close()
 
     damaged = browser.new_context()
@@ -198,8 +209,56 @@ with sync_playwright() as p:
     check('Corrupt initial particle data falls back gracefully')
     damaged.close()
 
+    # Exercise the real AbortController timeout path without waiting 45 seconds.
+    # Only the resource deadline is shortened; clocks, Worker and GL stay native.
+    timeout_init = """
+    const nativeTimeout = window.setTimeout.bind(window);
+    window.setTimeout = (callback, delay, ...args) =>
+      nativeTimeout(callback, delay === 45000 ? 200 : delay, ...args);
+    Object.defineProperty(navigator, 'connection', {value: {saveData: true}});
+    """
+    timeout_initial = browser.new_context(reduced_motion='reduce')
+    timeout_initial.add_init_script(timeout_init)
+    held_initial = []
+    timeout_initial.route('**/assets/rose.bin*', lambda route: held_initial.append(route))
+    timeout_page = timeout_initial.new_page()
+    ready(timeout_page)
+    expect(timeout_page.locator('#fallback-art')).to_be_visible()
+    expect(timeout_page.locator('#gallery')).to_have_attribute('aria-busy', 'false')
+    check('Current initial fetch timeout shows fallback and ends loading',
+          bool(held_initial) and timeout_page.locator('#loading').evaluate("node => node.classList.contains('is-loaded')"))
+    for route in held_initial:
+        route.abort()
+    timeout_initial.unroute_all(behavior='wait')
+    timeout_initial.close()
+
+    timeout_existing = browser.new_context(reduced_motion='reduce')
+    timeout_existing.add_init_script(timeout_init)
+    timeout_page = timeout_existing.new_page()
+    ready(timeout_page)
+    expect(timeout_page.locator('#bouquet')).to_have_attribute('data-rendered', 'true')
+    held_latest = []
+    timeout_existing.route('**/assets/tulip.bin*', lambda route: held_latest.append(route))
+    timeout_page.locator('button[data-bouquet="tulip"]').click()
+    expect(timeout_page.locator('#gallery')).to_have_attribute('data-prepare-state', 'error')
+    expect(timeout_page.locator('#gallery')).to_have_attribute('aria-busy', 'false')
+    expect(timeout_page.locator('#fallback-art')).not_to_be_visible()
+    check('Current selection timeout retains the old bouquet with error feedback',
+          bool(held_latest) and timeout_page.locator('body').get_attribute('data-bouquet') == 'rose'
+          and timeout_page.locator('button[data-bouquet="rose"]').get_attribute('aria-pressed') == 'true')
+    for route in held_latest:
+        route.abort()
+    timeout_existing.unroute_all(behavior='wait')
+    timeout_page.locator('button[data-bouquet="tulip"]').click()
+    expect(timeout_page.locator('body')).to_have_attribute('data-bouquet', 'tulip')
+    expect(timeout_page.locator('#gallery')).to_have_attribute('data-prepare-state', 'committed')
+    check('A timed-out selection can be retried successfully')
+    timeout_existing.close()
+
     invalid_normals = browser.new_context()
-    normal_fixture = bytearray((ROOT / 'dist/assets/rose.bin').read_bytes())
+    normal_fixture_response = invalid_normals.request.get(args.url.rstrip('/') + '/assets/rose.bin?v=7')
+    assert normal_fixture_response.ok
+    normal_fixture = bytearray(normal_fixture_response.body())
     normal_fixture[32:44] = bytes(12)
     invalid_normals.route('**/assets/rose.bin*', lambda route: route.fulfill(status=200, body=bytes(normal_fixture)))
     invalid_page = invalid_normals.new_page()
@@ -209,10 +268,11 @@ with sync_playwright() as p:
     invalid_normals.close()
 
     expanded_surface = browser.new_context(reduced_motion='reduce')
-    expanded_surface.add_init_script("window.__triangleDraws=0;const ext=WebGLRenderingContext.prototype.getExtension;const draw=WebGLRenderingContext.prototype.drawArrays;WebGLRenderingContext.prototype.getExtension=function(name){return name==='OES_element_index_uint'?null:ext.call(this,name)};WebGLRenderingContext.prototype.drawArrays=function(...args){if(args[0]===this.TRIANGLES)window.__triangleDraws++;return draw.apply(this,args)}")
+    expanded_surface.add_init_script("window.__triangleDraws=0;const context=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(type,...args){return type==='webgl2'?null:context.call(this,type,...args)};const ext=WebGLRenderingContext.prototype.getExtension,draw=WebGLRenderingContext.prototype.drawArrays;WebGLRenderingContext.prototype.getExtension=function(name){return name==='OES_element_index_uint'?null:ext.call(this,name)};WebGLRenderingContext.prototype.drawArrays=function(...args){if(args[0]===this.TRIANGLES)window.__triangleDraws++;return draw.apply(this,args)}")
     expanded_page = expanded_surface.new_page()
     ready(expanded_page)
     expect(expanded_page.locator('#bouquet')).to_have_attribute('data-rendered', 'true')
+    check('WebGL1-only devices take the explicit legacy compatibility path', expanded_page.locator('#bouquet').get_attribute('data-engine') == 'legacy-webgl1')
     check('Continuous petals render even without 32-bit index support', expanded_page.evaluate('window.__triangleDraws > 0') and expanded_page.locator('body').get_attribute('data-mode') != 'illustration')
     expanded_surface.close()
 
@@ -225,7 +285,9 @@ with sync_playwright() as p:
     corrupt_surface.close()
 
     invalid_surface_indices = browser.new_context()
-    surface_fixture = bytearray((ROOT / 'dist/assets/rose.mesh').read_bytes())
+    surface_fixture_response = invalid_surface_indices.request.get(args.url.rstrip('/') + '/assets/rose.mesh?v=7')
+    assert surface_fixture_response.ok
+    surface_fixture = bytearray(surface_fixture_response.body())
     vertex_count = struct.unpack_from('<I', surface_fixture, 4)[0]
     struct.pack_into('<I', surface_fixture, 12 + vertex_count * 36, vertex_count)
     invalid_surface_indices.route('**/assets/rose.mesh*', lambda route: route.fulfill(status=200, body=bytes(surface_fixture)))
@@ -240,7 +302,9 @@ with sync_playwright() as p:
         if mutate is None:
             growth_fixture = b'broken'
         else:
-            growth_fixture = bytearray((ROOT / 'dist/assets/rose.growth').read_bytes())
+            growth_fixture_response = corrupt_growth.request.get(args.url.rstrip('/') + '/assets/rose.growth?v=7')
+            assert growth_fixture_response.ok
+            growth_fixture = bytearray(growth_fixture_response.body())
             if mutate == 18:
                 growth_fixture[18:24] = bytes(6)
             else:
