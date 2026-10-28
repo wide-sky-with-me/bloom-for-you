@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "arrangement": "letter-garden-v1",
+  "visualPending": false,
+  "specimens": [
+    {
+      "id": "rose",
+      "title": "Rose",
+      "role": "hero",
+      "file": "rose-heliona.glb",
+      "motionFile": "rose-motion.json",
+      "author": "Heliona",
+      "authorURL": "https://sketchfab.com/Heliona",
+      "sourceURL": "https://sketchfab.com/3d-models/rose-6281bf3703584323bb4d8326f1f1b59d",
+      "license": "CC-BY-4.0",
+      "licenseURL": "https://creativecommons.org/licenses/by/4.0/",
+      "licenseFile": "CC-BY-4.0.txt",
+      "sha256": "cb1a96fe9327ebd8c55735ccb0fd2b677b76e854ac09b962860cc8bdba005ef6",
+      "sizeBytes": 12143680,
+      "changes": "Original GLB unchanged; runtime topology-derived petal/branch animation, camera and lighting. Mature endpoint bypasses deformation."
+    },
+    {
+      "id": "orchid",
+      "title": "Orchid",
+      "role": "companion",
+      "file": "orchid-rigsters.glb",
+      "author": "Rigsters",
+      "authorURL": "https://sketchfab.com/rigsters",
+      "sourceURL": "https://sketchfab.com/3d-models/orchid-ed453cd6b12f4dfa8d4f3dcf68c97cf1",
+      "license": "CC-BY-4.0",
+      "licenseURL": "https://creativecommons.org/licenses/by/4.0/",
+      "licenseFile": "CC-BY-4.0.txt",
+      "sha256": "d0d47671e6568ff1c4028372195e09d075187646f7942f454eaea2cd40ad027d",
+      "sizeBytes": 5090400,
+      "materialOverrides": {"*": {"transmission": 0, "transparent": false, "alphaTest": 0.12, "depthWrite": true, "side": "double"}},
+      "changes": "Original GLB unchanged; runtime opaque cutout fixes source BLEND sorting artifacts, preserving embedded color/normal/material maps. Branch pose/reveal is not claimed as individual orchid petal animation."
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-name: Publish flower garden
+name: Publish letter garden
 
 on:
   push:
@@ -22,17 +22,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Test geometry and renderer contracts
-        run: python -m unittest discover -s tests -v
-      - name: Test gallery selection and close-up contracts
-        run: node tests/app_natural.mjs
-      - name: Build deterministic natural flower garden
+      # The live site is the letter garden; the earlier gallery stays in the repo and builds locally with build.py.
+      - name: Test letter garden release contracts
+        run: python -m unittest discover -s studies/letter_garden/tests -v
+      - name: Build letter garden
         env:
           BLOOM_BUILD_REVISION: ${{ github.sha }}
-        run: python build.py
+        run: python -m studies.letter_garden.build --release
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

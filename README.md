@@ -1,10 +1,21 @@
 # 花间来信
 
-一座送给老婆的立体花束画廊。宽圆薄瓣、错落花材，让心意在指尖慢慢盛开。
+一封藏着花的信。拆开封口，信笺上一支深红玫瑰与一枝蝴蝶兰慢慢舒展，两枝花茎在纸根并拢、系一圈亚麻线，下面是写给老婆的话。
 
-**在线花园： https://wide-sky-with-me.github.io/bloom-for-you/**
+**在线来信： https://wide-sky-with-me.github.io/bloom-for-you/**
 
-## 花会动，心意也会
+## 现在的线上版本：信中生花
+
+线上发布的是[信中生花](studies/letter_garden/README.md)：玫瑰16片中外层花瓣按真实瓣壳分层舒展、9片卷芯保留原形，蝴蝶兰整枝从纸根抬入，轻触花瓣有短暂回应，「再看花开」只重播花景、不打断读信，「近一点」把两朵花一起拉近而不越出信纸。两份花材为 CC-BY-4.0 授权的现成模型，作者、许可与运行时改动见[制作说明](studies/letter_garden/ASSET_PROVENANCE.md)，页面底部「制作与素材」同样可访问。
+
+```bash
+python3 -m studies.letter_garden.build --release
+python3 -m http.server 8000 --directory dist
+```
+
+推送 `main` 后，[Pages 工作流](.github/workflows/pages.yml) 运行信笺构建契约并以 `--release` 生成 `dist` 发布；`dist/study.json` 记录提交 revision 与每个文件的 SHA，可据此核对公网版本。原立体花束画廊不再上线，代码与测试保留在仓库中，下文为它的说明，仍可用 `python3 build.py` 在本地构建。
+
+## 原画廊（已下线）：花会动，心意也会
 
 粉雾玫瑰、奶油粉郁金香、月光绣球、香槟混合花园，以及牡丹、百合、向日葵、马蹄莲。每束从 Python 确定性参数曲面生成连续花瓣、细叶、弯茎与亚麻结，主花与不同轮廓的配花组成环绕花冠。四种代表花型——洋牡丹、花园玫瑰、银莲花和香豌豆——可以独立近看，也能随时回到刚才选中的整束。
 
@@ -33,7 +44,7 @@ GitHub 仓库与 Pages 是公开的。信件配置、URL 参数和站点内容�
 
 ## 发布到 GitHub Pages
 
-仓库设置中，进入 **Settings → Pages → Build and deployment → Source**，选择 **GitHub Actions**。推送 `main` 后，[Pages 工作流](.github/workflows/pages.yml) 会运行 Python 与选型契约、生成花束并发布 `dist`。CI 构建标记包含提交 revision、资源修订和清单 SHA，可据此核对公网确实是该次发布，而不仅是推送成功。
+仓库设置中，进入 **Settings → Pages → Build and deployment → Source**，选择 **GitHub Actions**。仓库设置保持 GitHub Actions 来源即可；当前工作流只发布信中生花（见上文），画廊构建不再进入 Pages。
 
 ## 实现
 

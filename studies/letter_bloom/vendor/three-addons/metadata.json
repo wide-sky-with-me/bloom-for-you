@@ -1,0 +1,31 @@
+{
+  "name": "three",
+  "version": "0.186.1",
+  "revision": "186",
+  "license": "MIT",
+  "tarball": "https://registry.npmjs.org/three/-/three-0.186.1.tgz",
+  "integrity": "sha512-blFeqb49wRCSGUGj7gtpfnSGHy2lwDk94RhUmS1c/hTby70kvChbWpkJ4Pm1390LqzzvTmzgXKHPEafJwCb8jA==",
+  "modified": false,
+  "files": {
+    "environments/RoomEnvironment.js": {
+      "bytes": 4960,
+      "sha256": "55f466192cc84298755a424c5e040345006b2ee1455589b3b54126c2ea4123f4"
+    },
+    "loaders/GLTFLoader.js": {
+      "bytes": 117570,
+      "sha256": "131c0f78c01d19368ae495caa65b3adaa10487810a36a05bb5901b769a35ac16"
+    },
+    "utils/SkeletonUtils.js": {
+      "bytes": 11535,
+      "sha256": "b1632a703206c3d830de9fcbe515696770d04b71a15ee6b50afa6d2c3298c86f"
+    },
+    "utils/BufferGeometryUtils.js": {
+      "bytes": 37712,
+      "sha256": "9fb63427ce6641fa14fd0baff9cc4d1b5f9c3d85fd084bf2e90e803c44ec1797"
+    },
+    "LICENSE": {
+      "bytes": 1081,
+      "sha256": "8b378ebe60e2fe500158cb0ac71cb5e8b7d92953c2abcc63a0eb90499653b5bc"
+    }
+  }
+}

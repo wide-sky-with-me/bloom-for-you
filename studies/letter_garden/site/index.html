@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#eeede7">
+  <meta name="description" content="有一封信，等你亲手打开。">
+  <title>信中生花 · 给我最爱的你</title>
+  <link rel="preload" href="./assets/flower-song.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="./letter.css">
+  <script type="importmap">{"imports":{"three":"./vendor/three-0.186.1/three.module.js","three/addons/":"./vendor/three-addons/"}}</script>
+  <script type="module" src="./app.js"></script>
+</head>
+<body data-state="closed" data-playback="idle">
+  <main class="experience" id="experience">
+    <header class="dedication"><span>给我最爱的你</span><svg viewBox="0 0 50 12" aria-hidden="true"><path d="M2 8c13-6 27-6 45-4M12 10c9-5 18-7 27-8"/></svg></header>
+    <section class="stage" id="stage" aria-label="一封藏着花园的信">
+      <div class="table-light" aria-hidden="true"></div>
+      <article class="letter-sheet" id="letter" aria-label="给你的信" tabindex="-1" aria-hidden="true" inert>
+        <div class="paper-grain" aria-hidden="true"></div>
+        <div class="paper-fold" aria-hidden="true"></div>
+        <div class="letter-content" id="letter-content">
+          <p class="interaction-hint" id="interaction-hint">轻触花叶，会有小小回应</p>
+          <nav class="flower-actions" aria-label="看花">
+            <button class="text-button" id="closer" type="button" aria-pressed="false" disabled>近一点</button>
+            <span class="action-separator" aria-hidden="true"></span>
+            <button class="text-button" id="replay" type="button" disabled>再看花开</button>
+          </nav>
+          <p class="occasion">不是节日，也想送给你</p>
+          <div class="letter-copy" id="letter-copy">
+            <p class="salutation" id="salutation"></p>
+            <div id="letter-body"></div>
+            <p class="signature" id="signature"></p>
+          </div>
+          <div class="letter-error" id="letter-error" hidden>
+            <p>信的文字暂时没有读到。请再试一次。</p>
+            <button class="text-button" id="retry-letter" type="button">重新读信</button>
+          </div>
+          <p class="letter-loading" id="letter-loading">正在取出信里的文字…</p>
+          <nav class="reading-actions" aria-label="信笺操作"><button class="text-button" id="reread" type="button">重新拆信</button></nav>
+        </div>
+      </article>
+      <div class="garden-space" id="garden-space" data-visible="false">
+        <canvas id="garden-canvas" aria-hidden="true" tabindex="-1"></canvas>
+        <button class="garden-touch" id="garden-touch" type="button" aria-label="轻触花叶" aria-describedby="garden-key-help" disabled></button>
+      </div>
+      <p class="sr-only" id="garden-key-help">点一下花叶，让它轻轻回应。键盘可用方向键选择位置，按 Enter 或空格轻触。上下滑动仍可读信。</p>
+      <div class="scene-message" id="scene-message" role="status" aria-live="polite" hidden>
+        <p id="scene-message-text"></p><button class="text-button" id="retry-scene" type="button" hidden>再试一次</button>
+      </div>
+      <div class="envelope" id="envelope">
+        <div class="envelope-back" aria-hidden="true"></div>
+        <div class="envelope-flap" aria-hidden="true"></div>
+        <div class="envelope-face" aria-hidden="true">
+          <svg class="blind-flower" viewBox="0 0 330 330" fill="none">
+            <defs><filter id="letterpress" x="-15%" y="-15%" width="130%" height="130%"><feDropShadow dx="0.85" dy="1.1" stdDeviation="0.3" flood-color="#fffdf5"/><feDropShadow dx="-0.5" dy="-0.75" stdDeviation="0.3" flood-color="#817b67" flood-opacity=".36"/></filter></defs>
+            <g filter="url(#letterpress)" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M169 157c10 27 5 49-5 73-10 26-12 46-9 70M169 165c-7 2-15-2-20-8m21 5 16-10M166 222c-15-20-33-29-59-26 13 20 30 30 59 26ZM158 258c9-24 25-37 51-42-8 22-26 37-51 42Z"/>
+              <path d="M169 154c-19 8-37 0-49-15-21 3-38-6-43-23-2-7-1-14 2-21-10-13-6-31 5-40 8-7 17-8 26-5-1-16 9-29 23-33 13-4 25 1 31 11 16-12 36-8 46 4 5 6 7 12 7 19 23 3 34 23 28 40-2 7-7 13-13 17 5 22-11 42-32 43-9 1-16-1-21-5" stroke-width="1.35"/>
+              <path d="M110 50c16-2 32 6 38 19M133 18c-3 15 2 30 12 40M165 28c-8 10-11 20-9 30M216 51c-15-1-30 5-37 16M242 80c-14-7-29-4-40 4M230 108c-6-9-16-15-27-14M200 151c3-19-4-30-15-38M120 139c3-15 14-26 26-28M79 95c9-8 20-10 31-6"/>
+              <path d="M151 136c-16 6-34-1-39-17-3-10 0-19 6-25-13-8-14-23-6-32 9-10 25-10 37-3 10-12 28-13 39-3 5 5 7 12 6 18 15 2 25 14 22 27-3 12-15 19-27 19-6 13-20 21-38 16ZM118 94c11-6 23-5 32 1M149 59c-4 10-2 20 5 26M194 74c-12 1-22 8-26 16M189 120c-10-3-16-10-17-19M151 136c-6-13-4-27 3-36"/>
+              <path d="M150 101c-7-6-7-16 0-23 7-7 18-8 26-2 7 5 9 13 6 20 7 10 1 21-9 24-9 3-17-1-20-8M151 84c8-5 16-3 20 3 5 8 0 17-8 17-5 0-8-4-7-8 1-5 6-7 10-5m-13 21c9 0 16-5 18-12" stroke-width=".9"/>
+              <path d="M119 115c4 7 10 10 18 11m-2-61c-6-1-11 1-14 5m77 24c6 3 9 7 9 12M166 222c-17-12-33-20-51-23m43 59c13-16 28-28 45-38m-70-12-4 6m14-1-2 8m37 18 8 1m-17 7 6 2m14-20 9-1" stroke-width=".65"/>
+            </g>
+          </svg>
+          <p class="envelope-recipient" id="envelope-recipient"></p><span class="envelope-fold-line"></span>
+        </div>
+        <button id="open-letter" class="open-trigger" type="button" aria-label="拆开这封信" aria-controls="letter" aria-expanded="false" aria-describedby="invitation">
+          <span class="pull-tab"><svg viewBox="0 0 16 25" aria-hidden="true"><path d="M8 22V3M3 8l5-5 5 5"/></svg><span>拆信</span></span>
+        </button>
+      </div>
+      <div class="opening-note" id="opening-note"><p id="invitation">有一封信，<wbr>等你亲手打开</p><p class="touch-hint">轻轻向上拉，或点一下</p></div>
+    </section>
+    <p class="sr-only" id="announcement" role="status" aria-live="polite"></p>
+    <footer class="colophon"><a href="./ASSET_PROVENANCE.md">制作与素材</a></footer>
+    <noscript><p class="noscript-note">拆信需要启用 JavaScript。原信文字保存在<a href="./gift.json">这封信</a>里。</p></noscript>
+  </main>
+</body>
+</html>
