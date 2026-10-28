@@ -21,3 +21,7 @@ python3 -m unittest discover -s studies/letter_garden/tests -v
 ```
 
 点击封口或轻拉触发开场；‘再看花开’只重播花艺，不隐藏已打开的信，轻触实际花瓣/叶枝有短暂局部回应，空白无回应。减弱动态直接成熟终态，近看与读信边界隔离，无GL保留完整原文。玫瑰16个中外瓣在开场动作、9卷芯保留，兰花是整枝抬起而非逐兰瓣。
+
+左右拖动转动整束（转台轴是两枝茎并拢处的竖直线，相机与灯光不动），松手按速度滑停，减弱动态下仍可拖但不滑行；Shift+左右方向键每次转22.5°，Home 回正面。
+
+模型压缩是离线步骤，不属于站点构建：原始GLB在 `source-models/`（不发布），改动后在 `tools/` 运行 `npm ci && node compress-models.mjs` 重新派生 `assets/*-web.glb`，再把输出的SHA/字节数更新到 `assets/catalog.json`。脚本会拒绝任何非无损的几何变化。

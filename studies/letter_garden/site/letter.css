@@ -74,7 +74,8 @@ button:focus-visible, a:focus-visible { outline: 1px solid var(--leaf); outline-
 .garden-space { position: absolute; z-index: 5; top: var(--garden-top, 0px); left: 50%; width: min(820px, 100%); height: var(--portrait-height); overflow: clip; contain: paint; transform: translateX(-50%); pointer-events: none; }
 .garden-space[data-visible="false"] { visibility: hidden; }
 #garden-canvas { display: block; width: 100%; height: 100%; outline: none; pointer-events: none; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); filter: drop-shadow(1px 4px 7px rgb(59 66 57 / .08)); }
-.garden-touch { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 0; padding: 0; background: transparent; pointer-events: auto; touch-action: pan-y; cursor: pointer; }
+.garden-touch { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 0; padding: 0; background: transparent; pointer-events: auto; touch-action: pan-y; cursor: grab; }
+.garden-touch:active { cursor: grabbing; }
 .garden-touch:disabled { pointer-events: none; cursor: default; }
 .garden-touch:focus-visible { outline: 1px solid #6d7b5b70; outline-offset: -9px; }
 .reading-actions { display: flex; justify-content: center; margin-top: 46px; }

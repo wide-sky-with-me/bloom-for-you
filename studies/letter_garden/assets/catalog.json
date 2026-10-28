@@ -7,7 +7,7 @@
       "id": "rose",
       "title": "Rose",
       "role": "hero",
-      "file": "rose-heliona.glb",
+      "file": "rose-heliona-web.glb",
       "motionFile": "rose-motion.json",
       "author": "Heliona",
       "authorURL": "https://sketchfab.com/Heliona",
@@ -15,25 +15,45 @@
       "license": "CC-BY-4.0",
       "licenseURL": "https://creativecommons.org/licenses/by/4.0/",
       "licenseFile": "CC-BY-4.0.txt",
-      "sha256": "cb1a96fe9327ebd8c55735ccb0fd2b677b76e854ac09b962860cc8bdba005ef6",
-      "sizeBytes": 12143680,
-      "changes": "Original GLB unchanged; runtime topology-derived petal/branch animation, camera and lighting. Mature endpoint bypasses deformation."
+      "sha256": "80b09eb62dd91e60f4967925dd0ddac1898994a8748a4b65120fea762c9d3ee8",
+      "sizeBytes": 3033496,
+      "changes": "Delivered as a compressed derivative (see compression) of the unchanged original in source; runtime topology-derived petal/branch animation, camera and lighting. Mature endpoint bypasses deformation.",
+      "source": {
+        "file": "source-models/rose-heliona.glb",
+        "sha256": "cb1a96fe9327ebd8c55735ccb0fd2b677b76e854ac09b962860cc8bdba005ef6",
+        "sizeBytes": 12143680
+      },
+      "compression": "tools/compress-models.mjs: EXT_meshopt_compression without quantization/reordering (vertex attributes byte-identical, triangle order kept, some triangles start from another corner); EXT_texture_webp, small parts downsized"
     },
     {
       "id": "orchid",
       "title": "Orchid",
       "role": "companion",
-      "file": "orchid-rigsters.glb",
+      "file": "orchid-rigsters-web.glb",
       "author": "Rigsters",
       "authorURL": "https://sketchfab.com/rigsters",
       "sourceURL": "https://sketchfab.com/3d-models/orchid-ed453cd6b12f4dfa8d4f3dcf68c97cf1",
       "license": "CC-BY-4.0",
       "licenseURL": "https://creativecommons.org/licenses/by/4.0/",
       "licenseFile": "CC-BY-4.0.txt",
-      "sha256": "d0d47671e6568ff1c4028372195e09d075187646f7942f454eaea2cd40ad027d",
-      "sizeBytes": 5090400,
-      "materialOverrides": {"*": {"transmission": 0, "transparent": false, "alphaTest": 0.12, "depthWrite": true, "side": "double"}},
-      "changes": "Original GLB unchanged; runtime opaque cutout fixes source BLEND sorting artifacts, preserving embedded color/normal/material maps. Branch pose/reveal is not claimed as individual orchid petal animation."
+      "sha256": "5047635ee311a911c175e96fbbd33e9d7518f6ef059766da4a82a695fe351bfe",
+      "sizeBytes": 1402628,
+      "materialOverrides": {
+        "*": {
+          "transmission": 0,
+          "transparent": false,
+          "alphaTest": 0.12,
+          "depthWrite": true,
+          "side": "double"
+        }
+      },
+      "changes": "Delivered as a compressed derivative (see compression) of the unchanged original in source; runtime opaque cutout fixes source BLEND sorting artifacts, preserving embedded color/normal/material maps. Branch pose/reveal is not claimed as individual orchid petal animation.",
+      "source": {
+        "file": "source-models/orchid-rigsters.glb",
+        "sha256": "d0d47671e6568ff1c4028372195e09d075187646f7942f454eaea2cd40ad027d",
+        "sizeBytes": 5090400
+      },
+      "compression": "tools/compress-models.mjs: EXT_meshopt_compression without quantization/reordering (vertex attributes byte-identical, triangle order kept, some triangles start from another corner); EXT_texture_webp, small parts downsized"
     }
   ]
 }

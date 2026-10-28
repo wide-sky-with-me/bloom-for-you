@@ -49,10 +49,11 @@ function updateControls() {
   closerButton.disabled = !ready;
   replayButton.disabled = sceneState !== "ready" || state !== "open";
   replayButton.setAttribute("aria-disabled", String(!ready));
-  touchButton.disabled = !ready || reducedMotion;
+  // Turning the bouquet is direct manipulation, so it stays available with reduced motion (it just never coasts).
+  touchButton.disabled = !ready;
   replayButton.textContent = playback === "replaying" ? "花正在开" : "再看花开";
   $("interaction-hint").textContent = sceneState === "error" ? "花暂时没打开，信可以先读" : sceneState !== "ready" ? "花在准备，信可以先读" :
-    reducedMotion ? "花已静静盛开" : playback === "replaying" ? "花正慢慢舒展" : "轻触花叶，会有小小回应";
+    playback === "replaying" ? "花正慢慢舒展" : reducedMotion ? "花已静静盛开，左右拖动可以转着看" : "轻触花叶，左右拖动可以转着看";
   $("scene-message").hidden = state !== "open" || sceneState === "ready";
   $("retry-scene").hidden = sceneState !== "error";
   $("scene-message-text").textContent = sceneState === "error" ? "花景暂时没有打开。信仍然可以读。" : "花景还在准备，信已经可以读了。";
@@ -305,24 +306,56 @@ function onGardenClick(event) {
   touchSession = null;
   reactAt(point, event.detail === 0);
 }
+const TURN_STEP = Math.PI / 8;
 function onGardenKey(event) {
+  if (touchButton.disabled) return;
+  if (event.shiftKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+    event.preventDefault(); touchSession = null;
+    controller?.turnBy(event.key === "ArrowLeft" ? -TURN_STEP : TURN_STEP);
+    return;
+  }
+  if (event.key === "Home") { event.preventDefault(); controller?.resetTurn(); return; }
   const directions = { ArrowLeft: [-.08, 0], ArrowRight: [.08, 0], ArrowUp: [0, -.08], ArrowDown: [0, .08] };
   const delta = directions[event.key];
-  if (!delta || touchButton.disabled) return;
+  if (!delta) return;
   event.preventDefault(); touchSession = null;
   reactAt({ x: reactionPoint.x + delta[0], y: reactionPoint.y + delta[1] }, true);
 }
+// One full turn per ~1.4 garden widths of horizontal drag.
+function radiansPerPixel() { return Math.PI * 2 / Math.max(240, touchButton.getBoundingClientRect().width * 1.4); }
 function onGardenDown(event) {
   if (!event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) return;
-  touchSession = { id: event.pointerId, x: event.clientX, y: event.clientY, type: event.pointerType, cancelled: false };
+  touchSession = { id: event.pointerId, x: event.clientX, y: event.clientY, type: event.pointerType, cancelled: false, turning: false, lastX: event.clientX, lastTime: event.timeStamp, velocity: 0 };
 }
 function onGardenMove(event) {
   if (!touchSession || touchSession.id !== event.pointerId) return;
-  if (touchSession.type === "touch") {
-    if (Math.abs(event.clientY - touchSession.y) > 10 || Math.abs(event.clientX - touchSession.x) > 18) touchSession.cancelled = true;
-    return; // Native vertical scrolling always wins; no preventDefault or capture.
+  const dx = event.clientX - touchSession.x, dy = event.clientY - touchSession.y;
+  if (!touchSession.turning) {
+    // Vertical intent stays with the page (touch-action: pan-y scrolls the letter natively); horizontal intent turns the bouquet.
+    if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.2 && controller && sceneState === "ready") {
+      touchSession.turning = true; touchSession.cancelled = true;
+      touchButton.setPointerCapture?.(event.pointerId);
+    } else {
+      if (touchSession.type === "touch" && Math.abs(dy) > 10) touchSession.cancelled = true;
+      return;
+    }
   }
-  if (event.buttons === 1) reactAt(pointFromEvent(event));
+  const step = event.clientX - touchSession.lastX, elapsed = Math.max(1, event.timeStamp - touchSession.lastTime);
+  const radians = step * radiansPerPixel();
+  touchSession.velocity = touchSession.velocity * .6 + (radians / elapsed * 1000) * .4;
+  touchSession.lastX = event.clientX; touchSession.lastTime = event.timeStamp;
+  controller?.turn(radians);
+}
+function onGardenUp(event) {
+  if (!touchSession || touchSession.id !== event.pointerId || !touchSession.turning) return;
+  // A pause before lifting the finger means "put it down here", not "spin".
+  const stale = event.timeStamp - touchSession.lastTime > 90;
+  controller?.release(stale ? 0 : touchSession.velocity);
+  touchSession.turning = false;
+}
+function onGardenCancel(event) {
+  if (touchSession?.turning && touchSession.id === event.pointerId) controller?.release(0);
+  touchSession = null;
 }
 function onPullDown(event) {
   if (state !== "closed" || !event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) return;
@@ -367,7 +400,8 @@ listen(touchButton, "click", onGardenClick);
 listen(touchButton, "keydown", onGardenKey);
 listen(touchButton, "pointerdown", onGardenDown);
 listen(touchButton, "pointermove", onGardenMove);
-listen(touchButton, "pointercancel", () => { touchSession = null; });
+listen(touchButton, "pointerup", onGardenUp);
+listen(touchButton, "pointercancel", onGardenCancel);
 listen(closerButton, "click", () => {
   if (state !== "open" || playback !== "idle" || !controller || sceneState !== "ready") return;
   closeup = !closeup; controller.setCloseup(closeup);

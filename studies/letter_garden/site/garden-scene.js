@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
+import {MeshoptDecoder} from 'three/addons/libs/meshopt_decoder.module.js';
 import {attachPetalMotion,ease} from './petal-motion.js';
 const clamp=x=>Math.max(0,Math.min(1,Number(x)||0));
 const OVERRIDE_KEYS=['transmission','transparent','alphaTest','depthWrite','roughness','metalness','side'];
@@ -78,7 +79,7 @@ export function createCompanionPose(group,pivot){
   },getDiagnostics(){return info;}};
 }
 // A few turns of linen where the two stems are gathered; static with the rose stem, it appears once the flowers have opened.
-function buildTie(scene,connector,y){
+function buildTie(parent,connector,y){
   const rose=connector.stem.at(y),orchid=connector.samples.reduce((a,b)=>Math.abs(b.y-y)<Math.abs(a.y-y)?b:a);
   const across=new THREE.Vector3(orchid.x-rose.x,0,orchid.z-rose.z),gap=across.length(),centre=rose.clone().lerp(orchid,.5);centre.y=y;
   const material=new THREE.MeshStandardMaterial({color:'#cdbd9c',roughness:.95,metalness:0,transparent:true,opacity:0,depthWrite:false}),tie=new THREE.Group();
@@ -86,7 +87,7 @@ function buildTie(scene,connector,y){
   const major=gap/2+.05,minor=.05;
   for(let i=0;i<3;i++){const tilt=(i-1)*.12,loop=new THREE.CatmullRomCurve3(Array.from({length:24},(_,k)=>{const a=k/24*Math.PI*2,x=Math.cos(a)*major;return new THREE.Vector3(x,(i-1)*.022+x*tilt,Math.sin(a)*minor);}),true);
     tie.add(new THREE.Mesh(new THREE.TubeGeometry(loop,48,.011,6,true),material));}
-  tie.position.copy(centre);tie.rotation.y=-Math.atan2(across.z,across.x);tie.name='linen-tie';tie.visible=false;scene.add(tie);
+  tie.position.copy(centre);tie.rotation.y=-Math.atan2(across.z,across.x);tie.name='linen-tie';tie.visible=false;parent.add(tie);
   return {tie,update(value){material.opacity=value;tie.visible=value>0;const opaque=value>=1;if(material.transparent===opaque){material.transparent=!opaque;material.depthWrite=opaque;material.needsUpdate=true;}},info:{centre:centre.toArray(),gap}};
 }
 function overrideMaterials(model,rules){
@@ -125,6 +126,8 @@ export async function createGardenScene(canvas,{catalogURL='./assets/catalog.jso
   const status=(state,message,detail)=>{try{onStatus({state,message,kind:'layered-floral',...(detail?{detail}:{})});}catch{}};
   const abort=new AbortController(),instances=[],listeners=[];let renderer,scene,environmentTarget,observer,controller;
   let disposed=false,lost=false,raf=0,progress=0,reduced=false,closeup=0,targetCloseup=0,lastTime=0,renderCount=0,shaderError=null,response=null,lastReact=-Infinity;
+  // Turntable: the viewer turns the bouquet about the vertical through its gathered stems; camera and lights stay put.
+  let yaw=0,yawVelocity=0,yawTween=null,turning=false;
   status('loading','正在把花枝、叶脉和花瓣准备好…');
   try{
     const catalogPath=localURL(catalogURL,document.baseURI),catalog=await get(catalogPath,'json',abort.signal);
@@ -138,25 +141,28 @@ export async function createGardenScene(canvas,{catalogURL='./assets/catalog.jso
     const key=new THREE.DirectionalLight(0xfff4e9,2),fill=new THREE.DirectionalLight(0xe7eef1,.55);
     key.position.set(-9,15,12);key.castShadow=true;key.shadow.mapSize.set(1024,1024);key.shadow.intensity=.35;key.shadow.bias=-.0002;key.shadow.normalBias=.005;key.shadow.radius=5;
     Object.assign(key.shadow.camera,{left:-7,right:7,top:7,bottom:-7,near:.5,far:60});key.shadow.camera.updateProjectionMatrix();fill.position.set(10,3,6);scene.add(key,key.target,fill,fill.target);
-    let hero=null;const loader=new GLTFLoader(),warnings=[];
+    const turntable=new THREE.Group();turntable.name='turntable';turntable.matrixAutoUpdate=false;scene.add(turntable);
+    let hero=null;const loader=new GLTFLoader().setMeshoptDecoder(MeshoptDecoder),warnings=[];
     for(const specimen of catalog.specimens.filter(s=>s.enabled!==false&&s.status!=='pending').sort((a,b)=>(a.role==='hero'?-1:0)-(b.role==='hero'?-1:0))){
       try{
         const assetPath=localURL(specimen.file,catalogPath),buffer=await get(assetPath,'buffer',abort.signal);
         let motionConfig=null,mapping=null;
         if(specimen.motionFile){const motionPath=localURL(specimen.motionFile,catalogPath);motionConfig=await get(motionPath,'json',abort.signal);
-          if(await hash(buffer)!==motionConfig.sourceSHA256)throw new Error('Rose source hash does not match analysed topology');
+          // The delivered GLB is a meshopt/WebP derivative; the topology analysis is bound to its untouched original.
+          if(await hash(buffer)!==specimen.sha256||(specimen.source?.sha256??specimen.sha256)!==motionConfig.sourceSHA256)throw new Error('Rose model does not match analysed topology');
           mapping=await get(localURL(motionConfig.mapping.file,motionPath),'buffer',abort.signal);if(await hash(mapping)!==motionConfig.mapping.sha256)throw new Error('Rose motion mapping hash mismatch');
         }
-        const gltf=await loader.parseAsync(buffer,new URL('./',assetPath).href),model=gltf.scene;scene.add(model);
+        const gltf=await loader.parseAsync(buffer,new URL('./',assetPath).href),model=gltf.scene;turntable.add(model);
         const overrides=overrideMaterials(model,specimen.materialOverrides),rig=motionConfig?attachPetalMotion(model,motionConfig,mapping):null;
         if(specimen.role==='hero'&&!rig)throw new Error('Hero requires the verified petal-motion sidecar');
         model.updateMatrixWorld(true);let anchor=specimen.role==='hero'?boxForMaterial(model,'m_petal'):new THREE.Box3().setFromObject(model,true);
         if(anchor.isEmpty())throw new Error('Flower specimen has no usable anchor');
         const center=anchor.getCenter(new THREE.Vector3()),size=anchor.getSize(new THREE.Vector3()),scale=(specimen.role==='hero'?2.6:2.25)/Math.max(size.x,size.y,size.z);
         model.position.sub(center).multiplyScalar(scale);model.scale.multiplyScalar(scale);
-        const group=new THREE.Group();group.name='specimen-'+specimen.id;group.add(model);scene.add(group);
+        const group=new THREE.Group();group.name='specimen-'+specimen.id;group.add(model);turntable.add(group);
         if(specimen.role==='hero'){group.position.set(-.48,-.12,.25);group.rotation.z=.12;hero={group,model,rig};}
-        else{group.position.set(1.38,.68,-.80);group.rotation.set(-.08,.20,-.26);}
+        // Companion rises against the rose's right shoulder and slightly behind it, so the pair reads as one bouquet from every turn.
+        else{group.position.set(.90,.95,-.70);group.rotation.set(-.05,.35,-.15);}
         if(specimen.position)group.position.fromArray(specimen.position);if(specimen.rotation)group.rotation.fromArray(specimen.rotation);
         group.updateMatrixWorld(true);model.traverse(mesh=>{if(mesh.isMesh){mesh.castShadow=true;mesh.receiveShadow=true;}});
         const bounds=new THREE.Box3().setFromObject(model,true),revealer=rig?null:wholeBranchFade(model);
@@ -167,7 +173,7 @@ export async function createGardenScene(canvas,{catalogURL='./assets/catalog.jso
           connector=buildOrchidConnector(group,model,stem,crown.min.y-(crown.max.y-crown.min.y)*.62);
           const branchBounds=new THREE.Box3().setFromObject(connector.mesh,true);connectorRevealer=companionReveal(connector.mesh,branchBounds.min.y,branchBounds.max.y);
           wholePose=createCompanionPose(group,connector.info.paperEnd);
-          const height=crown.max.y-crown.min.y;connector.tie=buildTie(scene,connector,crown.min.y-height*.80);
+          const height=crown.max.y-crown.min.y;connector.tie=buildTie(turntable,connector,crown.min.y-height*.80);
         }
         instances.push({id:specimen.id,role:specimen.role,model,group,rig,revealer,connector,connectorRevealer,wholePose,bounds,overrides,sourceSHA256:motionConfig?.sourceSHA256??null});
       }catch(error){if(specimen.role==='hero')throw error;warnings.push(specimen.id+': '+error.message);}
@@ -178,6 +184,7 @@ export async function createGardenScene(canvas,{catalogURL='./assets/catalog.jso
     anchor.min.y-=crownSize.y*.88;for(const instance of instances)if(instance.role!=='hero')anchor.union(instance.bounds);
     // Close-up centres on every bloom, so the companion stays on the paper instead of spilling past its edge.
     const blooms=crown.clone();for(const instance of instances)if(instance.role!=='hero')blooms.union(instance.bounds);
+    const axis=new THREE.Vector3(...(instances.find(i=>i.connector)?.connector.info.gatheredAt??crown.getCenter(new THREE.Vector3()).toArray()));
     const fullBounds=new THREE.Box3().setFromObject(scene,true),responseValues=new Float32Array(28);let width=0,height=0,dpr=0,framing=null;
     const raycaster=new THREE.Raycaster(),heroMeshes=hero.rig.bindings.map(binding=>binding.mesh);let candidateCache={key:null,items:[]};
     function hitHero(x,y){raycaster.setFromCamera(new THREE.Vector2(2*x-1,1-2*y),camera);const hit=raycaster.intersectObjects(heroMeshes,false)[0];if(!hit?.face)return null;
@@ -185,7 +192,7 @@ export async function createGardenScene(canvas,{catalogURL='./assets/catalog.jso
     function reactCandidates(){
       if(disposed||!renderCount)return [];
       const raw=hero.rig.targets(camera);if(progress!==1||response||raf)return raw.map(t=>({...t,hittable:false}));
-      const key=camera.matrixWorld.elements.join(',')+'|'+camera.projectionMatrix.elements.join(',');
+      const key=camera.matrixWorld.elements.join(',')+'|'+camera.projectionMatrix.elements.join(',')+'|'+yaw;
       if(candidateCache.key!==key)candidateCache={key,items:raw.map(t=>({...t,hittable:t.x>=0&&t.x<=1&&t.y>=0&&t.y<=1&&hitHero(t.x,t.y)===t.id})).sort((a,b)=>Number(b.hittable)-Number(a.hittable))};
       return candidateCache.items;
     }
@@ -195,6 +202,11 @@ export async function createGardenScene(canvas,{catalogURL='./assets/catalog.jso
       raf=0;if(disposed||lost||document.hidden)return;
       const dt=lastTime?Math.min(.05,(now-lastTime)/1000):.016;lastTime=now;
       closeup=reduced?targetCloseup:closeup+(targetCloseup-closeup)*(1-Math.exp(-dt*9));if(Math.abs(closeup-targetCloseup)<.001)closeup=targetCloseup;
+      // Stepped turns run on wall-clock time, so they land on schedule even when frames are slow.
+      if(yawTween){if(yawTween.start===null)yawTween.start=now;const t=reduced?1:Math.min(1,(now-yawTween.start)/450),k=t*t*(3-2*t);yaw=yawTween.from+(yawTween.to-yawTween.from)*k;if(t===1)yawTween=null;}
+      else if(!turning&&yawVelocity){yaw+=yawVelocity*dt;yawVelocity*=Math.exp(-dt*3.4);if(Math.abs(yawVelocity)<.03)yawVelocity=0;}
+      if(!turning&&!yawVelocity&&!yawTween)yaw=Math.atan2(Math.sin(yaw),Math.cos(yaw));
+      turntable.matrix.makeTranslation(axis.x,0,axis.z).multiply(new THREE.Matrix4().makeRotationY(yaw)).multiply(new THREE.Matrix4().makeTranslation(-axis.x,0,-axis.z));turntable.matrixWorldNeedsUpdate=true;
       responseValues.fill(0);let responding=false;
       if(response&&!reduced){if(response.start===null)response.start=now;const age=(now-response.start)/900;
         if(age>=1)response=null;else{const amplitude=Math.sin(age*Math.PI*2)*Math.exp(-3*age);for(const target of response.targets)responseValues[target.id]=amplitude*target.weight;responding=true;}
@@ -220,7 +232,7 @@ export async function createGardenScene(canvas,{catalogURL='./assets/catalog.jso
       framing={azimuth:25,elevation:THREE.MathUtils.radToDeg(elevation),target:target.toArray(),distance,portrait:camera.aspect<1?'mobile':'desktop'};
       try{renderer.render(scene,camera);}catch(error){lost=true;status('error','花景暂时无法绘制，信仍可以读。',error.message);return;}
       if(lost)return;renderCount++;canvas.dataset.rendered='true';canvas.dataset.progress=String(progress);
-      if(responding||closeup!==targetCloseup)requestFrame();else lastTime=0;
+      if(responding||closeup!==targetCloseup||yawVelocity||yawTween)requestFrame();else lastTime=0;
     }
     renderer.debug.onShaderError=(gl,program,vertex,fragment)=>{shaderError=[gl.getProgramInfoLog(program),gl.getShaderInfoLog(vertex),gl.getShaderInfoLog(fragment)].filter(Boolean).join('\n');lost=true;cancelAnimationFrame(raf);raf=0;status('error','花景材质未能绘制，信仍可以读。',shaderError);};
     listen(canvas,'webglcontextlost',event=>{event.preventDefault();lost=true;cancelAnimationFrame(raf);raf=0;status('error','绘图已中断，信仍可以读。');});
@@ -230,11 +242,18 @@ export async function createGardenScene(canvas,{catalogURL='./assets/catalog.jso
       setProgress(value){if(disposed||lost)return;progress=reduced?1:clamp(value);if(progress<.92)response=null;requestFrame();},
       setCloseup(value){if(disposed||lost)return;targetCloseup=value?1:0;requestFrame();},
       setReducedMotion(value){if(disposed||lost)return;reduced=!!value;if(reduced){progress=1;closeup=targetCloseup;response=null;}requestFrame();},
-      react({x,y}){if(disposed||lost||reduced||progress!==1||response||renderCount===0)return false;const now=performance.now();if(now-lastReact<100)return false;
+      react({x,y}){if(disposed||lost||reduced||progress!==1||response||renderCount===0||turning||yawVelocity||yawTween)return false;const now=performance.now();if(now-lastReact<100)return false;
         const id=hitHero(clamp(x),clamp(y));if(id===null)return false;lastReact=now;
         response={start:null,targets:[{id,weight:1}]};requestFrame();return true;
-      },requestFrame,
-      getDiagnostics(){return {engine:'three-webgl2',kind:'layered-floral',progress,reducedMotion:reduced,closeup,targetCloseup,renderCount,rendered:renderCount>0&&!lost,
+      },
+      // Drag: turn(delta) while the pointer moves, release(velocity in rad/s) to coast; reduced motion never coasts.
+      turn(delta){if(disposed||lost||!Number.isFinite(delta))return;turning=true;yawTween=null;yawVelocity=0;yaw+=delta;response=null;requestFrame();},
+      release(velocity=0){if(disposed||lost)return;turning=false;yawVelocity=reduced||!Number.isFinite(velocity)?0:Math.max(-7,Math.min(7,velocity));requestFrame();},
+      // Keyboard / button steps ease to the new angle instead of jumping.
+      turnBy(delta){if(disposed||lost||!Number.isFinite(delta))return;turning=false;yawVelocity=0;yawTween={from:yaw,to:(yawTween?.to??yaw)+delta,start:null};response=null;requestFrame();},
+      resetTurn(){if(disposed||lost)return;turning=false;yawVelocity=0;yawTween={from:yaw,to:Math.round(yaw/(Math.PI*2))*Math.PI*2,start:null};requestFrame();},
+      requestFrame,
+      getDiagnostics(){return {engine:'three-webgl2',kind:'layered-floral',turntable:{yaw,velocity:yawVelocity,turning,easing:!!yawTween,axis:axis.toArray()},progress,reducedMotion:reduced,closeup,targetCloseup,renderCount,rendered:renderCount>0&&!lost,
         disposed,lost,shaderError,pendingFrame:!!raf,reacting:!!response,reactTargetIds:response?.targets.map(t=>t.id)??[],reactPicking:'original mature hero triangle raycast; no reentry during response',
         reactCandidates:reactCandidates(),
         dpr,size:{width,height},framing,calls:renderer.info.render.calls,triangles:renderer.info.render.triangles,stemMode:'rest-height reveal, not growth',

@@ -46,6 +46,16 @@ def main():
                 check(1<=len(reaction['reactTargetIds'])<=3,'Trusted local touch reacts only on nearby real parts')
                 page.wait_for_function('!__letterGarden.getDiagnostics().scene.reacting && !__letterGarden.getDiagnostics().scene.pendingFrame',timeout=5000)
                 check(next(s for s in diag(page)['scene']['specimens'] if s['role']=='hero')['motion']['restBypass'],'Touch settles back to the exact mature bypass')
+                def turntable():return diag(page)['scene']['turntable']
+                box=page.locator('#garden-touch').bounding_box();cy=box['y']+box['height']*.5
+                page.mouse.move(box['x']+box['width']*.35,cy);page.mouse.down();page.mouse.move(box['x']+box['width']*.65,cy,steps=12);page.mouse.up()
+                page.wait_for_function("(()=>{const t=__letterGarden.getDiagnostics().scene;return !t.turntable.turning&&!t.turntable.velocity&&!t.pendingFrame})()",timeout=8000)
+                turned=turntable();report['turntableAfterDrag']=turned
+                check(abs(turned['yaw'])>.5 and not diag(page)['scene']['reacting'],'Horizontal drag turns the bouquet and does not count as a petal touch')
+                count=diag(page)['scene']['renderCount'];page.wait_for_timeout(250);check(diag(page)['scene']['renderCount']==count,'Turned bouquet coasts to rest and stops drawing')
+                page.locator('#garden-touch').focus();page.keyboard.press('Shift+ArrowRight');page.wait_for_function("!__letterGarden.getDiagnostics().scene.turntable.easing",timeout=6000)
+                stepped=turntable()['yaw'];page.keyboard.press('Home');page.wait_for_function("!__letterGarden.getDiagnostics().scene.turntable.easing&&!__letterGarden.getDiagnostics().scene.pendingFrame",timeout=6000)
+                check(abs(stepped-turned['yaw'])>.3 and abs(turntable()['yaw'])<1e-6,'Keyboard turns the bouquet and Home returns it to the front')
                 page.locator('#replay').scroll_into_view_if_needed()
                 before=page.evaluate("({text:document.querySelector('#letter-copy').innerText,scroll:scrollY,transform:getComputedStyle(document.querySelector('#letter')).transform})")
                 page.locator('#replay').click();page.wait_for_function("__letterGarden.getDiagnostics().playback!=='idle'")
