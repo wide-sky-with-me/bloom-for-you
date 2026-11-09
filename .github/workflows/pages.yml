@@ -1,4 +1,4 @@
-name: Publish letter garden
+name: Publish Van Gogh Starry Night & Flower Meadow
 
 on:
   push:
@@ -22,13 +22,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # The live site is the letter garden; the earlier gallery stays in the repo and builds locally with build.py.
-      - name: Test letter garden release contracts
-        run: python -m unittest discover -s studies/letter_garden/tests -v
-      - name: Build letter garden
+      - name: Run release contract tests
+        run: python -m unittest discover -s tests -v
+      - name: Build static site
         env:
           BLOOM_BUILD_REVISION: ${{ github.sha }}
-        run: python -m studies.letter_garden.build --release
+        run: python build.py --output dist
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

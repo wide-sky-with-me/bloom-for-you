@@ -1,622 +1,527 @@
-import { ParticleGarden } from "./particles.js?v=7";
+import { createVanGoghSky } from "./vangogh-sky.js";
+import { createMeadowScene } from "./flower-meadow.js";
+import { createNightAudio } from "./audio.js";
 
-const $ = (id) => document.getElementById(id);
-const canvas = $("bouquet");
-const fallback = $("fallback-art");
-const loading = $("loading");
-const motionQuery = matchMedia("(prefers-reduced-motion: reduce)");
-const bouquets = {
-  rose: {
-    title: "粉雾来信",
-    description: "玫瑰替我说，那些藏不住的喜欢。",
-    tag: "玫瑰",
-    color: "#e2b49a",
-  },
-  tulip: {
-    title: "把晴天给你",
-    description: "你一笑，我的世界便有了好天气。",
-    tag: "郁金香",
-    color: "#e8d7b9",
-  },
-  hydrangea: {
-    title: "月光的拥抱",
-    description: "把细碎的温柔，攒成一个拥抱。",
-    tag: "绣球",
-    color: "#c7c9c4",
-  },
-  wildflower: {
-    title: "和你有个春天",
-    description: "日子慢慢过，花和你慢慢爱。",
-    tag: "花园",
-    color: "#d6c3ac",
-  },
-  peony: {
-    title: "把盛大留给你",
-    description: "最盛大的温柔，只为你层层盛开。",
-    tag: "牡丹",
-    color: "#d5b1a9",
-  },
-  lily: {
-    title: "白昼的情书",
-    description: "把清晨的光，折成一封写给你的信。",
-    tag: "百合",
-    color: "#eadfc9",
-  },
-  sunflower: {
-    title: "只向着你",
-    description: "我的晴天，永远朝着你的方向。",
-    tag: "向日葵",
-    color: "#d8c08a",
-  },
-  calla: {
-    title: "温柔的回声",
-    description: "一句喜欢，在岁月里轻轻回响。",
-    tag: "马蹄莲",
-    color: "#d4cbcf",
-  },
+const STORAGE_KEY = "bloom_for_you_vangogh_unlocked_v2";
+
+const ACCENT_HEX = {
+  rose: "#ff8fb1",
+  gold: "#ffd54f",
+  cyan: "#7dd3fc",
+  violet: "#c4b5fd",
 };
-const flowerNames = Object.freeze({
-  rose: '玫瑰', tulip: '郁金香', hydrangea: '绣球', cosmos: '波斯菊',
-  peony: '牡丹', lily: '百合', sunflower: '向日葵', calla: '马蹄莲',
-  ranunculus: '洋牡丹', dahlia: '大丽花', lisianthus: '洋桔梗',
-  champagne_ranunculus: '洋牡丹', garden_rose: '花园玫瑰',
-  anemone: '银莲花', sweet_pea: '香豌豆',
-});
-const closeupNames = Object.freeze({
-  champagne_ranunculus: '洋牡丹', garden_rose: '花园玫瑰',
-  anemone: '银莲花', sweet_pea: '香豌豆',
-});
-let garden = null;
-let activeId = 'rose';
-let activeView = 'bouquet';
-let requestedId = activeId;
-let requestedView = activeView;
-let selectionVersion = 0;
-let motionPreference = null;
-let systemMotionChange = false;
-let manifest = null;
-let fallbackMode = false;
-let hasCommitted = false;
-let disposed = false;
-let currentRequest = null;
-let preloadRequest = null;
-let toastTimeout;
-const cache = new Map();
-const RAW_CACHE_LIMIT = 4;
 
-function toast(message) {
-  $("toast").textContent = message;
-  $("toast").classList.add("is-visible");
-  clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(
-    () => $("toast").classList.remove("is-visible"),
-    3400,
-  );
-}
-
-function resourceURL(url) {
-  const resource = new URL(url, location.href);
-  resource.searchParams.set('v', '7');
-  return resource;
-}
-
-async function fetchResource(url, type = 'json', signal) {
-  const controller = new AbortController();
-  const abort = () => controller.abort();
-  signal?.addEventListener('abort', abort, {once: true});
-  if (signal?.aborted) controller.abort();
-  const timeout = setTimeout(abort, type === 'arrayBuffer' ? 45000 : 20000);
+async function fetchJson(url, fallback) {
   try {
-    const response = await fetch(resourceURL(url), {signal: controller.signal});
-    if (!response.ok) throw new Error(`Resource ${response.status}: ${url}`);
-    return await response[type]();
-  } finally {
-    clearTimeout(timeout);
-    signal?.removeEventListener('abort', abort);
-  }
-}
-
-function updateMotionButton() {
-  const paused = !garden || garden.paused;
-  $("motion-toggle").classList.toggle("is-paused", paused);
-  $("motion-toggle").setAttribute("aria-pressed", String(paused));
-  $("motion-toggle").setAttribute(
-    "aria-label",
-    paused ? "播放花束动画" : "暂停花束动画",
-  );
-  $("motion-toggle").title = paused ? "播放动画" : "暂停动画";
-}
-
-function validComposition(record) {
-  const expected = record.headCount ?? 36;
-  const items = record.composition;
-  return Number.isSafeInteger(expected) && expected > 0 && Array.isArray(items)
-    && items.length > 0 && items.length <= 12
-    && items.every(item => item && Object.hasOwn(flowerNames, item.species)
-      && Number.isSafeInteger(item.count) && item.count > 0)
-    && new Set(items.map(item => item.species)).size === items.length
-    && items.reduce((sum, item) => sum + item.count, 0) === expected;
-}
-
-function validateManifest(value) {
-  if (!value || value.version !== 2 || value.count !== 120000 || value.stride !== 11
-      || !Array.isArray(value.bouquets) || value.bouquets.length !== Object.keys(bouquets).length
-      || new Set(value.bouquets.map(record => record?.id)).size !== value.bouquets.length)
-    throw new Error('Invalid manifest schema');
-  for (const record of value.bouquets) {
-    if (!record || !Object.hasOwn(bouquets, record.id)) throw new Error('Invalid bouquet id');
-    validatePaths(record, record.id);
-    if ((record.headCount !== undefined || record.composition !== undefined) && !validComposition(record))
-      throw new Error('Invalid bouquet composition');
-  }
-  if (value.closeups !== undefined) {
-    if (!Array.isArray(value.closeups) || value.closeups.length !== Object.keys(closeupNames).length
-        || new Set(value.closeups.map(record => record?.id)).size !== value.closeups.length)
-      throw new Error('Invalid closeup manifest');
-    for (const record of value.closeups) {
-      if (!record || !Object.hasOwn(closeupNames, record.id) || record.pointCount !== 16000
-          || typeof record.title !== 'string' || !record.title.trim() || record.title.length > 100
-          || typeof record.description !== 'string' || record.description.length > 300)
-        throw new Error('Invalid closeup record');
-      validatePaths(record, `closeup-${record.id}`);
+    const res = await fetch(url, { cache: "no-cache" });
+    if (!res.ok) {
+      return fallback;
     }
+    return await res.json();
+  } catch {
+    return fallback;
   }
-  return value;
 }
 
-function validatePaths(record, prefix) {
-  if (record.file !== `${prefix}.bin` || record.surface !== `${prefix}.mesh`
-      || record.growth !== `${prefix}.growth` || (record.svg !== undefined && record.svg !== `${prefix}.svg`))
-    throw new Error('Invalid bouquet resource paths');
-}
-
-function closeupRecord(id) { return manifest?.closeups?.find(record => record.id === id); }
-function assetRecord(id, view) {
-  return view === 'bouquet' ? manifest?.bouquets.find(record => record.id === id) : closeupRecord(view);
-}
-function assetKey(id, view) { return view === 'bouquet' ? `bouquet:${id}` : `closeup:${view}`; }
-function fallbackPath(id, view) {
-  return view === 'bouquet' ? (assetRecord(id, view)?.svg ?? `${id}.svg`) : closeupRecord(view)?.svg;
-}
-
-function syncViewControls() {
-  let unavailable = false;
-  document.querySelectorAll('button[data-view]').forEach(button => {
-    const view = button.dataset.view;
-    const available = view === 'bouquet' || (!!closeupRecord(view) && (!fallbackMode || !!fallbackPath(activeId, view)));
-    button.disabled = !available;
-    button.setAttribute('aria-pressed', String(view === activeView));
-    button.classList.toggle('is-selected', view === activeView);
-    if (view !== 'bouquet' && !available) unavailable = true;
-  });
-  $('view-note').textContent = fallbackMode && unavailable
-    ? '当前为花束插画；未提供插画的单花暂不支持近看，仍可挑选下方八束花。'
-    : '近看一朵花，也能再回到这束心意。';
-}
-
-function updateCaption(id, view = 'bouquet') {
-  activeId = id;
-  activeView = view;
-  const bouquet = bouquets[id], specimen = view === 'bouquet' ? bouquet : closeupRecord(view);
-  document.body.dataset.bouquet = id;
-  document.body.dataset.view = view;
-  $('bouquet-title').textContent = specimen.title;
-  $('bouquet-description').textContent = specimen.description;
-  $('flower-tag').textContent = view === 'bouquet' ? bouquet.tag : '近看';
-  const record = assetRecord(id, 'bouquet');
-  const composition = record && validComposition(record) ? record.composition : null;
-  const ingredients = $('bouquet-ingredients');
-  ingredients.textContent = composition ? `花材：${composition.map(item => flowerNames[item.species]).join('、')}` : '';
-  ingredients.setAttribute('aria-label', composition
-    ? `本束花材：${composition.map(item => `${flowerNames[item.species]}${item.count}朵`).join('、')}` : '');
-  canvas.setAttribute('aria-label', `${specimen.title}立体${view === 'bouquet' ? '花束' : '单花'}，拖动旋转，点击绽放，方向键旋转，空格绽放`);
-  fallback.alt = `${specimen.title}${view === 'bouquet' ? '花束' : '单花'}投影`;
-  document.documentElement.style.setProperty('--rose', bouquet.color);
-  document.querySelectorAll('button[data-bouquet]').forEach(button => {
-    const selected = button.dataset.bouquet === id;
-    button.classList.toggle('is-selected', selected);
-    button.setAttribute('aria-pressed', String(selected));
-  });
-  syncViewControls();
-}
-
-function updateLocation(id, view) {
-  const url = new URL(location.href);
-  url.hash = id;
-  if (view === 'bouquet') url.searchParams.delete('view');
-  else url.searchParams.set('view', view);
-  history.replaceState(null, '', url.href);
-}
-
-function setPending(id, view, pending) {
-  document.body.dataset.requestedBouquet = id;
-  document.body.dataset.requestedView = view;
-  document.querySelectorAll('button[data-bouquet]').forEach(button => {
-    button.dataset.pending = String(pending && button.dataset.bouquet === id);
-  });
-  document.querySelectorAll('button[data-view]').forEach(button => {
-    button.dataset.pending = String(pending && button.dataset.view === view);
-  });
-}
-
-function cancelSelection() {
-  currentRequest?.abort();
-  preloadRequest?.abort();
-  garden?.cancelPreparation();
-}
-
-async function feedbackPaint() {
-  await new Promise(resolve => {
-    if (document.hidden) return setTimeout(resolve, 0);
-    let frame;
-    const timer = setTimeout(() => { cancelAnimationFrame(frame); resolve(); }, 80);
-    frame = requestAnimationFrame(() => { clearTimeout(timer); setTimeout(resolve, 0); });
-  });
-}
-
-async function loadAsset(id, view, signal) {
-  const key = assetKey(id, view);
-  if (cache.has(key)) {
-    const cached = cache.get(key);
-    cache.delete(key); cache.set(key, cached);
-    return cached;
-  }
-  const record = assetRecord(id, view);
-  if (!record) throw new Error('Unavailable flower view');
-  const buffers = await Promise.all([record.file, record.surface, record.growth]
-    .map(file => fetchResource(`./assets/${file}`, 'arrayBuffer', signal)));
-  if (signal?.aborted) throw new DOMException('Selection superseded', 'AbortError');
-  const input = {buffers, count: view === 'bouquet' ? manifest.count : record.pointCount, stride: manifest.stride};
-  cache.set(key, input);
-  while (cache.size > RAW_CACHE_LIMIT) cache.delete(cache.keys().next().value);
-  return input;
-}
-
-function loadIllustration(file, signal) {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    let timer, settled = false;
-    const finish = error => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      signal.removeEventListener('abort', abort);
-      image.onload = image.onerror = null;
-      if (error) reject(error); else resolve(image.src);
-    };
-    const abort = () => { finish(new DOMException('Illustration aborted', 'AbortError')); image.src = ''; };
-    signal.addEventListener('abort', abort, {once: true});
-    if (signal.aborted) return abort();
-    image.onload = () => finish();
-    image.onerror = () => finish(new Error('Illustration unavailable'));
-    timer = setTimeout(() => finish(new Error('Illustration timed out')), 20000);
-    image.src = resourceURL(`./assets/${file}`).href;
-  });
-}
-
-async function showFallback() {
-  if (disposed) return;
-  const id = hasCommitted ? activeId : requestedId;
-  let view = hasCommitted ? activeView : requestedView;
-  if (!fallbackPath(id, view)) view = 'bouquet';
-  fallbackMode = true;
-  selectionVersion++;
-  cancelSelection();
-  garden?.dispose();
-  cache.clear();
-  canvas.hidden = true;
-  $('motion-toggle').disabled = true;
-  $('motion-toggle').setAttribute('aria-label', '当前为花束插画模式');
-  document.body.dataset.mode = 'illustration';
-  syncViewControls();
-  await selectScene(id, view, true);
-}
-
-async function selectScene(id, view = 'bouquet', immediate = false) {
-  if (disposed || !Object.hasOwn(bouquets, id)
-      || (view !== 'bouquet' && !Object.hasOwn(closeupNames, view))) return false;
-  if (view !== 'bouquet' && ((manifest && !closeupRecord(view)) || (fallbackMode && !fallbackPath(id, view)))) {
-    toast('这朵花暂不支持近看，可以先看看整束。');
-    return false;
-  }
-  const version = ++selectionVersion;
-  requestedId = id; requestedView = view;
-  cancelSelection();
-  const gallery = $('gallery'), hint = $('interaction-hint');
-  gallery.setAttribute('aria-busy', 'true');
-  gallery.dataset.prepareState = 'preparing';
-  setPending(id, view, true);
-  $('gallery-error').hidden = true;
-  const name = view === 'bouquet' ? bouquets[id].tag : closeupNames[view];
-  hint.textContent = `正在准备${name}，眼前的花仍为你盛开。`;
-  // Remember startup intent; the manifest continuation uses this same route.
-  if (!manifest && !fallbackMode) return false;
-  const controller = new AbortController();
-  currentRequest = controller;
-  if (!hasCommitted) loading.classList.remove('is-loaded');
+function loadSavedUnlocked() {
   try {
-    await feedbackPaint();
-    if (version !== selectionVersion || disposed) return false;
-    if (fallbackMode) {
-      const file = fallbackPath(id, view);
-      await loadIllustration(file, controller.signal);
-      if (version !== selectionVersion || disposed) return false;
-      fallback.src = `./assets/${file}?v=7`;
-      fallback.hidden = false;
-    } else {
-      const input = await loadAsset(id, view, controller.signal);
-      if (version !== selectionVersion || disposed) return false;
-      const prepared = await garden.prepareBouquet(assetKey(id, view), input);
-      if (version !== selectionVersion || disposed) return false;
-      // A change of specimen/count is an explicit static view, not a pause toggle.
-      await garden.queuePrepared(prepared, immediate || view !== activeView || !hasCommitted, () => {
-        if (version !== selectionVersion) return;
-        gallery.dataset.prepareState = 'waiting';
-        hint.textContent = `已备好${name}，等眼前这次交叠轻轻结束。`;
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return new Set();
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? new Set(parsed) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveUnlocked(set) {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...set]));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+async function initApp() {
+  const appShell = document.getElementById("app-shell");
+  const skyContainer = document.getElementById("sky-container");
+  const meadowCanvas = document.getElementById("meadow-canvas");
+  const eggMarkersRoot = document.getElementById("egg-markers");
+  const quickNavRoot = document.getElementById("egg-quick-nav");
+  const counterValueEl = document.getElementById("counter-value");
+  const hintTextEl = document.getElementById("hint-text");
+
+  const btnAudio = document.getElementById("btn-audio");
+  const audioLabel = document.getElementById("audio-label");
+  const btnMeteor = document.getElementById("btn-meteor");
+  const btnLetter = document.getElementById("btn-letter");
+  const btnCollection = document.getElementById("btn-collection");
+
+  const modalEl = document.getElementById("confession-modal");
+  const modalBackdrop = document.getElementById("modal-backdrop");
+  const cardEl = modalEl.querySelector(".confession-card");
+  const btnCloseCard = document.getElementById("btn-close-card");
+  const cardBadge = document.getElementById("card-badge");
+  const cardSubtitle = document.getElementById("card-subtitle");
+  const cardTitle = document.getElementById("card-title");
+  const cardBody = document.getElementById("card-body");
+  const cardQuote = document.getElementById("card-quote");
+  const cardSignature = document.getElementById("card-signature");
+  const btnNextEgg = document.getElementById("btn-next-egg");
+
+  const drawerEl = document.getElementById("collection-drawer");
+  const btnCloseDrawer = document.getElementById("btn-close-drawer");
+  const drawerList = document.getElementById("drawer-list");
+  const btnFinalePreview = document.getElementById("btn-finale-preview");
+
+  const [confessionsData, giftData] = await Promise.all([
+    fetchJson("./assets/confessions.json", { eggs: [], finale: null }),
+    fetchJson("./gift.json", null),
+  ]);
+
+  const eggs = Array.isArray(confessionsData.eggs) ? confessionsData.eggs : [];
+  const finaleData = confessionsData.finale || {
+    id: "finale-starry-bloom",
+    badge: "终章 · 梵高星月夜与繁花共绽",
+    title: "漫天星河与人间繁花，皆为你盛开",
+    subtitle: "你寻获了花丛与星河里的全部五处心意",
+    paragraphs: giftData?.letter || giftData?.message || [
+      "老婆，当你把藏在无尽夏、向日葵、玫瑰、鸢尾郁金香和梵高星河里的心意一一唤醒，整座星夜花园都已经知道了我的秘密。",
+    ],
+    quote: "“星月夜永不落幕，我对你的爱也是。”",
+    signature: giftData?.signature || "永远爱你的老公",
+    accent: "gold",
+  };
+
+  const unlockedIds = loadSavedUnlocked();
+  const audio = createNightAudio();
+  let activeCardId = null;
+  let skyReady = false;
+  let meadowStatus = "initializing";
+
+  // 1. Initialize Upper Realm: p5.js Van Gogh Starry Night Sky
+  const sky = createVanGoghSky(skyContainer, {
+    onReady: () => {
+      skyReady = true;
+    },
+  });
+
+  // 2. Initialize Lower Realm: Three.js Multi-Species 3D Flower Meadow
+  const meadow = createMeadowScene(meadowCanvas, {
+    eggs,
+    onEggTrigger: (eggId) => {
+      openEggConfession(eggId);
+    },
+    onRipple: () => {
+      audio.playRippleSparkle();
+    },
+    onStatus: (status) => {
+      meadowStatus = status;
+    },
+  });
+
+  // Sync previously unlocked state
+  unlockedIds.forEach((id) => {
+    meadow.markEggUnlocked(id);
+    if (id === "egg-sunflower") {
+      sky.setConstellationActive(true);
+    }
+  });
+  if (unlockedIds.size >= eggs.length && eggs.length > 0) {
+    sky.setConstellationActive(true);
+    meadow.triggerFinaleState();
+  }
+
+  // 3. Create Floating 3D-Projected Beacons & Quick Nav Chips
+  const beaconElements = new Map();
+  const quickChipElements = new Map();
+
+  function buildMarkersAndNav() {
+    eggMarkersRoot.innerHTML = "";
+    quickNavRoot.innerHTML = "";
+
+    eggs.forEach((egg, index) => {
+      const colorHex = ACCENT_HEX[egg.accent] || ACCENT_HEX.gold;
+
+      // Floating beacon on scene
+      const beacon = document.createElement("button");
+      beacon.type = "button";
+      beacon.className = "egg-beacon";
+      beacon.dataset.eggId = egg.id;
+      beacon.dataset.unlocked = unlockedIds.has(egg.id) ? "true" : "false";
+      beacon.style.setProperty("--beacon-color", colorHex);
+      beacon.innerHTML = `
+        <span class="egg-beacon__orb" aria-hidden="true"></span>
+        <span class="egg-beacon__label">${egg.shortLabel || egg.title}</span>
+        <span class="egg-beacon__status">${unlockedIds.has(egg.id) ? "已寻获" : "✦ 寻觅"}</span>
+      `;
+      beacon.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        openEggConfession(egg.id);
       });
-      if (version !== selectionVersion || disposed) return false;
-    }
-    updateCaption(id, view);
-    updateLocation(id, view);
-    hasCommitted = true;
-    gallery.dataset.prepareState = 'committed';
-    hint.textContent = fallbackMode ? '心意一直在，挑一束你喜欢的花。' : '拖动看看花的另一面，轻点让心意再绽放。';
-    loading.classList.add('is-loaded');
-    if (!fallbackMode) updateMotionButton();
-    return true;
-  } catch (error) {
-    // A current timeout is a real failure, not a superseded selection.
-    if (version !== selectionVersion || disposed) return false;
-    controller.abort();
-    cache.delete(assetKey(id, view));
-    gallery.dataset.prepareState = 'error';
-    if (!fallbackMode && !garden?.data) await showFallback();
-    else {
-      hint.textContent = '眼前的花还在，轻点再试一次。';
-      toast('这朵花还在路上，轻点再试一次。');
-      if (!hasCommitted) {
-        loading.classList.add('is-loaded');
-        $('gallery-error').hidden = false;
+      eggMarkersRoot.appendChild(beacon);
+      beaconElements.set(egg.id, beacon);
+
+      // Quick nav chip at bottom
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "quick-chip";
+      chip.dataset.eggId = egg.id;
+      chip.dataset.unlocked = unlockedIds.has(egg.id) ? "true" : "false";
+      chip.style.setProperty("--chip-color", colorHex);
+      chip.innerHTML = `
+        <span class="quick-chip__dot" aria-hidden="true"></span>
+        <span>${index + 1}. ${egg.shortLabel || egg.title}</span>
+      `;
+      chip.addEventListener("click", () => {
+        openEggConfession(egg.id);
+      });
+      quickNavRoot.appendChild(chip);
+      quickChipElements.set(egg.id, chip);
+    });
+  }
+
+  function updateCollectionUI() {
+    const count = unlockedIds.size;
+    counterValueEl.textContent = `${count} / ${eggs.length}`;
+
+    eggs.forEach((egg) => {
+      const isUnlocked = unlockedIds.has(egg.id);
+      const beacon = beaconElements.get(egg.id);
+      if (beacon) {
+        beacon.dataset.unlocked = isUnlocked ? "true" : "false";
+        const statusSpan = beacon.querySelector(".egg-beacon__status");
+        if (statusSpan) {
+          statusSpan.textContent = isUnlocked ? "已寻获" : "✦ 寻觅";
+        }
+      }
+      const chip = quickChipElements.get(egg.id);
+      if (chip) {
+        chip.dataset.unlocked = isUnlocked ? "true" : "false";
+      }
+    });
+
+    // Rebuild drawer list
+    drawerList.innerHTML = "";
+    eggs.forEach((egg, idx) => {
+      const isUnlocked = unlockedIds.has(egg.id);
+      const li = document.createElement("li");
+      li.className = "drawer-item";
+      li.dataset.unlocked = isUnlocked ? "true" : "false";
+      li.innerHTML = `
+        <div class="drawer-item__top">
+          <span>${egg.badge || `彩蛋 ${idx + 1}`}</span>
+          <span>${isUnlocked ? "✦ 已点亮" : "待寻觅"}</span>
+        </div>
+        <h3 class="drawer-item__title">${egg.title}</h3>
+        <p class="drawer-item__sub">${egg.subtitle || egg.hint || ""}</p>
+      `;
+      li.addEventListener("click", () => {
+        closeDrawer();
+        openEggConfession(egg.id);
+      });
+      drawerList.appendChild(li);
+    });
+
+    if (count >= eggs.length && eggs.length > 0) {
+      hintTextEl.textContent = "✦ 已寻获全部 5 处花间与星夜心意！梵高星空心形星群与繁花正为你全盛绽放";
+    } else {
+      const nextEgg = eggs.find((e) => !unlockedIds.has(e.id));
+      if (nextEgg) {
+        hintTextEl.textContent = `寻宝提示：${nextEgg.hint}（也可直接点击下方花朵标签）`;
       }
     }
-    console.warn('Flower view:', error.message);
-    return false;
-  } finally {
-    if (currentRequest === controller) currentRequest = null;
-    if (version === selectionVersion && !disposed) {
-      gallery.setAttribute('aria-busy', 'false');
-      setPending(id, view, false);
-    }
   }
-}
 
-function selectBouquet(id, immediate = false) { return selectScene(id, 'bouquet', immediate); }
-function selectView(view) { return selectScene(requestedId, view); }
+  function showConfessionCard(item, { isFinale = false } = {}) {
+    activeCardId = item.id;
+    cardEl.dataset.accent = item.accent || "gold";
+    cardBadge.textContent = item.badge || "星夜告白";
+    cardSubtitle.textContent = item.subtitle || "";
+    cardTitle.textContent = item.title || "";
 
-function bloom() {
-  if (fallbackMode) {
-    if (!motionQuery.matches && motionPreference !== true)
-      fallback.animate(
-        [
-          { transform: "scale(1)" },
-          { transform: "scale(1.04)" },
-          { transform: "scale(1)" },
-        ],
-        { duration: 1800, easing: "ease-in-out" },
-      );
-    toast("这束花，和全部的偏爱，都给你。");
-    return;
-  }
-  if (!garden?.data) return;
-  garden.bloom();
-  updateMotionButton();
-  if (garden.reducedMotion) toast("这束花，和全部的偏爱，都给你。");
-}
-
-async function loadGift() {
-  try {
-    const gift = await fetchResource("./gift.json");
-    const params = new URLSearchParams(location.search);
-    const recipient = params.get("to")?.slice(0, 60) || gift.recipient;
-    if (typeof recipient === "string") $("recipient").textContent = recipient;
-    if (typeof gift.salutation === "string")
-      $("letter-salutation").textContent = params.has("to")
-        ? `亲爱的${recipient}：`
-        : gift.salutation;
-    if (typeof gift.signature === "string")
-      $("letter-signature").textContent =
-        params.get("from")?.slice(0, 60) || gift.signature;
-    const paragraphs = params.has("message")
-      ? [params.get("message").slice(0, 2000)]
-      : gift.letter;
-    if (
-      Array.isArray(paragraphs) &&
-      paragraphs.every((p) => typeof p === "string")
-    ) {
-      $("letter-body").replaceChildren(
-        ...paragraphs.map((text) => {
-          const paragraph = document.createElement("p");
-          paragraph.textContent = text;
-          return paragraph;
-        }),
-      );
-    }
-  } catch {
-    /* The built-in letter remains available offline or on a failed request. */
-  }
-}
-
-const dialog = $("letter-dialog");
-$("open-letter").addEventListener("click", () => {
-  dialog.showModal();
-  document.body.style.overflow = "hidden";
-  document.querySelector(".unread-dot").hidden = true;
-});
-function unlockLetterScroll() {
-  document.body.style.overflow = "";
-}
-function closeLetter() {
-  dialog.close();
-  unlockLetterScroll();
-}
-dialog.addEventListener("cancel", unlockLetterScroll);
-dialog.addEventListener("close", unlockLetterScroll);
-$("close-letter").addEventListener("click", closeLetter);
-dialog.addEventListener("click", (event) => {
-  const rect = dialog.getBoundingClientRect();
-  if (
-    event.clientX < rect.left ||
-    event.clientX > rect.right ||
-    event.clientY < rect.top ||
-    event.clientY > rect.bottom
-  )
-    closeLetter();
-});
-$("letter-bloom").addEventListener("click", () => {
-  closeLetter();
-  bloom();
-});
-$("bloom-button").addEventListener("click", bloom);
-document
-  .querySelectorAll("button[data-bouquet]")
-  .forEach((button) =>
-    button.addEventListener("click", () =>
-      selectBouquet(button.dataset.bouquet),
-    ),
-  );
-document.querySelectorAll('button[data-view]').forEach(button =>
-  button.addEventListener('click', () => selectView(button.dataset.view)));
-$('retry-bouquet').addEventListener('click', () => selectScene(requestedId, requestedView, true));
-$('motion-toggle').addEventListener('click', () => {
-  if (!garden || fallbackMode) return;
-  const paused = !garden.paused;
-  if (!paused && garden.reducedMotion) garden.setReducedMotion(false);
-  garden.setPaused(paused);
-  motionPreference = paused;
-  updateMotionButton();
-});
-motionQuery.addEventListener('change', event => {
-  if (!garden || fallbackMode) return;
-  const paused = event.matches || (motionPreference ?? false);
-  systemMotionChange = true;
-  try { garden.setReducedMotion(event.matches); garden.setPaused(paused); }
-  finally { systemMotionChange = false; }
-  updateMotionButton();
-});
-
-function setImmersive(value) {
-  document.body.classList.toggle("is-immersive", value);
-  $("fullscreen-toggle").setAttribute("aria-pressed", String(value));
-  $("fullscreen-toggle").setAttribute(
-    "aria-label",
-    value ? "退出沉浸模式" : "进入沉浸模式",
-  );
-  $("fullscreen-toggle").title = value ? "退出沉浸模式" : "沉浸模式";
-  // Hidden background controls must also leave the keyboard and accessibility tree.
-  for (const selector of [
-    ".site-header",
-    ".intro",
-    ".collection",
-    ".site-footer",
-  ])
-    document.querySelector(selector).inert = value;
-  document.body.style.overflow = value ? "hidden" : "";
-  garden?.requestFrame();
-}
-$("fullscreen-toggle").addEventListener("click", () =>
-  setImmersive(!document.body.classList.contains("is-immersive")),
-);
-document.addEventListener("keydown", (event) => {
-  if (
-    event.key === "Escape" &&
-    document.body.classList.contains("is-immersive")
-  )
-    setImmersive(false);
-});
-window.addEventListener("hashchange", () => {
-  const id = location.hash.slice(1);
-  if (Object.hasOwn(bouquets, id)) selectBouquet(id);
-});
-$("share-button").addEventListener("click", async () => {
-  const url = location.href;
-  try {
-    if (navigator.share)
-      await navigator.share({
-        title: "花间来信 · 给最爱的你",
-        text: "花期有时，爱你无期。",
-        url,
-      });
-    else {
-      await navigator.clipboard.writeText(url);
-      toast("花园链接已复制，把浪漫留在身边。");
-    }
-  } catch (error) {
-    if (error.name !== "AbortError")
-      toast("在浏览器菜单中收藏，就能随时回来。");
-  }
-});
-
-function disposePage(event) {
-  if (event?.persisted || disposed) return;
-  disposed = true;
-  selectionVersion++;
-  cancelSelection();
-  cache.clear();
-  clearTimeout(toastTimeout);
-  garden?.dispose();
-}
-window.addEventListener('pagehide', disposePage);
-
-async function initialize() {
-  loadGift();
-  const initialId = Object.hasOwn(bouquets, location.hash.slice(1)) ? location.hash.slice(1) : 'rose';
-  requestedId = initialId;
-  const viewParam = new URLSearchParams(location.search).get('view');
-  requestedView = Object.hasOwn(closeupNames, viewParam) ? viewParam : 'bouquet';
-  updateCaption(initialId, 'bouquet');
-  let rendererError;
-  try {
-    garden = new ParticleGarden(canvas, {
-      reducedMotion: motionQuery.matches,
-      onLost: () => { void showFallback(); },
-      onMotionChange: paused => {
-        if (!systemMotionChange) motionPreference = paused;
-        updateMotionButton();
-      },
+    cardBody.innerHTML = "";
+    const paragraphs = Array.isArray(item.paragraphs) ? item.paragraphs : [];
+    paragraphs.forEach((text) => {
+      const p = document.createElement("p");
+      p.textContent = text;
+      cardBody.appendChild(p);
     });
-    updateMotionButton();
-  } catch (error) { rendererError = error; }
-  try {
-    manifest = validateManifest(await fetchResource('./assets/manifest.json'));
-    if (disposed) return;
-    syncViewControls();
-    if (requestedView !== 'bouquet' && !closeupRecord(requestedView)) requestedView = 'bouquet';
-    if (rendererError) await showFallback();
-    else await selectScene(requestedId, requestedView, true);
-    const connection = navigator.connection;
-    if (!fallbackMode && !connection?.saveData && !/^(slow-)?[23]g$/.test(connection?.effectiveType ?? '')) {
-      const preload = async () => {
-        if (disposed || fallbackMode || $('gallery').getAttribute('aria-busy') === 'true') return;
-        const ids = Object.keys(bouquets), id = ids[(ids.indexOf(activeId) + 1) % ids.length];
-        const version = selectionVersion, controller = new AbortController();
-        preloadRequest = controller;
-        try {
-          const input = await loadAsset(id, 'bouquet', controller.signal);
-          if (version === selectionVersion && !disposed && !fallbackMode && !controller.signal.aborted
-              && $('gallery').getAttribute('aria-busy') !== 'true')
-            await garden.prepareBouquet(assetKey(id, 'bouquet'), input);
-        } catch { /* Optional prefetch never changes the chosen flower or its status. */ }
-        finally { if (preloadRequest === controller) preloadRequest = null; }
-      };
-      if ('requestIdleCallback' in window) requestIdleCallback(preload, {timeout: 3000});
-      else setTimeout(preload, 1000);
+
+    cardQuote.textContent = item.quote || "";
+    cardSignature.textContent = item.signature || "永远爱你的老公";
+
+    const nextUndiscovered = eggs.find((e) => !unlockedIds.has(e.id));
+    if (isFinale) {
+      btnNextEgg.querySelector("span").textContent = "回到梵高星夜花丛继续漫游";
+    } else if (nextUndiscovered) {
+      btnNextEgg.querySelector("span").textContent = `继续寻觅：${nextUndiscovered.shortLabel}`;
+    } else {
+      btnNextEgg.querySelector("span").textContent = "✦ 开启星夜繁花终章盛典";
     }
-  } catch (error) {
-    if (disposed) return;
-    console.warn('Garden initialization:', error.message);
-    await showFallback();
-  } finally {
-    if (!disposed) document.body.dataset.ready = 'true';
+
+    modalEl.setAttribute("aria-hidden", "false");
   }
+
+  function closeConfessionCard() {
+    modalEl.setAttribute("aria-hidden", "true");
+    activeCardId = null;
+  }
+
+  function openEggConfession(eggId) {
+    const index = eggs.findIndex((e) => e.id === eggId);
+    if (index === -1) {
+      return false;
+    }
+    const egg = eggs[index];
+    const wasNew = !unlockedIds.has(egg.id);
+    unlockedIds.add(egg.id);
+    saveUnlocked(unlockedIds);
+
+    meadow.markEggUnlocked(egg.id);
+    meadow.focusEgg(egg.id);
+    audio.playDiscoveryChime(index);
+
+    // Special celestial effects per egg
+    if (egg.id === "egg-sunflower") {
+      sky.setConstellationActive(true);
+    }
+    if (egg.id === "egg-starry-sky") {
+      sky.triggerMeteor({ startX: 0.2, startY: 0.12, vx: 11, vy: 4.5 });
+      sky.triggerMeteor({ startX: 0.55, startY: 0.08, vx: 9.5, vy: 4.0 });
+    }
+
+    if (unlockedIds.size >= eggs.length) {
+      sky.setConstellationActive(true);
+      meadow.triggerFinaleState();
+    }
+
+    updateCollectionUI();
+    showConfessionCard(egg, { isFinale: false });
+    return wasNew;
+  }
+
+  function triggerFinale() {
+    eggs.forEach((egg) => {
+      unlockedIds.add(egg.id);
+      meadow.markEggUnlocked(egg.id);
+    });
+    saveUnlocked(unlockedIds);
+    sky.setConstellationActive(true);
+    sky.triggerFinaleBurst();
+    meadow.triggerFinaleState();
+    audio.playFinaleFanfare();
+    updateCollectionUI();
+    showConfessionCard(finaleData, { isFinale: true });
+  }
+
+  function openOriginalLoveLetter() {
+    const letterParagraphs = Array.isArray(giftData?.letter)
+      ? giftData.letter
+      : Array.isArray(giftData?.message)
+        ? giftData.message
+        : finaleData.paragraphs;
+    const letterCard = {
+      id: "original-love-letter",
+      badge: "珍藏信笺 · 致我最爱的老婆",
+      title: giftData?.salutation || "亲爱的老婆：",
+      subtitle: `${giftData?.recipient || "我最爱的老婆"} · 漫天繁星与花海皆为你盛开`,
+      paragraphs: letterParagraphs,
+      quote: "“我见过万千星河与人间繁花，却只为你一人驻足。”",
+      signature: giftData?.signature || "永远偏爱你的，老公",
+      accent: "rose",
+    };
+    sky.setConstellationActive(true);
+    sky.triggerMeteor();
+    audio.playDiscoveryChime(2);
+    showConfessionCard(letterCard, { isFinale: false });
+  }
+
+  function openDrawer() {
+    drawerEl.setAttribute("aria-hidden", "false");
+    btnCollection.setAttribute("aria-expanded", "true");
+  }
+
+  function closeDrawer() {
+    drawerEl.setAttribute("aria-hidden", "true");
+    btnCollection.setAttribute("aria-expanded", "false");
+  }
+
+  // 4. Synchronize 3D Projected Beacon Positions on animation frame
+  let rafId = 0;
+  function updateBeaconLoop() {
+    rafId = window.requestAnimationFrame(updateBeaconLoop);
+    const projected = meadow.getEggScreenPositions();
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    projected.forEach((pos) => {
+      const beacon = beaconElements.get(pos.id);
+      if (!beacon) {
+        return;
+      }
+      // Keep egg-starry-sky anchored comfortably in the upper starry sky
+      const isCompact = width < 768;
+      let x = pos.x;
+      let y = pos.y;
+      if (pos.id === "egg-starry-sky") {
+        x = Math.min(Math.max(x, width * 0.28), width * 0.72);
+        y = isCompact
+          ? Math.min(Math.max(y, 195), height * 0.36)
+          : Math.min(Math.max(y, height * 0.16), height * 0.34);
+      } else {
+        const minX = isCompact ? 88 : 96;
+        const maxBottom = isCompact ? height - 195 : height - 135;
+        x = Math.min(Math.max(x, minX), width - minX);
+        y = Math.min(Math.max(y, height * 0.42), maxBottom);
+      }
+
+      if (!pos.visible) {
+        beacon.style.opacity = "0";
+        beacon.style.pointerEvents = "none";
+      } else {
+        beacon.style.opacity = "1";
+        beacon.style.pointerEvents = "auto";
+        beacon.style.transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0) translate(-50%, -50%)`;
+      }
+    });
+  }
+
+  // 5. Wire Pointer & UI Events
+  window.addEventListener("pointermove", (ev) => {
+    const nx = ev.clientX / Math.max(1, window.innerWidth);
+    const ny = ev.clientY / Math.max(1, window.innerHeight);
+    sky.handlePointerMove(nx, ny);
+    meadow.handlePointerMove(ev.clientX, ev.clientY);
+  });
+
+  meadowCanvas.addEventListener("pointerdown", (ev) => {
+    meadow.handlePointerDown(ev.clientX, ev.clientY);
+  });
+
+  window.addEventListener("pointerup", (ev) => {
+    const result = meadow.handlePointerUp(ev.clientX, ev.clientY);
+    // If the user clicked in the upper sky portion, spawn a shooting star in p5.js!
+    if (result && !result.dragged && !result.hitEggId) {
+      const ny = ev.clientY / Math.max(1, window.innerHeight);
+      const nx = ev.clientX / Math.max(1, window.innerWidth);
+      if (ny < 0.46) {
+        sky.triggerMeteor({
+          startX: Math.max(0.08, Math.min(0.82, nx - 0.08)),
+          startY: Math.max(0.05, Math.min(0.32, ny)),
+        });
+      }
+    }
+  });
+
+  btnAudio.addEventListener("click", () => {
+    const active = audio.toggle();
+    btnAudio.setAttribute("aria-pressed", active ? "true" : "false");
+    audioLabel.textContent = active ? "八音盒演奏中" : "星夜八音盒";
+    if (active) {
+      audio.playDiscoveryChime(0);
+    }
+  });
+
+  btnMeteor.addEventListener("click", () => {
+    sky.triggerMeteor();
+    meadow.spawnRipple();
+    audio.playRippleSparkle();
+    hintTextEl.textContent = "彡 一颗梵高油彩流星划破夜空，将你的心愿洒向满天星与花海";
+  });
+
+  btnLetter.addEventListener("click", () => {
+    openOriginalLoveLetter();
+  });
+
+  btnCollection.addEventListener("click", () => {
+    const isHidden = drawerEl.getAttribute("aria-hidden") !== "false";
+    if (isHidden) {
+      openDrawer();
+    } else {
+      closeDrawer();
+    }
+  });
+
+  btnCloseDrawer.addEventListener("click", closeDrawer);
+
+  btnFinalePreview.addEventListener("click", () => {
+    closeDrawer();
+    triggerFinale();
+  });
+
+  btnCloseCard.addEventListener("click", closeConfessionCard);
+  modalBackdrop.addEventListener("click", closeConfessionCard);
+
+  btnNextEgg.addEventListener("click", () => {
+    const nextUndiscovered = eggs.find((e) => !unlockedIds.has(e.id));
+    if (activeCardId === finaleData.id) {
+      closeConfessionCard();
+      return;
+    }
+    if (nextUndiscovered) {
+      openEggConfession(nextUndiscovered.id);
+    } else {
+      triggerFinale();
+    }
+  });
+
+  window.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") {
+      closeConfessionCard();
+      closeDrawer();
+    }
+  });
+
+  buildMarkersAndNav();
+  updateCollectionUI();
+  updateBeaconLoop();
+  appShell.dataset.ready = "true";
+
+  // 6. Expose deterministic controller for testing & inspection
+  const controller = {
+    getDiagnostics() {
+      return {
+        ready: appShell.dataset.ready === "true" && skyReady,
+        meadowStatus,
+        unlockedCount: unlockedIds.size,
+        totalEggs: eggs.length,
+        unlockedIds: [...unlockedIds],
+        activeCardId,
+        sky: sky.getDiagnostics(),
+        meadow: meadow.getDiagnostics(),
+      };
+    },
+    unlockEgg(eggId) {
+      return openEggConfession(eggId);
+    },
+    triggerFinale() {
+      triggerFinale();
+      return this.getDiagnostics();
+    },
+    triggerMeteor() {
+      sky.triggerMeteor();
+      meadow.spawnRipple();
+      return this.getDiagnostics();
+    },
+    openLoveLetter() {
+      openOriginalLoveLetter();
+      return this.getDiagnostics();
+    },
+    closeModal() {
+      closeConfessionCard();
+    },
+    dispose() {
+      window.cancelAnimationFrame(rafId);
+      sky.dispose();
+      meadow.dispose();
+    },
+  };
+
+  window.__starryMeadow = controller;
+  window.__summerNight = controller;
 }
-initialize();
+
+initApp();
