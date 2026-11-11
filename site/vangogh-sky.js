@@ -122,17 +122,17 @@ export function createVanGoghSky(container, { onReady = () => {} } = {}) {
     }
 
     function mountainRidgeFar(nx, h) {
-      const base = 0.485
-        - 0.036 * Math.sin(nx * Math.PI * 2.4 - 0.35)
-        - 0.022 * Math.cos(nx * Math.PI * 5.2 + 0.8)
-        - 0.015 * Math.sin(nx * Math.PI * 8.5);
+      const base = 0.415
+        - 0.034 * Math.sin(nx * Math.PI * 2.4 - 0.35)
+        - 0.020 * Math.cos(nx * Math.PI * 5.2 + 0.8)
+        - 0.014 * Math.sin(nx * Math.PI * 8.5);
       return base * h;
     }
 
     function mountainRidgeNear(nx, h) {
-      const base = 0.522
-        + 0.024 * Math.cos(nx * Math.PI * 2.9 + 0.4)
-        - 0.018 * Math.sin(nx * Math.PI * 6.1 - 0.5);
+      const base = 0.452
+        + 0.022 * Math.cos(nx * Math.PI * 2.9 + 0.4)
+        - 0.016 * Math.sin(nx * Math.PI * 6.1 - 0.5);
       return base * h;
     }
 
@@ -476,25 +476,25 @@ export function createVanGoghSky(container, { onReady = () => {} } = {}) {
 
     function paintSaintRemyMountains(ctx, w, h, rand) {
       // 1. Soft atmospheric horizon mist glow behind mountains
-      const mistGrad = ctx.createLinearGradient(0, h * 0.40, 0, h * 0.58);
+      const mistGrad = ctx.createLinearGradient(0, h * 0.33, 0, h * 0.52);
       mistGrad.addColorStop(0.0, 'rgba(125, 195, 245, 0)');
-      mistGrad.addColorStop(0.48, 'rgba(125, 195, 245, 0.18)');
-      mistGrad.addColorStop(0.80, 'rgba(26, 62, 122, 0.32)');
+      mistGrad.addColorStop(0.48, 'rgba(125, 195, 245, 0.20)');
+      mistGrad.addColorStop(0.80, 'rgba(26, 62, 122, 0.34)');
       mistGrad.addColorStop(1.0, 'rgba(6, 16, 40, 0)');
       ctx.fillStyle = mistGrad;
-      ctx.fillRect(0, h * 0.40, w, h * 0.20);
+      ctx.fillRect(0, h * 0.33, w, h * 0.20);
 
       // 2. Far Saint-Rémy Cobalt-Indigo Mountain Range
       ctx.beginPath();
-      ctx.moveTo(0, h * 0.68);
+      ctx.moveTo(0, h * 0.65);
       const steps = 96;
       for (let i = 0; i <= steps; i++) {
         const nx = i / steps;
         ctx.lineTo(nx * w, mountainRidgeFar(nx, h));
       }
-      ctx.lineTo(w, h * 0.68);
+      ctx.lineTo(w, h * 0.65);
       ctx.closePath();
-      const farGrad = ctx.createLinearGradient(0, h * 0.43, 0, h * 0.62);
+      const farGrad = ctx.createLinearGradient(0, h * 0.36, 0, h * 0.56);
       farGrad.addColorStop(0, '#1c4484');
       farGrad.addColorStop(0.55, '#10295a');
       farGrad.addColorStop(1, '#071430');
@@ -518,14 +518,14 @@ export function createVanGoghSky(container, { onReady = () => {} } = {}) {
 
       // 3. Near Rolling Prussian-Emerald Foothills (bridges seamlessly into 3D meadow!)
       ctx.beginPath();
-      ctx.moveTo(0, h * 0.75);
+      ctx.moveTo(0, h * 0.72);
       for (let i = 0; i <= steps; i++) {
         const nx = i / steps;
         ctx.lineTo(nx * w, mountainRidgeNear(nx, h));
       }
-      ctx.lineTo(w, h * 0.75);
+      ctx.lineTo(w, h * 0.72);
       ctx.closePath();
-      const nearGrad = ctx.createLinearGradient(0, h * 0.49, 0, h * 0.68);
+      const nearGrad = ctx.createLinearGradient(0, h * 0.42, 0, h * 0.62);
       nearGrad.addColorStop(0, '#0d254c');
       nearGrad.addColorStop(0.45, '#081a38');
       nearGrad.addColorStop(1, '#040e22');
@@ -556,8 +556,8 @@ export function createVanGoghSky(container, { onReady = () => {} } = {}) {
       cypressTips = [];
       const compact = w < 640;
       const baseX = w * (compact ? 0.065 : 0.072);
-      const baseY = h * 0.60;
-      const topY = h * (compact ? 0.19 : 0.085);
+      const baseY = h * 0.53;
+      const topY = h * (compact ? 0.17 : 0.075);
       const maxHalfW = w * (compact ? 0.058 : 0.048);
 
       // Build layered upward-licking flame tongues (classic Van Gogh Cypress silhouette)

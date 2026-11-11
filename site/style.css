@@ -86,6 +86,197 @@ body {
   cursor: grabbing;
 }
 
+/* Layer 2.5: Subtle Twinkling Starlight Glints for the 8 Fairytale Wonders */
+.wonder-markers {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.wonder-pin {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 22px;
+  height: 22px;
+  transform: translate3d(-9999px, -9999px, 0);
+  pointer-events: auto;
+  border-radius: 50%;
+  border: 1px solid rgba(254, 240, 175, 0.55);
+  background: radial-gradient(circle, rgba(254, 240, 138, 0.34) 0%, rgba(10, 25, 62, 0.56) 72%);
+  color: #fef08a;
+  font-size: 11px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow:
+    0 0 12px var(--wonder-color, rgba(253, 224, 71, 0.52)),
+    0 2px 8px rgba(2, 6, 20, 0.45);
+  transition:
+    border-color 0.22s ease,
+    background-color 0.22s ease,
+    box-shadow 0.22s ease;
+  will-change: transform, opacity;
+}
+
+.wonder-pin::after {
+  content: attr(data-label);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) translateY(3px);
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(7, 18, 46, 0.88);
+  border: 1px solid rgba(254, 240, 175, 0.48);
+  color: #fef9c3;
+  font-family: var(--font-serif);
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.wonder-pin:hover,
+.wonder-pin:focus-visible {
+  border-color: #fef08a;
+  box-shadow: 0 0 20px rgba(253, 224, 71, 0.85);
+  outline: none;
+}
+
+.wonder-pin:hover::after,
+.wonder-pin:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.wonder-pin[data-unlocked="true"] {
+  border-color: rgba(125, 211, 252, 0.68);
+  color: #bae6fd;
+  background: radial-gradient(circle, rgba(125, 211, 252, 0.30) 0%, rgba(8, 24, 58, 0.56) 72%);
+}
+
+/* Floating Speech Pill Above the Exploring Lantern Sprite */
+.sprite-bubble {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  transform: translate3d(-9999px, -9999px, 0);
+  max-width: min(74vw, 252px);
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(8, 20, 50, 0.72);
+  border: 1px solid rgba(254, 240, 138, 0.46);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #fefce8;
+  font-family: var(--font-serif);
+  font-size: 11.5px;
+  line-height: 1.35;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow:
+    0 6px 18px rgba(2, 6, 23, 0.52),
+    0 0 14px rgba(253, 224, 71, 0.22);
+  transition: opacity 0.35s ease;
+  will-change: transform, opacity;
+}
+
+.sprite-bubble[aria-hidden="false"] {
+  opacity: 1;
+}
+
+.sprite-bubble__spark {
+  color: var(--accent-gold);
+  flex-shrink: 0;
+}
+
+/* Non-Blocking Storybook Discovery Toast for Fairytale Wonders */
+.wonder-toast {
+  position: absolute;
+  top: 66px;
+  left: 50%;
+  z-index: 15;
+  width: min(90vw, 430px);
+  padding: 13px 18px 14px;
+  border-radius: 18px;
+  background: linear-gradient(160deg, rgba(10, 24, 58, 0.86) 0%, rgba(6, 15, 38, 0.90) 100%);
+  border: 1px solid rgba(253, 224, 115, 0.48);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    0 14px 36px rgba(2, 6, 20, 0.58),
+    0 0 24px rgba(253, 224, 71, 0.20);
+  transform: translate(-50%, -12px) scale(0.97);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.28s ease,
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0.28s ease;
+}
+
+.wonder-toast[aria-hidden="false"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translate(-50%, 0) scale(1);
+}
+
+.wonder-toast__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.wonder-toast__badge {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--accent-gold);
+  background: rgba(253, 224, 71, 0.14);
+  border: 1px solid rgba(253, 224, 71, 0.34);
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+
+.wonder-toast__close {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 3px;
+}
+
+.wonder-toast__title {
+  font-family: var(--font-serif);
+  font-size: 15.5px;
+  font-weight: 400;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
+.wonder-toast__text {
+  font-family: var(--font-serif);
+  font-size: 12.8px;
+  line-height: 1.65;
+  color: rgba(236, 245, 255, 0.92);
+}
+
 /* Layer 3: Delicate Non-Overlapping Starlight Gem Beacons */
 .egg-markers {
   position: absolute;
@@ -290,6 +481,16 @@ body {
   border-color: rgba(253, 224, 71, 0.72);
   background: rgba(24, 46, 96, 0.84);
   color: #fef9c3;
+}
+
+.hud-btn--fairy {
+  border-color: rgba(254, 240, 138, 0.46);
+}
+
+.hud-btn--fairy[aria-pressed="true"] {
+  border-color: #fde047;
+  background: linear-gradient(135deg, rgba(30, 64, 175, 0.78), rgba(180, 83, 9, 0.62));
+  box-shadow: 0 0 18px rgba(253, 224, 71, 0.36);
 }
 
 .hud-btn--rose {
@@ -676,13 +877,36 @@ body {
   color: var(--text-secondary);
 }
 
+.drawer-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 2px;
+}
+
+.drawer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.drawer-section__title {
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  color: var(--accent-gold);
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(186, 220, 255, 0.14);
+}
+
 .drawer-list {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  overflow-y: auto;
-  flex: 1;
+  gap: 9px;
 }
 
 .drawer-item {
@@ -779,14 +1003,32 @@ body {
   .hud-actions {
     flex-wrap: nowrap;
     justify-content: center;
-    gap: 5px;
-    max-width: 98vw;
+    gap: 4px;
+    max-width: 99vw;
   }
 
   .hud-pill {
-    padding: 4px 9px;
-    font-size: 11.5px;
-    gap: 4px;
+    padding: 4px 7.5px;
+    font-size: 11px;
+    gap: 3.5px;
+  }
+
+  .wonder-pin {
+    width: 19px;
+    height: 19px;
+    font-size: 10px;
+  }
+
+  .wonder-toast {
+    top: 76px;
+    width: 92vw;
+    padding: 11px 14px 12px;
+  }
+
+  .sprite-bubble {
+    font-size: 10.5px;
+    padding: 4px 10px;
+    max-width: 78vw;
   }
 
   .egg-beacon {

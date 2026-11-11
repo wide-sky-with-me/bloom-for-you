@@ -147,6 +147,18 @@ export function createNightAudio() {
     playCelestaNote(PENTATONIC_FREQ[pick], 1.2, 0.08, 0);
   }
 
+  function playWonderTwinkle(seed = 0) {
+    if (!enabled) {
+      return;
+    }
+    const base = 5 + (Math.abs(seed) % 4);
+    const notes = [base, base + 2, base + 4];
+    notes.forEach((idx, i) => {
+      const freq = PENTATONIC_FREQ[idx % PENTATONIC_FREQ.length];
+      playCelestaNote(freq, 1.5, 0.14, i * 0.075);
+    });
+  }
+
   function playFinaleFanfare() {
     if (!enabled) {
       return;
@@ -162,6 +174,7 @@ export function createNightAudio() {
     setEnabled,
     toggle,
     playDiscoveryChime,
+    playWonderTwinkle,
     playRippleSparkle,
     playFinaleFanfare,
   };

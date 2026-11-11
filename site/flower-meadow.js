@@ -1,4 +1,22 @@
 import * as THREE from 'three';
+import {
+  createBotanicalTextures,
+  createRoseBloomGeometry,
+  createHydrangeaFloretGeometry,
+  createSunflowerDiscGeometry,
+  createSunflowerRaysGeometry,
+  createIrisBloomGeometry,
+  createTulipBloomGeometry,
+  createGypsophilaClusterGeometry,
+  createBroadLeafGeometry,
+  createCurvedStemGeometry,
+  createSwordLeafGeometry,
+  createGrassBladeGeometry
+} from './botanical-assets.js';
+import {
+  createFairyExplorer,
+  createFairytaleWorldProps
+} from './fairytale-props.js';
 
 const clamp = (v, min = 0, max = 1) => Math.max(min, Math.min(max, Number(v) || 0));
 
@@ -17,522 +35,96 @@ function createRng(seed = 20261111) {
   };
 }
 
+// ============================================================================
+// 1. WINDING FAIRYTALE PATH & ROLLING KNOLL / EARTHEN SLOPE TOPOGRAPHY ("草原·土坡·小路")
+// ============================================================================
+const RAW_PATH_WAYPOINTS = [
+  [0.52, 5.85],
+  [-0.78, 3.65],
+  [0.24, 1.75],
+  [1.32, -0.45],
+  [-0.38, -2.75],
+  [-1.68, -5.05]
+];
+
+const PATH_CURVE_2D = new THREE.CatmullRomCurve3(
+  RAW_PATH_WAYPOINTS.map(([x, z]) => new THREE.Vector3(x, 0, z))
+);
+
+// Sample 15 polyline nodes for ultra-fast exact path distance in both JS and GLSL!
+const PATH_POLY = Array.from({ length: 15 }, (_, i) => {
+  const p = PATH_CURVE_2D.getPointAt(i / 14);
+  return [p.x, p.z];
+});
+
+export function distToPath(x, z) {
+  let minD2 = 1e9;
+  for (let i = 0; i < PATH_POLY.length - 1; i++) {
+    const [ax, az] = PATH_POLY[i];
+    const [bx, bz] = PATH_POLY[i + 1];
+    const vx = bx - ax;
+    const vz = bz - az;
+    const wx = x - ax;
+    const wz = z - az;
+    const len2 = vx * vx + vz * vz + 1e-8;
+    const t = clamp((wx * vx + wz * vz) / len2, 0, 1);
+    const dx = wx - vx * t;
+    const dz = wz - vz * t;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < minD2) minD2 = d2;
+  }
+  return Math.sqrt(minD2);
+}
+
 /**
- * Rolling Saint-Rémy hillside meadow heightfield.
- * Rises gently on the flanks and toward the distant foothills while cradling
- * a rich botanical hollow in the foreground.
+ * Fairytale Grassland, Rolling Knolls & Terraced Earthen Slopes ("起伏草坡与土坡")
+ * with a gently worn country dirt footpath hollow winding up to the hilltop cottage!
  */
 export function meadowHeight(x, z) {
-  const slope = -0.095 * (z - 2.0);
-  const swell = Math.sin(x * 0.28 + 0.45) * Math.cos(z * 0.25 - 0.15) * 0.30;
-  const micro = Math.cos(x * 0.62 - z * 0.48) * 0.09;
-  const flankLift = Math.pow(Math.abs(x) * 0.085, 1.8) * 0.22;
-  return slope + swell + micro + flankLift - 0.92;
-}
+  // Gentle valley rise from foreground (+5.5) toward distant Saint-Rémy hills (-8.5)
+  const valleyRise = -0.108 * (z - 2.3) - 1.02;
 
-/**
- * Append a parametric surface patch into shared geometry arrays.
- * Attribute `color` stores RGB shade/albedo multipliers; `uv` stores (u, (v+1)/2).
- */
-function addParametricPatch(buffers, segU, segV, evalFn) {
-  const { positions, normals, colors, uvs, indices } = buffers;
-  const baseVertex = positions.length / 3;
-  const eps = 0.022;
+  // Distinct sculpted fairytale grassy knolls & terraced earthen mounds ("土坡")
+  const leftHydrangeaKnoll = 0.48 * Math.exp(-(((x + 2.65) ** 2) / 3.9 + ((z - 1.65) ** 2) / 4.4));
+  const rightTerracedSlope = 0.64 * Math.exp(-(((x - 2.65) ** 2) / 4.6 + ((z - 0.45) ** 2) / 5.4))
+    + 0.22 * smoothstep(1.25, 1.95, x) * Math.exp(-((z - 1.35) ** 2) / 8.5);
+  const sunflowerSlopeBank = 0.38 * Math.exp(-(((x + 1.45) ** 2) / 3.4 + ((z + 1.95) ** 2) / 3.2));
+  const cottageHilltop = 0.78 * Math.exp(-(((x + 1.95) ** 2) / 6.8 + ((z + 5.15) ** 2) / 6.2));
+  const dandelionMound = 0.34 * Math.exp(-(((x - 1.55) ** 2) / 3.6 + ((z + 2.15) ** 2) / 4.0));
+  const softRoll = Math.sin(x * 0.45 + 0.3) * Math.cos(z * 0.38 - 0.2) * 0.08;
 
-  for (let iu = 0; iu <= segU; iu++) {
-    const u = iu / segU;
-    for (let iv = 0; iv <= segV; iv++) {
-      const v = (iv / segV) * 2 - 1;
-      const pt = evalFn(u, v);
-      const pu0 = evalFn(Math.max(0, u - eps), v);
-      const pu1 = evalFn(Math.min(1, u + eps), v);
-      const pv0 = evalFn(u, Math.max(-1, v - eps));
-      const pv1 = evalFn(u, Math.min(1, v + eps));
+  // Worn earthen footpath depression + subtle raised grassy verge banks along both sides!
+  const dPath = distToPath(x, z);
+  const pathHollow = -0.072 * Math.exp(-(dPath * dPath) / 0.18);
+  const pathShoulder = 0.036 * Math.exp(-(((dPath - 0.68) ** 2) / 0.09));
 
-      const tx = pu1.x - pu0.x;
-      const ty = pu1.y - pu0.y;
-      const tz = pu1.z - pu0.z;
-      const bx = pv1.x - pv0.x;
-      const by = pv1.y - pv0.y;
-      const bz = pv1.z - pv0.z;
+  // Shallow basin for the foreground Dew Pond at [-1.18, 3.45]
+  const dPond = Math.hypot(x + 1.18, z - 3.45);
+  const pondBasin = -0.062 * Math.exp(-(dPond * dPond) / 0.38);
 
-      let nx = ty * bz - tz * by;
-      let ny = tz * bx - tx * bz;
-      let nz = tx * by - ty * bx;
-      let len = Math.hypot(nx, ny, nz);
-      if (len < 1e-6) {
-        nx = 0;
-        ny = 1;
-        nz = 0;
-        len = 1;
-      }
-
-      positions.push(pt.x, pt.y, pt.z);
-      normals.push(nx / len, ny / len, nz / len);
-      colors.push(pt.r, pt.g, pt.b);
-      uvs.push(u, (v + 1) * 0.5);
-    }
-  }
-
-  const row = segV + 1;
-  for (let iu = 0; iu < segU; iu++) {
-    for (let iv = 0; iv < segV; iv++) {
-      const a = baseVertex + iu * row + iv;
-      const b = a + 1;
-      const c = a + row;
-      const d = c + 1;
-      indices.push(a, c, b, b, c, d);
-    }
-  }
-}
-
-function makeBuffers() {
-  return { positions: [], normals: [], colors: [], uvs: [], indices: [] };
-}
-
-function finalizeGeometry(buffers) {
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(buffers.positions, 3));
-  geo.setAttribute('normal', new THREE.Float32BufferAttribute(buffers.normals, 3));
-  geo.setAttribute('color', new THREE.Float32BufferAttribute(buffers.colors, 3));
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(buffers.uvs, 2));
-  geo.setIndex(buffers.indices);
-  return geo;
+  return (
+    valleyRise
+    + leftHydrangeaKnoll
+    + rightTerracedSlope
+    + sunflowerSlopeBank
+    + cottageHilltop
+    + dandelionMound
+    + softRoll
+    + pathHollow
+    + pathShoulder
+    + pondBasin
+  );
 }
 
 // ============================================================================
-// SPECIES 1: BLUE ENDLESS SUMMER HYDRANGEA FLORET (精致四瓣微卷绣球小花 + 珍珠花蕊)
+// 2. SHARED WIND, DYNAMIC FAIRY LANTERN & BOTANICAL SUBSURFACE SHADERS
 // ============================================================================
-function createHydrangeaFloretGeometry() {
-  const buffers = makeBuffers();
-  const petalAngles = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5];
-
-  for (let p = 0; p < 4; p++) {
-    const a = petalAngles[p] + (p % 2 === 0 ? 0.06 : -0.06);
-    const cosA = Math.cos(a);
-    const sinA = Math.sin(a);
-    const yLayer = (p % 2) * 0.004;
-
-    addParametricPatch(buffers, 6, 6, (u, v) => {
-      // Rounded spade/butterfly sepal silhouette with gentle marginal undulation
-      const widthEnv = Math.pow(Math.sin(u * Math.PI), 0.58) * (0.92 + 0.14 * Math.sin(u * Math.PI * 2.2));
-      const ruffle = Math.sin(v * Math.PI * 2.5) * 0.0035 * smoothstep(0.35, 0.95, u);
-      const len = 0.008 + u * 0.086 * (1 - 0.10 * v * v * smoothstep(0.65, 1.0, u));
-      const wid = v * 0.072 * widthEnv;
-      const cup = yLayer + 0.018 * Math.sin(u * Math.PI * 0.82) - 0.012 * v * v * u + ruffle;
-
-      const x = cosA * len - sinA * wid;
-      const z = sinA * len + cosA * wid;
-
-      // Deep velvety center throat -> luminous petal margin + tiny vein accent
-      const vein = Math.exp(-v * v * 28.0) * 0.08 * (1 - u);
-      const shade = 0.24 + 0.74 * smoothstep(0.08, 0.92, u) - 0.08 * Math.abs(v);
-      return {
-        x,
-        y: cup,
-        z,
-        r: shade + vein * 0.5,
-        g: shade + vein * 0.7,
-        b: Math.min(1.15, shade * 1.08 + vein)
-      };
-    });
-  }
-
-  // Tiny luminous pearl stamen bud in the center of the 4 sepals
-  addParametricPatch(buffers, 3, 6, (u, v) => {
-    const theta = (v + 1) * Math.PI;
-    const r = Math.sin(u * Math.PI) * 0.013;
-    return {
-      x: Math.cos(theta) * r,
-      y: 0.008 + Math.cos(u * Math.PI) * -0.009 + 0.009,
-      z: Math.sin(theta) * r,
-      r: 1.15,
-      g: 1.18,
-      b: 1.28
-    };
-  });
-
-  return finalizeGeometry(buffers);
-}
-
-// ============================================================================
-// SPECIES 2: VAN GOGH STARRY SUNFLOWER (梵高向日葵 — 纹理花盘 + 34片错落扭转金瓣 + 绿色花萼)
-// ============================================================================
-function createSunflowerGeometry() {
-  const buffers = makeBuffers();
-
-  // 1. Rich Burnt-Umber & Golden-Pollen Convex Seed Disc
-  addParametricPatch(buffers, 9, 18, (u, v) => {
-    const theta = (v + 1) * Math.PI;
-    const r = 0.006 + u * 0.118;
-    const domeY = 0.044 * (1 - u * u * 0.72) + 0.003 * Math.sin(u * 28.0) * Math.cos(theta * 9.0);
-    const x = Math.cos(theta) * r;
-    const z = Math.sin(theta) * r;
-
-    const pollenRing = smoothstep(0.68, 0.96, u) * (1 - 0.35 * smoothstep(0.95, 1.0, u));
-    const spiralTex = 0.5 + 0.5 * Math.sin(u * 30.0 + theta * 8.0);
-    const cR = 0.045 + 0.48 * pollenRing + 0.04 * spiralTex;
-    const cG = 0.018 + 0.26 * pollenRing + 0.02 * spiralTex;
-    const cB = 0.004 + 0.02 * pollenRing;
-    return { x, y: domeY, z, r: cR, g: cG, b: cB };
-  });
-
-  // 2. 34 Expressive Van Gogh Ray Florets (two organic rings with painterly twist)
-  const totalRays = 34;
-  for (let i = 0; i < totalRays; i++) {
-    const layer = i % 2;
-    const a = (i / totalRays) * Math.PI * 2 + layer * 0.035;
-    const cosA = Math.cos(a);
-    const sinA = Math.sin(a);
-    const twist = Math.sin(i * 2.3) * 0.14;
-    const lenScale = 0.90 + 0.18 * Math.sin(i * 3.7 + 0.5);
-
-    addParametricPatch(buffers, 8, 4, (u, v) => {
-      const profile = Math.pow(Math.sin(u * Math.PI), 0.78) * (1 - 0.18 * u * u);
-      const len = 0.106 + u * 0.195 * lenScale;
-      const wid = v * (layer === 0 ? 0.036 : 0.031) * profile;
-      const wave = Math.sin(u * 5.2 + i) * 0.009 * u;
-      const y = layer * 0.009
-        + 0.032 * Math.sin(u * Math.PI * 0.78)
-        - 0.028 * Math.pow(u, 2.0)
-        + wid * twist
-        + wave
-        - 0.006 * v * v;
-
-      const x = cosA * len - sinA * wid;
-      const z = sinA * len + cosA * wid;
-
-      // Rich Van Gogh cadmium-amber base -> radiant chrome-gold -> warm sunlit tip
-      const baseWarm = smoothstep(0.0, 0.48, u);
-      const tipGlow = smoothstep(0.55, 1.0, u);
-      const cR = 0.84 + 0.18 * baseWarm;
-      const cG = 0.28 + 0.36 * baseWarm + 0.14 * tipGlow - 0.05 * Math.abs(v);
-      const cB = 0.01 + 0.03 * baseWarm + 0.08 * tipGlow;
-      return { x, y, z, r: cR, g: cG, b: cB };
-    });
-  }
-
-  // 3. Green Star-Shaped Involucral Bracts (Calyx behind flower head)
-  const bracts = 12;
-  for (let i = 0; i < bracts; i++) {
-    const a = (i / bracts) * Math.PI * 2;
-    const cosA = Math.cos(a);
-    const sinA = Math.sin(a);
-    addParametricPatch(buffers, 4, 3, (u, v) => {
-      const len = 0.03 + u * 0.125;
-      const wid = v * 0.026 * (1 - u * 0.85);
-      const y = -0.012 - 0.018 * Math.sin(u * Math.PI * 0.7);
-      return {
-        x: cosA * len - sinA * wid,
-        y,
-        z: sinA * len + cosA * wid,
-        r: 0.06,
-        g: 0.24 + 0.12 * u,
-        b: 0.14 + 0.08 * u
-      };
-    });
-  }
-
-  const geo = finalizeGeometry(buffers);
-  geo.rotateX(0.62);
-  return geo;
-}
-
-// ============================================================================
-// SPECIES 3: VAN GOGH SAINT-RÉMY IRIS (梵高紫蓝鸢尾 — 拱立旗瓣 + 垂落金须垂瓣)
-// ============================================================================
-function createIrisGeometry() {
-  const buffers = makeBuffers();
-
-  // 3 Domed Upright Standards (curving gracefully inward at the crown)
-  for (let i = 0; i < 3; i++) {
-    const a = (i / 3) * Math.PI * 2;
-    const cosA = Math.cos(a);
-    const sinA = Math.sin(a);
-
-    addParametricPatch(buffers, 8, 6, (u, v) => {
-      const widthEnv = Math.pow(Math.sin(u * Math.PI), 0.68) * (0.82 + 0.28 * u);
-      const radial = 0.022 + Math.sin(u * Math.PI * 0.86) * 0.125 * (1 - 0.36 * u * u);
-      const wid = v * 0.086 * widthEnv;
-      const ruffle = Math.sin(u * 14.0 + v * 5.0) * 0.007 * smoothstep(0.25, 1.0, u);
-      const height = 0.025 + u * 0.245 - 0.022 * v * v;
-
-      return {
-        x: cosA * radial - sinA * wid,
-        y: height + ruffle,
-        z: sinA * radial + cosA * wid,
-        r: 0.42 + 0.30 * u,
-        g: 0.46 + 0.32 * u,
-        b: 0.94 + 0.10 * u
-      };
-    });
-  }
-
-  // 3 Cascading Falls with Luminous Chrome-Gold Beards
-  for (let i = 0; i < 3; i++) {
-    const a = (i / 3) * Math.PI * 2 + Math.PI / 3;
-    const cosA = Math.cos(a);
-    const sinA = Math.sin(a);
-
-    addParametricPatch(buffers, 9, 6, (u, v) => {
-      const widthEnv = Math.pow(Math.sin(u * Math.PI), 0.65) * (0.68 + 0.52 * smoothstep(0.2, 0.85, u));
-      const radial = 0.028 + u * 0.225;
-      const wid = v * 0.104 * widthEnv;
-      const ruffle = Math.sin(v * 6.0 + u * 10.0) * 0.006 * u;
-      const droop = 0.038 + 0.058 * Math.sin(u * Math.PI * 0.58) - 0.165 * Math.pow(u, 1.85) - 0.016 * v * v + ruffle;
-
-      // Golden-ivory nectar beard down the throat
-      const beard = Math.exp(-v * v * 16.0) * smoothstep(0.58, 0.10, u);
-      const bR = 0.24 + 0.20 * (1 - u);
-      const bG = 0.22 + 0.22 * (1 - u);
-      const bB = 0.82 + 0.16 * (1 - u);
-
-      return {
-        x: cosA * radial - sinA * wid,
-        y: droop,
-        z: sinA * radial + cosA * wid,
-        r: bR * (1 - beard) + 1.08 * beard,
-        g: bG * (1 - beard) + 0.90 * beard,
-        b: bB * (1 - beard) + 0.28 * beard
-      };
-    });
-  }
-
-  return finalizeGeometry(buffers);
-}
-
-// ============================================================================
-// SPECIES 4: VELVET ENGLISH GARDEN ROSE (丝绒杯状螺旋庭园玫瑰 — 28片深杯卷芯花瓣 + 花萼)
-// ============================================================================
-function createRoseGeometry() {
-  const buffers = makeBuffers();
-  const petalCount = 28;
-  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-
-  for (let i = 0; i < petalCount; i++) {
-    const t = i / (petalCount - 1);
-    const theta = i * goldenAngle;
-    const cosT = Math.cos(theta);
-    const sinT = Math.sin(theta);
-
-    addParametricPatch(buffers, 7, 6, (u, v) => {
-      // Tightly scrolled bud core (t < 0.3) opening into lush cupped outer guard petals
-      const openAngle = 0.10 + Math.pow(t, 1.18) * 0.92;
-      const baseR = 0.010 + Math.pow(t, 1.1) * 0.088;
-      const petalH = 0.125 + t * 0.075;
-      const widthEnv = Math.pow(Math.sin(u * Math.PI), 0.62) * (0.048 + t * 0.088);
-
-      const curlBack = smoothstep(0.66, 1.0, u) * (0.014 + t * 0.046) * (1 - 0.30 * v * v);
-      const cupHollow = 0.020 * (1 - v * v) * Math.sin(u * Math.PI);
-      const rLocal = baseR + u * petalH * Math.sin(openAngle) + curlBack - cupHollow;
-      const yLocal = u * petalH * Math.cos(openAngle) - t * 0.032 - curlBack * 0.42;
-      const wLocal = v * widthEnv;
-
-      // Rich deep-velvet inner core & petal base AO -> luminous moonlit outer petal edges
-      const innerHeart = Math.pow(t, 0.95);
-      const rimLift = smoothstep(0.18, 0.98, u);
-      const shade = 0.14 + 0.48 * innerHeart + 0.38 * rimLift - 0.08 * (1 - Math.abs(v)) * (1 - u);
-      return {
-        x: cosT * rLocal - sinT * wLocal,
-        y: yLocal + 0.035,
-        z: sinT * rLocal + cosT * wLocal,
-        r: Math.min(1.10, shade * 1.08),
-        g: shade * (0.58 + 0.32 * innerHeart + 0.10 * rimLift),
-        b: shade * (0.64 + 0.28 * innerHeart + 0.08 * rimLift)
-      };
-    });
-  }
-
-  // 5 Green Rose Calyx Sepals cupping the base
-  for (let s = 0; s < 5; s++) {
-    const a = (s / 5) * Math.PI * 2;
-    const cosA = Math.cos(a);
-    const sinA = Math.sin(a);
-    addParametricPatch(buffers, 4, 3, (u, v) => {
-      const len = 0.02 + u * 0.095;
-      const wid = v * 0.022 * (1 - u * 0.85);
-      const y = 0.02 - u * 0.035;
-      return {
-        x: cosA * len - sinA * wid,
-        y,
-        z: sinA * len + cosA * wid,
-        r: 0.02,
-        g: 0.09 + 0.06 * u,
-        b: 0.06
-      };
-    });
-  }
-
-  const geo = finalizeGeometry(buffers);
-  geo.rotateX(0.38);
-  return geo;
-}
-
-// ============================================================================
-// SPECIES 5: MOONLIT LILY-GOBLET TULIP (修长微展百合型郁金香 — 告别圆球感)
-// ============================================================================
-function createTulipGeometry() {
-  const buffers = makeBuffers();
-
-  for (let i = 0; i < 6; i++) {
-    const inner = i % 2 === 0;
-    const a = (i / 6) * Math.PI * 2;
-    const cosA = Math.cos(a);
-    const sinA = Math.sin(a);
-
-    addParametricPatch(buffers, 8, 5, (u, v) => {
-      // Slender waist, full mid-cup, gracefully pointed tip that flares slightly outward
-      const pointedTip = Math.pow(Math.sin(u * Math.PI), 0.72) * (1 - 0.28 * smoothstep(0.72, 1.0, u));
-      const widthEnv = pointedTip * (inner ? 0.056 : 0.064);
-      const flare = smoothstep(0.74, 1.0, u) * 0.026;
-      const cupRadius = (inner ? 0.015 : 0.021) + Math.sin(u * Math.PI * 0.76) * 0.066 + flare - 0.010 * v * v;
-      const y = u * 0.255 - 0.008 * v * v;
-      const w = v * widthEnv;
-
-      // Deep velvety base -> glowing pearl tip
-      const glow = 0.48 + 0.56 * smoothstep(0.08, 0.92, u);
-      return {
-        x: cosA * cupRadius - sinA * w,
-        y,
-        z: sinA * cupRadius + cosA * w,
-        r: glow * 1.02,
-        g: glow * 0.96,
-        b: Math.min(1.12, glow * 1.04)
-      };
-    });
-  }
-
-  const geo = finalizeGeometry(buffers);
-  geo.rotateX(0.18);
-  return geo;
-}
-
-// ============================================================================
-// SPECIES 6: GYPSOPHILA "满天星" DOUBLE STARLET BLOSSOM (星云重瓣小花)
-// ============================================================================
-function createGypsophilaGeometry() {
-  const buffers = makeBuffers();
-  const layers = [
-    { petals: 5, len: 0.036, wid: 0.019, y: 0.008, rot: 0 },
-    { petals: 5, len: 0.025, wid: 0.014, y: 0.016, rot: 0.62 }
-  ];
-
-  for (const layer of layers) {
-    for (let p = 0; p < layer.petals; p++) {
-      const a = (p / layer.petals) * Math.PI * 2 + layer.rot;
-      const cosA = Math.cos(a);
-      const sinA = Math.sin(a);
-
-      addParametricPatch(buffers, 3, 2, (u, v) => {
-        const w = v * layer.wid * Math.sin(u * Math.PI);
-        const l = 0.004 + u * layer.len;
-        return {
-          x: cosA * l - sinA * w,
-          y: layer.y * u + 0.004 * Math.sin(u * Math.PI),
-          z: sinA * l + cosA * w,
-          r: 0.85 + 0.22 * u,
-          g: 0.88 + 0.20 * u,
-          b: 0.95 + 0.18 * u
-        };
-      });
-    }
-  }
-  const geo = finalizeGeometry(buffers);
-  geo.rotateX(0.30);
-  return geo;
-}
-
-// ============================================================================
-// BOTANICAL STEMS, BROAD SERRATED LEAVES & LUSH MEADOW GRASS BLADES
-// ============================================================================
-function createCurvedStemGeometry() {
-  const buffers = makeBuffers();
-  // Unit height (0..1) 5-sided tapered organic stem so scaling Y matches exact flower height!
-  addParametricPatch(buffers, 5, 5, (u, v) => {
-    const theta = (v + 1) * Math.PI;
-    const rad = (0.018 - 0.008 * u);
-    const bendX = Math.sin(u * Math.PI * 0.65) * 0.018;
-    return {
-      x: Math.cos(theta) * rad + bendX,
-      y: u,
-      z: Math.sin(theta) * rad,
-      r: 0.012 + 0.022 * u,
-      g: 0.055 + 0.085 * u,
-      b: 0.048 + 0.065 * u
-    };
-  });
-  return finalizeGeometry(buffers);
-}
-
-function createHydrangeaLeafGeometry() {
-  const buffers = makeBuffers();
-  addParametricPatch(buffers, 6, 4, (u, v) => {
-    const serration = 1 + 0.06 * Math.sin(u * Math.PI * 9.0) * smoothstep(0.15, 0.85, u);
-    const profile = Math.pow(Math.sin(u * Math.PI), 0.72) * serration;
-    const x = v * 0.115 * profile;
-    const z = -u * 0.36;
-    const y = 0.055 * Math.sin(u * Math.PI * 0.72) - u * u * 0.08 - Math.abs(v) * 0.022;
-    const midrib = Math.exp(-v * v * 20.0) * 0.03;
-    return {
-      x,
-      y,
-      z,
-      r: 0.010 + 0.020 * u + midrib * 0.4,
-      g: 0.048 + 0.076 * u + midrib,
-      b: 0.052 + 0.068 * u + midrib * 0.7
-    };
-  });
-  return finalizeGeometry(buffers);
-}
-
-function createGrassBladeGeometry() {
-  const buffers = makeBuffers();
-  addParametricPatch(buffers, 5, 2, (u, v) => {
-    const taper = 1 - Math.pow(u, 1.28);
-    const x = v * 0.024 * taper;
-    const y = u * 0.58;
-    const z = -u * u * 0.18;
-    // Deep nocturnal Prussian-emerald root AO -> moonlit viridian-teal tip in linear RGB!
-    const ao = 0.16 + 0.84 * Math.pow(u, 1.08);
-    return {
-      x,
-      y,
-      z,
-      r: (0.008 + 0.026 * u) * ao,
-      g: (0.036 + 0.105 * u) * ao,
-      b: (0.052 + 0.118 * u) * ao
-    };
-  });
-  return finalizeGeometry(buffers);
-}
-
-function createIrisSwordLeafGeometry() {
-  const buffers = makeBuffers();
-  addParametricPatch(buffers, 6, 2, (u, v) => {
-    const taper = Math.sin(Math.min(1, u * 0.88 + 0.12) * Math.PI * 0.92) * (1 - 0.55 * Math.pow(u, 2.2));
-    const x = v * 0.034 * taper;
-    const y = u * 0.74;
-    const z = -Math.pow(u, 1.7) * 0.16;
-    const ao = 0.22 + 0.78 * u;
-    return {
-      x,
-      y,
-      z,
-      r: (0.014 + 0.026 * u) * ao,
-      g: (0.062 + 0.098 * u) * ao,
-      b: (0.078 + 0.112 * u) * ao
-    };
-  });
-  return finalizeGeometry(buffers);
-}
-
-// ============================================================================
-// PAINTERLY IMPASTO & WIND GLSL SHADERS (Maxime Heckel / Ghibli-Van Gogh Hybrid)
-// ============================================================================
-const WIND_AND_RIPPLE_VERTEX_GLSL = /* glsl */ `
+const SHARED_WORLD_GLSL = /* glsl */ `
   uniform float uTime;
   uniform vec3 uPointerWorld;
   uniform float uPointerActive;
+  uniform vec3 uFairyLightPos;
+  uniform vec3 uLampPos[3];
   uniform vec4 uRipples[5];
 
   float computeRippleBoost(vec3 worldPos) {
@@ -542,42 +134,88 @@ const WIND_AND_RIPPLE_VERTEX_GLSL = /* glsl */ `
       if (r > 0.0) {
         float dist = length(worldPos.xz - uRipples[i].xz);
         float ring = exp(-pow((dist - r) * 1.85, 2.0));
-        float fade = clamp(1.0 - r / 11.5, 0.0, 1.0);
+        float fade = clamp(1.0 - r / 12.0, 0.0, 1.0);
         boost += ring * fade;
       }
     }
-    return clamp(boost, 0.0, 1.3);
+    return clamp(boost, 0.0, 1.35);
+  }
+
+  vec3 computeWarmFairytaleLights(vec3 worldPos, vec3 N, out float backScatter) {
+    backScatter = 0.0;
+    vec3 accum = vec3(0.0);
+
+    // 1. Exploring Fairy Sprite's warm golden star-lantern!
+    vec3 toFairy = uFairyLightPos - worldPos;
+    float dFairy = length(toFairy);
+    vec3 lDirF = dFairy > 0.001 ? toFairy / dFairy : vec3(0.0, 1.0, 0.0);
+    float attenF = 1.0 / (1.0 + dFairy * dFairy * 0.62) * smoothstep(4.6, 0.4, dFairy);
+    float wrapF = clamp((dot(N, lDirF) + 0.55) / 1.55, 0.0, 1.0);
+    accum += vec3(1.05, 0.80, 0.36) * attenF * wrapF * 1.28;
+    backScatter += attenF * 0.85;
+
+    // 2. Three wrought-iron path streetlamps casting cozy golden pools along the lane
+    for (int i = 0; i < 3; i++) {
+      vec3 toLamp = uLampPos[i] - worldPos;
+      float dL = length(toLamp);
+      vec3 lDir = dL > 0.001 ? toLamp / dL : vec3(0.0, 1.0, 0.0);
+      float atten = 1.0 / (1.0 + dL * dL * 0.72) * smoothstep(4.2, 0.5, dL);
+      float wrap = clamp((dot(N, lDir) + 0.50) / 1.50, 0.0, 1.0);
+      accum += vec3(1.0, 0.76, 0.34) * atten * wrap * 0.82;
+      backScatter += atten * 0.45;
+    }
+    return accum;
   }
 
   vec3 applyMeadowWind(vec3 worldPos, float swayFactor) {
-    float gust = sin(uTime * 1.18 + worldPos.x * 0.62 + worldPos.z * 0.48);
-    float eddy = cos(uTime * 1.72 - worldPos.x * 0.38 + worldPos.z * 0.76);
+    float gust = sin(uTime * 1.15 + worldPos.x * 0.58 + worldPos.z * 0.46);
+    float eddy = cos(uTime * 1.68 - worldPos.x * 0.35 + worldPos.z * 0.72);
     vec3 offset = vec3(
-      gust * 0.068 + eddy * 0.028,
-      -abs(gust) * 0.014,
-      eddy * 0.048
+      gust * 0.058 + eddy * 0.024,
+      -abs(gust) * 0.012,
+      eddy * 0.042
     ) * swayFactor;
 
+    // Gentle grass/flower parting around user's pointer
     if (uPointerActive > 0.01) {
       vec2 toPlant = worldPos.xz - uPointerWorld.xz;
       float dist = length(toPlant);
-      float influence = exp(-dist * dist * 0.68) * uPointerActive * swayFactor;
+      float influence = exp(-dist * dist * 0.75) * uPointerActive * swayFactor;
       vec2 dir = dist > 0.001 ? normalize(toPlant) : vec2(0.0, 1.0);
-      offset.xz += dir * influence * 0.38;
-      offset.y -= influence * 0.10;
+      offset.xz += dir * influence * 0.34;
+      offset.y -= influence * 0.08;
     }
+
+    // Gentle grass parting as the little Fairy Sprite strolls through!
+    vec2 fromFairy = worldPos.xz - uFairyLightPos.xz;
+    float fDist = length(fromFairy);
+    if (fDist < 0.85) {
+      float fPush = exp(-fDist * fDist * 5.0) * swayFactor;
+      vec2 fDir = fDist > 0.001 ? normalize(fromFairy) : vec2(0.0, 1.0);
+      offset.xz += fDir * fPush * 0.16;
+    }
+
     return offset;
   }
 `;
 
-function createPainterlyFlowerMaterial(
+/**
+ * Physically-Inspired Lifelike Botanical Material:
+ * - High-res 512x512 Albedo + Venation + Scalloped Alpha Cutout (`uMap`)
+ * - Smooth Wrap-Lambertian Shading (no harsh cel bands!)
+ * - Backlit Subsurface Scattering (SSS translucency) + Velvet Petal Sheen
+ * - Real-time Warm Fairy-Lantern & Streetlamp Illumination
+ */
+function createBotanicalMaterial(
   sharedUniforms,
   {
-    swayWeight = 0.85,
+    map = null,
+    alphaCutoff = 0.36,
+    swayWeight = 0.75,
     rootAnchored = false,
-    rimStrength = 0.36,
-    emissiveBoost = 0.06,
-    sssStrength = 0.22
+    sssStrength = 0.34,
+    sheenStrength = 0.28,
+    emissiveBoost = 0.03
   } = {}
 ) {
   return new THREE.ShaderMaterial({
@@ -586,13 +224,18 @@ function createPainterlyFlowerMaterial(
       uTime: sharedUniforms.uTime,
       uPointerWorld: sharedUniforms.uPointerWorld,
       uPointerActive: sharedUniforms.uPointerActive,
+      uFairyLightPos: sharedUniforms.uFairyLightPos,
+      uLampPos: sharedUniforms.uLampPos,
       uRipples: sharedUniforms.uRipples,
       uFinaleProgress: sharedUniforms.uFinaleProgress,
+      uMap: { value: map },
+      uUseMap: { value: map ? 1.0 : 0.0 },
+      uAlphaCutoff: { value: alphaCutoff },
       uSwayWeight: { value: swayWeight },
       uRootAnchored: { value: rootAnchored ? 1.0 : 0.0 },
-      uRimStrength: { value: rimStrength },
-      uEmissiveBoost: { value: emissiveBoost },
-      uSssStrength: { value: sssStrength }
+      uSssStrength: { value: sssStrength },
+      uSheenStrength: { value: sheenStrength },
+      uEmissiveBoost: { value: emissiveBoost }
     },
     vertexShader: /* glsl */ `
       attribute vec3 color;
@@ -605,7 +248,7 @@ function createPainterlyFlowerMaterial(
       varying vec2 vUv;
       varying float vRipple;
 
-      ${WIND_AND_RIPPLE_VERTEX_GLSL}
+      ${SHARED_WORLD_GLSL}
 
       void main() {
         vUv = uv;
@@ -624,8 +267,8 @@ function createPainterlyFlowerMaterial(
           vec3 nMat = mat3(modelMatrix) * normal;
         #endif
 
-        // Root-anchored meshes (grass, stems, sword leaves) stay planted at u=0 while tips sway
-        float anchorWeight = mix(1.0, pow(clamp(uv.x, 0.0, 1.0), 1.65), uRootAnchored);
+        // uv.y is 0 at petal/leaf/blade root and 1 at tip!
+        float anchorWeight = mix(1.0, pow(clamp(uv.y, 0.0, 1.0), 1.65), uRootAnchored);
         world.xyz += applyMeadowWind(world.xyz, uSwayWeight * anchorWeight);
 
         vWorldPos = world.xyz;
@@ -637,10 +280,13 @@ function createPainterlyFlowerMaterial(
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform sampler2D uMap;
+      uniform float uUseMap;
+      uniform float uAlphaCutoff;
       uniform float uFinaleProgress;
-      uniform float uRimStrength;
-      uniform float uEmissiveBoost;
       uniform float uSssStrength;
+      uniform float uSheenStrength;
+      uniform float uEmissiveBoost;
       varying vec3 vColor;
       varying vec3 vNormal;
       varying vec3 vViewDir;
@@ -648,46 +294,63 @@ function createPainterlyFlowerMaterial(
       varying vec2 vUv;
       varying float vRipple;
 
+      ${SHARED_WORLD_GLSL}
+
       void main() {
+        vec3 baseAlbedo = vColor;
+        if (uUseMap > 0.5) {
+          vec4 texel = texture2D(uMap, vUv);
+          if (texel.a < uAlphaCutoff) discard;
+          // Decode canvas texture from sRGB to linear light and modulate by vertex/instance color
+          vec3 texLinear = pow(clamp(texel.rgb, 0.0, 1.0), vec3(2.2));
+          baseAlbedo *= texLinear;
+        }
+
         vec3 N = length(vNormal) > 0.0001 ? normalize(vNormal) : vec3(0.0, 1.0, 0.0);
         vec3 V = normalize(vViewDir);
         if (dot(N, V) < 0.0) N = -N;
 
-        // Upper-right Van Gogh Crescent Moon key light + cool cobalt sky hemisphere fill
-        vec3 moonDir = normalize(vec3(0.46, 0.81, 0.36));
-        vec3 skyFillDir = normalize(vec3(-0.48, 0.55, 0.68));
+        // Soft Moonlit Key Light + Dreamy Fairytale Sky Hemisphere + Warm Ground Bounce
+        vec3 moonDir = normalize(vec3(0.44, 0.80, 0.40));
+        vec3 backRimDir = normalize(vec3(-0.35, 0.52, -0.78));
 
-        float nDotL = max(0.0, dot(N, moonDir));
-        // Soft painterly 4-band ramp blended with smooth shading for oil-gouache richness
-        float bandedL = floor(nDotL * 4.0 + 0.35) / 4.0;
-        float keyLight = mix(nDotL, bandedL, 0.30);
-
+        // Wrap-Lambertian prevents harsh dark polygon creases on delicate flower petals!
+        float wrapDiff = clamp((dot(N, moonDir) + 0.46) / 1.46, 0.0, 1.0);
         float skyHemi = clamp(N.y * 0.5 + 0.5, 0.0, 1.0);
-        float fillLight = max(0.0, dot(N, skyFillDir)) * 0.24;
 
-        // Subtle directional oil-brushstroke micro-texture along petal UVs
-        float bristle = sin(vUv.x * 26.0 + vWorldPos.x * 3.0) * cos(vUv.y * 22.0 + vWorldPos.z * 3.0) * 0.045;
+        // Soft specular micro-glint on dewy petals & waxy leaves
+        vec3 H = normalize(moonDir + V);
+        float dewSpec = pow(max(0.0, dot(N, H)), 28.0) * 0.14;
 
-        // Subsurface translucency when backlit by moonlight
-        float sss = pow(clamp(dot(-V, moonDir) * 0.5 + 0.5, 0.0, 1.0), 2.4) * uSssStrength;
-        float fresnel = pow(1.0 - clamp(abs(dot(N, V)), 0.0, 1.0), 2.7);
+        // Backlit Subsurface Scattering (thin outer petal margins glow translucent!)
+        float petalThinness = 0.35 + 0.65 * clamp(vUv.y, 0.0, 1.0);
+        float moonSss = pow(clamp(dot(-V, moonDir) * 0.5 + 0.5, 0.0, 1.0), 2.1) * uSssStrength * petalThinness;
+        float rimBack = max(0.0, dot(N, backRimDir)) * 0.22;
 
-        vec3 moonTint = vec3(1.02, 0.97, 0.84);
-        vec3 skyAmbient = mix(vec3(0.024, 0.056, 0.135), vec3(0.088, 0.165, 0.310), skyHemi);
+        // Velvet grazing sheen (Charlie-inspired soft rim on rose/iris/tulip cups)
+        float fresnel = pow(1.0 - clamp(abs(dot(N, V)), 0.0, 1.0), 2.8);
 
-        vec3 lit = vColor * (moonTint * keyLight * 0.90 + skyAmbient + fillLight * 0.65 + uEmissiveBoost + bristle);
-        lit += vColor * vec3(0.92, 0.95, 1.04) * sss;
+        // Dynamic warm illumination from Exploring Fairy Sprite Lantern & Path Streetlamps!
+        float warmScatter = 0.0;
+        vec3 warmLanternLight = computeWarmFairytaleLights(vWorldPos, N, warmScatter);
 
-        // Moonlit golden-cerulean Fresnel rim + bioluminescent ripple wave
-        vec3 rimColor = mix(vec3(0.45, 0.80, 1.0), vec3(1.0, 0.88, 0.50), 0.38);
-        lit += rimColor * fresnel * (uRimStrength + 0.22 * uFinaleProgress + vRipple * 0.55);
-        lit += mix(vec3(0.35, 0.82, 1.0), vec3(1.0, 0.86, 0.42), 0.35) * vRipple * 0.38;
+        vec3 skyAmbient = mix(vec3(0.038, 0.072, 0.145), vec3(0.145, 0.235, 0.395), skyHemi);
+        vec3 moonLight = vec3(1.02, 0.98, 0.88) * wrapDiff * 0.92;
 
-        // Seamless nocturnal atmospheric perspective into Saint-Rémy indigo foothills
-        float horizonFade = smoothstep(5.2, 13.5, length(vWorldPos.xz - vec2(0.0, 1.2)));
-        lit = mix(lit, vec3(0.012, 0.032, 0.088), horizonFade * 0.72);
+        vec3 lit = baseAlbedo * (moonLight + skyAmbient + rimBack + warmLanternLight + uEmissiveBoost);
+        lit += baseAlbedo * (vec3(0.95, 0.96, 1.05) * moonSss + vec3(1.05, 0.82, 0.42) * warmScatter * uSssStrength);
+        lit += vec3(0.92, 0.96, 1.0) * dewSpec;
 
-        // ACES-inspired filmic curve + single clean sRGB encode (rich velvety darks, luminous petals)
+        // Soft fairytale velvet sheen + interactive ripple wave (albedo-weighted so grass stays crisp!)
+        vec3 sheenCol = mix(baseAlbedo + vec3(0.14), vec3(0.82, 0.92, 1.0), 0.40);
+        lit += sheenCol * fresnel * (uSheenStrength + 0.16 * uFinaleProgress + vRipple * 0.24);
+        lit += (vec3(0.18) + baseAlbedo * 0.82) * mix(vec3(0.38, 0.82, 1.0), vec3(1.0, 0.88, 0.44), 0.45) * vRipple * 0.26;
+
+        // Dreamy fairytale atmospheric mist into distant Saint-Rémy hills
+        float distMist = smoothstep(5.8, 14.2, length(vWorldPos.xz - vec2(0.0, 1.5)));
+        lit = mix(lit, vec3(0.018, 0.042, 0.105), distMist * 0.68);
+
+        // Clean ACES filmic tone mapping + single sRGB encode
         vec3 mapped = (lit * (2.51 * lit + 0.03)) / (lit * (2.43 * lit + 0.59) + 0.14);
         vec3 srgb = pow(clamp(mapped, 0.0, 1.0), vec3(1.0 / 2.2));
 
@@ -697,9 +360,21 @@ function createPainterlyFlowerMaterial(
   });
 }
 
+// ============================================================================
+// 3. MAIN FAIRYTALE MEADOW SCENE FACTORY
+// ============================================================================
 export function createMeadowScene(
   canvas,
-  { eggs = [], onEggTrigger = () => {}, onRipple = () => {}, onStatus = () => {} } = {}
+  {
+    eggs = [],
+    wonders = [],
+    onEggTrigger = () => {},
+    onWonderTrigger = () => {},
+    onSpriteWhisper = () => {},
+    onSkyTap = () => {},
+    onRipple = () => {},
+    onStatus = () => {}
+  } = {}
 ) {
   const gl = canvas.getContext('webgl2', {
     alpha: true,
@@ -709,7 +384,7 @@ export function createMeadowScene(
     preserveDrawingBuffer: false
   });
   if (!gl) {
-    const err = new Error('WebGL2 is required for the 3D flower meadow');
+    const err = new Error('WebGL2 is required for the 3D fairytale flower meadow');
     onStatus('error', err.message);
     throw err;
   }
@@ -725,16 +400,18 @@ export function createMeadowScene(
   renderer.setClearColor(0x000000, 0);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 80);
-  const cameraBase = new THREE.Vector3(0, 1.72, 6.65);
-  const cameraLookBase = new THREE.Vector3(0, 0.68, -2.2);
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 90);
+  // Elevated panoramic fairytale viewpoint overlooking rolling knolls, winding dirt path & hilltop cottage!
+  const cameraBase = new THREE.Vector3(0.0, 2.28, 7.35);
+  const cameraLookBase = new THREE.Vector3(0.0, 0.42, -1.85);
   const cameraCurrentPos = cameraBase.clone();
   const cameraCurrentLook = cameraLookBase.clone();
   const cameraTargetPos = cameraBase.clone();
   const cameraTargetLook = cameraLookBase.clone();
 
   let macroMode = false;
-  let focusedEgg = null;
+  let followSpriteMode = false;
+  let focusedTarget = null;
   let focusUntil = 0;
   let finaleProgress = 0;
   let targetFinale = 0;
@@ -754,6 +431,14 @@ export function createMeadowScene(
     uTime: { value: 0 },
     uPointerWorld: { value: new THREE.Vector3(0, -10, 0) },
     uPointerActive: { value: 0 },
+    uFairyLightPos: { value: new THREE.Vector3(-0.3, 0.6, 2.8) },
+    uLampPos: {
+      value: [
+        new THREE.Vector3(-2.45, 1.2, 0.35),
+        new THREE.Vector3(1.05, 1.2, 0.15),
+        new THREE.Vector3(-0.95, 1.2, -3.25)
+      ]
+    },
     uRipples: { value: ripples },
     uFinaleProgress: { value: 0 }
   };
@@ -766,12 +451,15 @@ export function createMeadowScene(
   const spinQuat = new THREE.Quaternion();
   const colorTmp = new THREE.Color();
 
-  // ============================================================================
-  // 1. UNDULATING HILLSIDE TERRAIN WITH FEATHERED HORIZON BLEND (Zero Hard Seam!)
-  // ============================================================================
-  const terrainGeo = new THREE.PlaneGeometry(34, 18, 96, 60);
+  // Build 512x512 procedural botanical petal, seed-disc, leaf & fairy-wing textures
+  const textures = createBotanicalTextures();
+
+  // ==========================================================================
+  // A. SCULPTED GRASSLAND, EARTHEN SLOPES ("土坡") & WINDING DIRT PATH ("小路")
+  // ==========================================================================
+  const terrainGeo = new THREE.PlaneGeometry(36, 20, 128, 84);
   terrainGeo.rotateX(-Math.PI * 0.5);
-  terrainGeo.translate(0, 0, -1.5);
+  terrainGeo.translate(0, 0, -1.6);
   const tPos = terrainGeo.attributes.position;
   for (let i = 0; i < tPos.count; i++) {
     const x = tPos.getX(i);
@@ -780,58 +468,161 @@ export function createMeadowScene(
   }
   terrainGeo.computeVertexNormals();
 
+  const pathUniformArray = PATH_POLY.map(([x, z]) => new THREE.Vector2(x, z));
+
   const terrainMat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: true,
     uniforms: {
       uTime: sharedUniforms.uTime,
-      uRipples: sharedUniforms.uRipples,
       uPointerWorld: sharedUniforms.uPointerWorld,
-      uPointerActive: sharedUniforms.uPointerActive
+      uPointerActive: sharedUniforms.uPointerActive,
+      uFairyLightPos: sharedUniforms.uFairyLightPos,
+      uLampPos: sharedUniforms.uLampPos,
+      uRipples: sharedUniforms.uRipples,
+      uPathPts: { value: pathUniformArray }
     },
     vertexShader: /* glsl */ `
       varying vec3 vWorldPos;
+      varying vec3 vNormal;
       void main() {
         vec4 wp = modelMatrix * vec4(position, 1.0);
         vWorldPos = wp.xyz;
+        vNormal = normalize(mat3(modelMatrix) * normal);
         gl_Position = projectionMatrix * viewMatrix * wp;
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform vec2 uPathPts[15];
       varying vec3 vWorldPos;
-      ${WIND_AND_RIPPLE_VERTEX_GLSL}
+      varying vec3 vNormal;
+
+      ${SHARED_WORLD_GLSL}
+
+      float glslDistToPath(vec2 p) {
+        float minD2 = 1e9;
+        for (int i = 0; i < 14; i++) {
+          vec2 a = uPathPts[i];
+          vec2 b = uPathPts[i + 1];
+          vec2 v = b - a;
+          vec2 w = p - a;
+          float t = clamp(dot(w, v) / (dot(v, v) + 1e-6), 0.0, 1.0);
+          vec2 d = w - v * t;
+          minD2 = min(minD2, dot(d, d));
+        }
+        return sqrt(minD2);
+      }
 
       void main() {
-        // Painterly nocturnal Prussian-emerald ground strokes
-        float stroke1 = sin(vWorldPos.x * 1.65 + cos(vWorldPos.z * 1.35)) * 0.5 + 0.5;
-        float stroke2 = sin(vWorldPos.x * 4.2 - vWorldPos.z * 3.1) * 0.5 + 0.5;
+        vec3 N = normalize(vNormal);
+        float dPath = glslDistToPath(vWorldPos.xz);
 
-        vec3 deepSoil = vec3(0.018, 0.048, 0.105);
-        vec3 viridianMoss = vec3(0.036, 0.115, 0.165);
-        vec3 indigoHorizon = vec3(0.032, 0.072, 0.168);
+        // Organic painterly soil, clover turf & pebble grain
+        float macroNoise = sin(vWorldPos.x * 1.4 + cos(vWorldPos.z * 1.2)) * 0.5 + 0.5;
+        float fineGrain = sin(vWorldPos.x * 9.5 + vWorldPos.z * 8.2) * cos(vWorldPos.x * 7.1 - vWorldPos.z * 10.4);
+        float pebble = smoothstep(0.65, 0.92, sin(vWorldPos.x * 19.0) * cos(vWorldPos.z * 17.0));
 
-        vec3 col = mix(deepSoil, viridianMoss, stroke1 * 0.65 + stroke2 * 0.25);
-        float farMix = smoothstep(0.5, -6.2, vWorldPos.z);
-        col = mix(col, indigoHorizon, farMix * 0.85);
+        // 1. Lush Moonlit Emerald-Moss Fairytale Grassland ("草原")
+        vec3 deepTurf = vec3(0.016, 0.058, 0.052);
+        vec3 cloverMeadow = vec3(0.036, 0.115, 0.088);
+        vec3 grassAlbedo = mix(deepTurf, cloverMeadow, macroNoise * 0.72 + fineGrain * 0.15);
+
+        // 2. Warm Terracotta-Ochre Earthen Slope Embankments ("土坡") on steeper knoll flanks!
+        float slopeSteepness = clamp((1.0 - N.y) * 12.5, 0.0, 1.0);
+        float slopePatch = smoothstep(0.16, 0.58, slopeSteepness + fineGrain * 0.15);
+        vec3 earthenSlope = mix(vec3(0.155, 0.092, 0.048), vec3(0.235, 0.148, 0.078), macroNoise * 0.75 + pebble * 0.25);
+        vec3 groundAlbedo = mix(grassAlbedo, earthenSlope, slopePatch * 0.90);
+
+        // 3. Winding Country Dirt & Sandstone Footpath ("蜿蜒小路")!
+        float pathCore = 1.0 - smoothstep(0.32, 0.58, dPath + fineGrain * 0.045);
+        float pathVerge = (1.0 - smoothstep(0.48, 0.88, dPath)) * (1.0 - pathCore);
+        vec3 dirtCenter = mix(vec3(0.195, 0.138, 0.082), vec3(0.265, 0.195, 0.118), 0.5 + 0.35 * fineGrain + 0.25 * pebble);
+        vec3 vergeSoil = vec3(0.115, 0.082, 0.045);
+        groundAlbedo = mix(groundAlbedo, vergeSoil, pathVerge * 0.75);
+        groundAlbedo = mix(groundAlbedo, dirtCenter, pathCore);
+
+        // Moonlit + Sky Hemisphere + Real-time Warm Fairy-Lantern & Streetlamp Illumination!
+        vec3 moonDir = normalize(vec3(0.44, 0.80, 0.40));
+        float nDotL = clamp((dot(N, moonDir) + 0.35) / 1.35, 0.0, 1.0);
+        float warmScatter = 0.0;
+        vec3 warmLights = computeWarmFairytaleLights(vWorldPos, N, warmScatter);
+
+        vec3 lit = groundAlbedo * (vec3(0.95, 0.96, 0.90) * nDotL * 0.88 + vec3(0.08, 0.15, 0.28) + warmLights * 1.35);
 
         float ripple = computeRippleBoost(vWorldPos);
-        col += mix(vec3(0.24, 0.72, 0.98), vec3(0.98, 0.84, 0.38), 0.38) * ripple * 0.36;
+        lit += mix(vec3(0.32, 0.78, 1.0), vec3(1.0, 0.86, 0.42), 0.45) * ripple * 0.32;
 
-        // Soft alpha feather along far mountain edge so 3D ground melts into p5.js hills!
-        float edgeAlpha = smoothstep(-9.2, -5.4, vWorldPos.z) * smoothstep(16.5, 11.5, abs(vWorldPos.x));
-        gl_FragColor = vec4(col, edgeAlpha);
+        // Atmospheric indigo horizon blend into p5.js Saint-Rémy foothills
+        float farMix = smoothstep(0.5, -7.2, vWorldPos.z);
+        lit = mix(lit, vec3(0.014, 0.036, 0.095), farMix * 0.78);
+
+        vec3 mapped = (lit * (2.51 * lit + 0.03)) / (lit * (2.43 * lit + 0.59) + 0.14);
+        vec3 srgb = pow(clamp(mapped, 0.0, 1.0), vec3(1.0 / 2.2));
+
+        float edgeAlpha = smoothstep(-9.8, -5.8, vWorldPos.z) * smoothstep(17.2, 12.2, abs(vWorldPos.x));
+        gl_FragColor = vec4(srgb, edgeAlpha);
       }
     `
   });
-  const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
-  scene.add(terrainMesh);
+  scene.add(new THREE.Mesh(terrainGeo, terrainMat));
 
-  // ============================================================================
-  // 2. SPATIAL PLANNER — ZERO FLOWER COLLISIONS & NATURAL BOTANICAL DRIFTS
-  // ============================================================================
+  // ==========================================================================
+  // B. FAIRYTALE PROPS, COTTAGE, MUSHROOM RING, POND & EXPLORING SPRITE!
+  // ==========================================================================
+  const worldProps = createFairytaleWorldProps({
+    scene,
+    meadowHeight,
+    pathCurve: PATH_CURVE_2D,
+    rng
+  });
+
+  // Sync warm streetlamp world positions into shared shader uniforms!
+  for (let i = 0; i < 3 && i < worldProps.lampPositions.length; i++) {
+    sharedUniforms.uLampPos.value[i].copy(worldProps.lampPositions[i]);
+  }
+
+  // Curated scenic fairytale waypoints so the Sprite freely explores path, knolls, flowers & secrets!
+  const spriteWaypoints = [
+    { x: -0.25, z: 2.95, whisper: '提着小灯笼，陪你在梵高星空小路散步啦 ✨' },
+    { x: 0.55, z: 2.05, whisper: '快看小路边！丝绒玫瑰丛里藏着发光的星砂许愿瓶～' },
+    { x: -0.45, z: 1.55, whisper: '木路牌上的小青鸟说：往哪边走都是被偏爱的春天 ♪' },
+    { x: -1.85, z: 2.15, whisper: '左前方的草坡开满了蓝色无尽夏与满天星呢！' },
+    { x: -1.15, z: 3.55, whisper: '星影露珠潭里映着今晚的月亮与睡莲 ✦' },
+    { x: 0.95, z: 0.45, whisper: '顺着蜿蜒土坡往上走，晚风里全是花香～' },
+    { x: 2.05, z: -0.15, whisper: '哇！小土坡上的七彩荧光蘑菇圈在偷偷唱歌！' },
+    { x: 1.15, z: -1.85, whisper: '轻轻吹一口月光蒲公英，把心愿寄给漫天繁星 ✧' },
+    { x: -0.75, z: -2.65, whisper: '山坡上的梵高金色向日葵，夜里也在仰望你呀～' },
+    { x: -1.45, z: -4.45, whisper: '山顶暖光童话小屋的烟囱，正在冒金色爱心烟圈呢！' },
+    { x: -2.15, z: 0.25, whisper: '点击草坡或小路任意地方，我都会提灯跑过去找你哦～' }
+  ];
+
+  const fairySprite = createFairyExplorer({
+    scene,
+    meadowHeight,
+    wingTexture: textures.fairyWing,
+    waypoints: spriteWaypoints,
+    onArrivalWhisper: onSpriteWhisper
+  });
+
+  // ==========================================================================
+  // C. SPATIAL PLANNER — KEEP PATH & FAIRYTALE LANDMARKS OPEN AND NATURAL!
+  // ==========================================================================
   const occupied = [];
-  function canPlace(x, z, r, allowOverlap = false) {
-    if (allowOverlap) return true;
+  function registerSpot(x, z, r) {
+    occupied.push({ x, z, r });
+  }
+
+  // Reserve clearings around fairytale props so flowers frame rather than bury them!
+  registerSpot(0.82, 2.12, 0.42);   // Egg #3 Crystal Wish Bottle alcove beside path
+  registerSpot(-1.85, -5.35, 1.05); // Hilltop Cozy Cottage yard
+  registerSpot(2.35, -0.15, 0.78);  // 7-Mushroom Fairy Ring clearing
+  registerSpot(-0.62, 1.65, 0.36);  // Wooden Signpost
+  registerSpot(-1.18, 3.45, 0.78);  // Dew Pond clearing
+  registerSpot(2.68, 2.78, 0.46);   // Hollow Tree Stump
+  registerSpot(1.42, -2.05, 0.48);  // Giant Dandelions
+
+  function canPlacePlant(x, z, r, minPathDist = 0.56) {
+    if (distToPath(x, z) < minPathDist) return false;
     for (let i = 0; i < occupied.length; i++) {
       const o = occupied[i];
       const dx = x - o.x;
@@ -842,77 +633,117 @@ export function createMeadowScene(
     return true;
   }
 
-  function registerSpot(x, z, r) {
-    occupied.push({ x, z, r });
-  }
-
-  // Reserve crystal wish-bottle romantic clearing at [0.18, 2.65] + dark-grass sightline behind it!
-  registerSpot(0.18, 2.65, 0.48);
-  registerSpot(0.18, 2.18, 0.36);
-  registerSpot(0.18, 3.05, 0.34);
-
-  const flowerMat = createPainterlyFlowerMaterial(sharedUniforms, {
-    swayWeight: 0.82,
-    rootAnchored: false,
-    rimStrength: 0.34,
-    emissiveBoost: 0.05,
-    sssStrength: 0.24
-  });
-  const stemAndLeafMat = createPainterlyFlowerMaterial(sharedUniforms, {
-    swayWeight: 0.82,
-    rootAnchored: true,
-    rimStrength: 0.16,
-    emissiveBoost: 0.02,
-    sssStrength: 0.12
-  });
-  const grassMat = createPainterlyFlowerMaterial(sharedUniforms, {
+  // Dedicated realistic textured botanical materials per flower organ!
+  const roseMat = createBotanicalMaterial(sharedUniforms, {
+    map: textures.rosePetal,
+    alphaCutoff: 0.36,
     swayWeight: 0.72,
+    sssStrength: 0.38,
+    sheenStrength: 0.34
+  });
+  const hydrangeaMat = createBotanicalMaterial(sharedUniforms, {
+    map: textures.hydrangeaSepal,
+    alphaCutoff: 0.36,
+    swayWeight: 0.72,
+    sssStrength: 0.36,
+    sheenStrength: 0.28
+  });
+  const sunDiscMat = createBotanicalMaterial(sharedUniforms, {
+    map: textures.sunflowerDisc,
+    alphaCutoff: 0.05,
+    swayWeight: 0.80,
+    sssStrength: 0.10,
+    sheenStrength: 0.14
+  });
+  const sunRayMat = createBotanicalMaterial(sharedUniforms, {
+    map: textures.sunflowerRay,
+    alphaCutoff: 0.36,
+    swayWeight: 0.80,
+    sssStrength: 0.42,
+    sheenStrength: 0.24
+  });
+  const irisMat = createBotanicalMaterial(sharedUniforms, {
+    map: textures.irisPetal,
+    alphaCutoff: 0.36,
+    swayWeight: 0.78,
+    sssStrength: 0.38,
+    sheenStrength: 0.32
+  });
+  const tulipMat = createBotanicalMaterial(sharedUniforms, {
+    map: textures.tulipPetal,
+    alphaCutoff: 0.36,
+    swayWeight: 0.76,
+    sssStrength: 0.40,
+    sheenStrength: 0.30
+  });
+  const gypMat = createBotanicalMaterial(sharedUniforms, {
+    map: textures.gypsophila,
+    alphaCutoff: 0.28,
+    swayWeight: 0.88,
+    sssStrength: 0.45,
+    sheenStrength: 0.32,
+    emissiveBoost: 0.14
+  });
+  const broadLeafMat = createBotanicalMaterial(sharedUniforms, {
+    map: textures.broadLeaf,
+    alphaCutoff: 0.38,
+    swayWeight: 0.74,
     rootAnchored: true,
-    rimStrength: 0.18,
-    emissiveBoost: 0.02,
-    sssStrength: 0.10
+    sssStrength: 0.22,
+    sheenStrength: 0.20
   });
-  const gypMat = createPainterlyFlowerMaterial(sharedUniforms, {
-    swayWeight: 0.92,
-    rootAnchored: false,
-    rimStrength: 0.48,
-    emissiveBoost: 0.26,
-    sssStrength: 0.30
+  const stemAndSwordMat = createBotanicalMaterial(sharedUniforms, {
+    map: null,
+    swayWeight: 0.76,
+    rootAnchored: true,
+    sssStrength: 0.14,
+    sheenStrength: 0.14
+  });
+  const grassMat = createBotanicalMaterial(sharedUniforms, {
+    map: null,
+    swayWeight: 0.68,
+    rootAnchored: true,
+    sssStrength: 0.18,
+    sheenStrength: 0.16
   });
 
-  const stemRecords = []; // { x, y, z, height, rotY, tiltX, tiltZ, thick }
+  const stemRecords = [];
+  const leafSpots = [];
+  const swordSpots = [];
 
-  // --- A. BLUE ENDLESS SUMMER HYDRANGEA SHRUBS (22 Multi-Panicle Bushes, NOT Soccer Balls!) ---
+  // ==========================================================================
+  // D. SIX LIFELIKE BOTANICAL SPECIES IN NATURALISTIC FAIRYTALE CLUSTERS!
+  // ==========================================================================
+
+  // --- 1. ENDLESS SUMMER HYDRANGEAS (18 Lush Multi-Panicle Shrubs on Knolls & Path Bends) ---
   const hydrangeaPalettes = [
-    ['#2563eb', '#60a5fa', '#3b82f6', '#818cf8'],
-    ['#0284c7', '#38bdf8', '#60a5fa', '#a78bfa'],
-    ['#4f46e5', '#818cf8', '#3b82f6', '#c084fc'],
-    ['#2563eb', '#38bdf8', '#6366f1', '#9333ea']
+    ['#3b82f6', '#60a5fa', '#93c5fd', '#818cf8'],
+    ['#2563eb', '#38bdf8', '#7dd3fc', '#a78bfa'],
+    ['#4f46e5', '#818cf8', '#60a5fa', '#c4b5fd'],
+    ['#0284c7', '#38bdf8', '#93c5fd', '#c084fc']
   ];
-
   const hydrangeaShrubs = [
-    // Egg #1 Hero Hydrangea Shrubs (framed clearly in left-foreground golden ratio!)
-    { x: -2.18, z: 2.08, scale: 1.12, palette: hydrangeaPalettes[1] },
-    { x: -3.05, z: 1.48, scale: 0.98, palette: hydrangeaPalettes[0] },
-    { x: -1.48, z: 2.58, scale: 0.94, palette: hydrangeaPalettes[2] },
-    // Balanced picturesque shrubs across midground & flanks
-    { x: -3.95, z: 2.35, scale: 0.98, palette: hydrangeaPalettes[3] },
-    { x: 2.95, z: 2.38, scale: 1.00, palette: hydrangeaPalettes[3] },
-    { x: 4.25, z: 1.65, scale: 0.96, palette: hydrangeaPalettes[0] },
-    { x: -0.85, z: 0.08, scale: 0.96, palette: hydrangeaPalettes[1] },
-    { x: 1.45, z: 0.25, scale: 0.95, palette: hydrangeaPalettes[2] }
+    // Egg #1 Hero Hydrangea Knoll (Left foreground grassy mound)
+    { x: -2.25, z: 2.35, scale: 1.08, palette: hydrangeaPalettes[1] },
+    { x: -3.05, z: 1.75, scale: 0.96, palette: hydrangeaPalettes[0] },
+    { x: -1.68, z: 2.85, scale: 0.90, palette: hydrangeaPalettes[2] },
+    // Scenic shrubs along cottage garden, slopes & distant bends
+    { x: -2.85, z: -4.65, scale: 0.94, palette: hydrangeaPalettes[1] },
+    { x: -0.95, z: -5.45, scale: 0.90, palette: hydrangeaPalettes[3] },
+    { x: 3.45, z: 2.15, scale: 0.96, palette: hydrangeaPalettes[0] },
+    { x: -3.65, z: -0.65, scale: 0.94, palette: hydrangeaPalettes[2] },
+    { x: 2.85, z: -3.15, scale: 0.92, palette: hydrangeaPalettes[1] }
   ];
+  for (const s of hydrangeaShrubs) registerSpot(s.x, s.z, 0.52 * s.scale);
 
-  for (const s of hydrangeaShrubs) {
-    registerSpot(s.x, s.z, 0.56 * s.scale);
-  }
-
-  for (let attempt = 0; attempt < 180 && hydrangeaShrubs.length < 22; attempt++) {
-    const x = (rng() - 0.5) * 14.5;
-    const z = 3.5 - rng() * 8.4;
-    const scale = 0.78 + rng() * 0.28;
-    if (canPlace(x, z, 0.58 * scale)) {
-      registerSpot(x, z, 0.54 * scale);
+  const shrubAnchors = [[-3.8, 0.8], [3.6, -1.4], [-1.8, -2.2], [0.6, -3.8], [3.9, 0.8], [-4.2, -2.6]];
+  for (let i = 0; i < 120 && hydrangeaShrubs.length < 16; i++) {
+    const c = shrubAnchors[i % shrubAnchors.length];
+    const x = c[0] + (rng() - 0.5) * 2.2;
+    const z = c[1] + (rng() - 0.5) * 2.0;
+    const scale = 0.78 + rng() * 0.26;
+    if (canPlacePlant(x, z, 0.54 * scale, 0.88)) {
+      registerSpot(x, z, 0.50 * scale);
       hydrangeaShrubs.push({
         x,
         z,
@@ -922,19 +753,16 @@ export function createMeadowScene(
     }
   }
 
-  // Expand each shrub into 5 organic smaller panicle flower heads!
   const panicleHeads = [];
-  const shrubLeafSpots = [];
   for (const shrub of hydrangeaShrubs) {
-    const headCount = 5;
-    for (let k = 0; k < headCount; k++) {
+    for (let k = 0; k < 5; k++) {
       const isCenter = k === 0;
-      const ang = (k / (headCount - 1)) * Math.PI * 2 + rng() * 0.45;
-      const dist = isCenter ? rng() * 0.06 : (0.22 + rng() * 0.11) * shrub.scale;
+      const ang = (k / 4) * Math.PI * 2 + rng() * 0.45;
+      const dist = isCenter ? rng() * 0.05 : (0.21 + rng() * 0.10) * shrub.scale;
       const hx = shrub.x + Math.cos(ang) * dist;
       const hz = shrub.z + Math.sin(ang) * dist;
-      const headR = (isCenter ? 0.255 : 0.195 + rng() * 0.045) * shrub.scale;
-      const lift = (isCenter ? 0.42 : 0.27 + rng() * 0.12) * shrub.scale;
+      const headR = (isCenter ? 0.24 : 0.18 + rng() * 0.04) * shrub.scale;
+      const lift = (isCenter ? 0.40 : 0.26 + rng() * 0.11) * shrub.scale;
       const gy = meadowHeight(hx, hz);
 
       panicleHeads.push({
@@ -942,8 +770,9 @@ export function createMeadowScene(
         y: gy + lift,
         z: hz,
         r: headR,
-        florets: Math.round(46 + headR * 95),
-        palette: shrub.palette
+        florets: Math.round(42 + headR * 90),
+        palette: shrub.palette,
+        isYoungBud: k === 4
       });
 
       stemRecords.push({
@@ -952,34 +781,34 @@ export function createMeadowScene(
         z: hz,
         height: lift,
         rotY: ang,
-        tiltX: (hz - shrub.z) * 0.25,
-        tiltZ: -(hx - shrub.x) * 0.25,
-        thick: 1.15
+        tiltX: (hz - shrub.z) * 0.22,
+        tiltZ: -(hx - shrub.x) * 0.22,
+        thick: 1.1
       });
     }
 
-    // Lush collar of 20 broad serrated hydrangea leaves cradling each shrub
-    for (let l = 0; l < 20; l++) {
-      const la = (l / 20) * Math.PI * 2 + rng() * 0.22;
-      const ld = (0.20 + rng() * 0.28) * shrub.scale;
-      shrubLeafSpots.push({
+    for (let l = 0; l < 18; l++) {
+      const la = (l / 18) * Math.PI * 2 + rng() * 0.24;
+      const ld = (0.18 + rng() * 0.26) * shrub.scale;
+      leafSpots.push({
         x: shrub.x + Math.cos(la) * ld,
         z: shrub.z + Math.sin(la) * ld,
         ang: la,
-        scale: (0.78 + rng() * 0.42) * shrub.scale,
-        lift: 0.08 + (l % 3) * 0.07
+        scale: (0.78 + rng() * 0.36) * shrub.scale,
+        lift: 0.07 + (l % 3) * 0.06
       });
     }
   }
 
   const totalHydrangeaFlorets = panicleHeads.reduce((sum, p) => sum + p.florets, 0);
   const hydrangeaGeo = createHydrangeaFloretGeometry();
-  const hydrangeaInstanced = new THREE.InstancedMesh(hydrangeaGeo, flowerMat, totalHydrangeaFlorets);
+  const hydrangeaInstanced = new THREE.InstancedMesh(hydrangeaGeo, hydrangeaMat, totalHydrangeaFlorets);
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  const budTint = new THREE.Color('#bef264');
 
   let hIdx = 0;
-  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
   for (const head of panicleHeads) {
-    const cols = head.palette.map(hex => new THREE.Color(hex));
+    const cols = head.palette.map((hex) => new THREE.Color(hex));
     for (let j = 0; j < head.florets; j++) {
       const t = j / head.florets;
       const inc = Math.acos(1 - t * 0.88);
@@ -987,24 +816,22 @@ export function createMeadowScene(
       const nx = Math.sin(inc) * Math.cos(az);
       const ny = Math.cos(inc);
       const nz = Math.sin(inc) * Math.sin(az);
+      const jitterR = head.r * (0.80 + 0.24 * rng());
 
-      // Organic depth jitter gives foamy panicle clusters instead of rigid plastic balls!
-      const jitterR = head.r * (0.78 + 0.28 * rng());
-      dummy.position.set(
-        head.x + nx * jitterR,
-        head.y + ny * jitterR * 0.82,
-        head.z + nz * jitterR
-      );
-      normalVec.set(nx + (rng() - 0.5) * 0.22, ny * 1.1 + 0.15, nz + (rng() - 0.5) * 0.22).normalize();
+      dummy.position.set(head.x + nx * jitterR, head.y + ny * jitterR * 0.84, head.z + nz * jitterR);
+      normalVec.set(nx + (rng() - 0.5) * 0.18, ny * 1.12 + 0.14, nz + (rng() - 0.5) * 0.18).normalize();
       quat.setFromUnitVectors(upVec, normalVec);
       spinQuat.setFromAxisAngle(upVec, rng() * Math.PI * 2);
       quat.multiply(spinQuat);
       dummy.quaternion.copy(quat);
-      dummy.scale.setScalar(0.84 + rng() * 0.34);
+      dummy.scale.setScalar((head.isYoungBud ? 0.68 : 0.84) + rng() * 0.28);
       dummy.updateMatrix();
       hydrangeaInstanced.setMatrixAt(hIdx, dummy.matrix);
 
-      colorTmp.copy(cols[j % cols.length]).lerp(cols[(j + 1) % cols.length], rng() * 0.65);
+      colorTmp.copy(cols[j % cols.length]).lerp(cols[(j + 1) % cols.length], rng() * 0.6);
+      if (head.isYoungBud) colorTmp.lerp(budTint, 0.35);
+      // Natural panicle dome depth shading so individual 4-sepal florets pop in 3D!
+      colorTmp.multiplyScalar(0.66 + 0.36 * clamp(ny * 0.5 + 0.5, 0, 1));
       hydrangeaInstanced.setColorAt(hIdx, colorTmp);
       hIdx++;
     }
@@ -1013,50 +840,51 @@ export function createMeadowScene(
   if (hydrangeaInstanced.instanceColor) hydrangeaInstanced.instanceColor.needsUpdate = true;
   scene.add(hydrangeaInstanced);
 
-  // --- B. VAN GOGH STARRY SUNFLOWERS (34 Tall Golden Blooms Facing the Moonlight) ---
+  // --- 2. LIFELIKE VAN GOGH SUNFLOWERS (30 Tall Fibonacci-Seed Blooms on Hilltop & Far Ridges) ---
   const sunflowerCoords = [
-    // Egg #2 Hero Sunflower Drift at [-1.05, z=0.85]
-    { x: -1.05, z: 0.85, scale: 1.06, height: 1.04, yaw: 0.18 },
-    { x: -1.42, z: 1.08, scale: 0.92, height: 0.90, yaw: 0.26 },
-    { x: -0.68, z: 1.02, scale: 0.88, height: 0.84, yaw: 0.08 },
-    { x: -1.18, z: 0.50, scale: 0.96, height: 0.96, yaw: 0.14 }
+    // Egg #2 Hero Sunflower Hillside Drift overlooking the winding path!
+    { x: -1.35, z: -1.85, scale: 1.02, height: 1.02, yaw: 0.22 },
+    { x: -1.78, z: -1.55, scale: 0.92, height: 0.92, yaw: 0.30 },
+    { x: -0.95, z: -2.15, scale: 0.88, height: 0.86, yaw: 0.12 },
+    { x: -1.62, z: -2.35, scale: 0.95, height: 0.98, yaw: 0.18 }
   ];
-  for (const s of sunflowerCoords) registerSpot(s.x, s.z, 0.22);
+  for (const s of sunflowerCoords) registerSpot(s.x, s.z, 0.24);
 
-  // Plant sunflowers in scenic mid-to-far golden drifts (z <= 2.4 so they frame rather than block foreground!)
-  const sunCenters = [
-    [-4.8, -0.4], [-2.6, -1.6], [0.4, -1.2], [2.8, -0.5], [4.9, 0.2], [-3.5, -3.2], [1.8, -3.0], [4.2, -2.4]
+  const sunZones = [
+    [-2.9, -4.1], [-0.6, -4.8], [0.6, -3.9], [2.6, -3.6], [3.8, -1.8], [-3.8, -2.5]
   ];
-  for (let i = 0; i < 220 && sunflowerCoords.length < 34; i++) {
-    const c = sunCenters[i % sunCenters.length];
-    const x = c[0] + (rng() - 0.5) * 2.4;
-    const z = c[1] + (rng() - 0.5) * 2.2;
-    if (canPlace(x, z, 0.24)) {
-      registerSpot(x, z, 0.22);
+  for (let i = 0; i < 180 && sunflowerCoords.length < 30; i++) {
+    const c = sunZones[i % sunZones.length];
+    const x = c[0] + (rng() - 0.5) * 2.2;
+    const z = c[1] + (rng() - 0.5) * 1.9;
+    if (canPlacePlant(x, z, 0.25, 0.78)) {
+      registerSpot(x, z, 0.23);
       sunflowerCoords.push({
         x,
         z,
-        scale: 0.72 + rng() * 0.30,
-        height: 0.72 + rng() * 0.42,
-        yaw: 0.16 + (rng() - 0.5) * 0.48
+        scale: 0.72 + rng() * 0.28,
+        height: 0.76 + rng() * 0.38,
+        yaw: 0.14 + (rng() - 0.5) * 0.45
       });
     }
   }
 
-  const sunflowerGeo = createSunflowerGeometry();
-  const sunflowerInstanced = new THREE.InstancedMesh(sunflowerGeo, flowerMat, sunflowerCoords.length);
-  const sunTints = [new THREE.Color('#ffffff'), new THREE.Color('#fef3c7'), new THREE.Color('#fde68a')];
+  const sunDiscGeo = createSunflowerDiscGeometry();
+  const sunRaysGeo = createSunflowerRaysGeometry();
+  const sunDiscInstanced = new THREE.InstancedMesh(sunDiscGeo, sunDiscMat, sunflowerCoords.length);
+  const sunRaysInstanced = new THREE.InstancedMesh(sunRaysGeo, sunRayMat, sunflowerCoords.length);
+  const sunRayTints = [new THREE.Color('#ffffff'), new THREE.Color('#fef3c7'), new THREE.Color('#fde68a')];
 
   for (let i = 0; i < sunflowerCoords.length; i++) {
     const sc = sunflowerCoords[i];
     const gy = meadowHeight(sc.x, sc.z);
-    const topY = gy + sc.height;
-    dummy.position.set(sc.x, topY, sc.z);
-    dummy.rotation.set(0, sc.yaw, (rng() - 0.5) * 0.12);
+    dummy.position.set(sc.x, gy + sc.height, sc.z);
+    dummy.rotation.set(0, sc.yaw, (rng() - 0.5) * 0.10);
     dummy.scale.setScalar(sc.scale);
     dummy.updateMatrix();
-    sunflowerInstanced.setMatrixAt(i, dummy.matrix);
-    sunflowerInstanced.setColorAt(i, sunTints[i % sunTints.length]);
+    sunDiscInstanced.setMatrixAt(i, dummy.matrix);
+    sunRaysInstanced.setMatrixAt(i, dummy.matrix);
+    sunRaysInstanced.setColorAt(i, sunRayTints[i % sunRayTints.length]);
 
     stemRecords.push({
       x: sc.x,
@@ -1066,59 +894,61 @@ export function createMeadowScene(
       rotY: sc.yaw,
       tiltX: 0,
       tiltZ: 0,
-      thick: 1.45
+      thick: 1.4
     });
 
-    // Broad sunflower stem leaves
     for (let sl = 0; sl < 2; sl++) {
-      shrubLeafSpots.push({
+      leafSpots.push({
         x: sc.x,
         z: sc.z,
-        ang: sc.yaw + (sl === 0 ? 1.2 : -1.4),
-        scale: 0.75 * sc.scale,
-        lift: sc.height * (0.35 + sl * 0.24)
+        ang: sc.yaw + (sl === 0 ? 1.15 : -1.35),
+        scale: 0.78 * sc.scale,
+        lift: sc.height * (0.34 + sl * 0.24)
       });
     }
   }
-  sunflowerInstanced.instanceMatrix.needsUpdate = true;
-  if (sunflowerInstanced.instanceColor) sunflowerInstanced.instanceColor.needsUpdate = true;
-  scene.add(sunflowerInstanced);
+  sunDiscInstanced.instanceMatrix.needsUpdate = true;
+  sunRaysInstanced.instanceMatrix.needsUpdate = true;
+  if (sunRaysInstanced.instanceColor) sunRaysInstanced.instanceColor.needsUpdate = true;
+  scene.add(sunDiscInstanced, sunRaysInstanced);
 
-  // --- C. VAN GOGH SAINT-RÉMY IRISES (58 Royal Irises + Sword Leaf Fans) ---
-  const irisTints = ['#6366f1', '#818cf8', '#7c3aed', '#4f46e5', '#a78bfa'];
+  // --- 3. LIFELIKE RUFFLED BEARDED IRISES (46 Veined Blooms on Terraced Slope & Pond Edge) ---
+  const irisTints = ['#818cf8', '#6366f1', '#a78bfa', '#60a5fa', '#c084fc'];
   const irisCoords = [
-    // Egg #4 Hero Iris & Tulip Drift at [2.08, z=1.95] (clearly framed on right!)
-    { x: 2.08, z: 1.95, scale: 1.18, height: 0.82, tint: '#818cf8' },
-    { x: 2.46, z: 1.72, scale: 1.08, height: 0.75, tint: '#7c3aed' },
-    { x: 1.72, z: 2.12, scale: 1.06, height: 0.72, tint: '#6366f1' }
+    // Egg #4 Hero Iris & Tulip Terraced Earthen Slope ("右侧土坡花境")
+    { x: 2.12, z: 1.38, scale: 1.14, height: 0.76, tint: '#818cf8' },
+    { x: 2.52, z: 1.12, scale: 1.06, height: 0.70, tint: '#a78bfa' },
+    { x: 1.82, z: 1.62, scale: 1.02, height: 0.68, tint: '#6366f1' },
+    // Dew pond border irises
+    { x: -1.85, z: 3.62, scale: 1.04, height: 0.70, tint: '#60a5fa' },
+    { x: -1.62, z: 4.28, scale: 0.96, height: 0.64, tint: '#a78bfa' }
   ];
   for (const ic of irisCoords) registerSpot(ic.x, ic.z, 0.20);
 
-  for (let i = 0; i < 320 && irisCoords.length < 58; i++) {
-    const x = (rng() - 0.5) * 14.2;
-    const z = 3.6 - rng() * 8.8;
-    if (canPlace(x, z, 0.21)) {
+  const irisZones = [[2.8, 0.8], [1.9, 2.4], [-2.9, 0.9], [3.3, -1.2], [-1.9, -0.8], [0.9, -1.4]];
+  for (let i = 0; i < 240 && irisCoords.length < 46; i++) {
+    const c = irisZones[i % irisZones.length];
+    const x = c[0] + (rng() - 0.5) * 2.2;
+    const z = c[1] + (rng() - 0.5) * 2.0;
+    if (canPlacePlant(x, z, 0.21, 0.66)) {
       registerSpot(x, z, 0.19);
       irisCoords.push({
         x,
         z,
-        scale: 0.82 + rng() * 0.34,
-        height: 0.56 + rng() * 0.36,
+        scale: 0.80 + rng() * 0.30,
+        height: 0.54 + rng() * 0.30,
         tint: irisTints[irisCoords.length % irisTints.length]
       });
     }
   }
 
-  const irisGeo = createIrisGeometry();
-  const irisInstanced = new THREE.InstancedMesh(irisGeo, flowerMat, irisCoords.length);
-  const swordSpots = [];
-
+  const irisGeo = createIrisBloomGeometry();
+  const irisInstanced = new THREE.InstancedMesh(irisGeo, irisMat, irisCoords.length);
   for (let i = 0; i < irisCoords.length; i++) {
     const ic = irisCoords[i];
     const gy = meadowHeight(ic.x, ic.z);
-    const topY = gy + ic.height;
-    dummy.position.set(ic.x, topY, ic.z);
-    dummy.rotation.set((rng() - 0.5) * 0.12, rng() * Math.PI * 2, (rng() - 0.5) * 0.12);
+    dummy.position.set(ic.x, gy + ic.height, ic.z);
+    dummy.rotation.set((rng() - 0.5) * 0.10, rng() * Math.PI * 2, (rng() - 0.5) * 0.10);
     dummy.scale.setScalar(ic.scale);
     dummy.updateMatrix();
     irisInstanced.setMatrixAt(i, dummy.matrix);
@@ -1132,18 +962,17 @@ export function createMeadowScene(
       rotY: rng() * Math.PI * 2,
       tiltX: 0,
       tiltZ: 0,
-      thick: 1.0
+      thick: 0.96
     });
 
-    // Fan of 4 architectural sword leaves around each iris!
     for (let f = 0; f < 4; f++) {
       swordSpots.push({
-        x: ic.x + (rng() - 0.5) * 0.08,
+        x: ic.x + (rng() - 0.5) * 0.06,
         y: gy,
-        z: ic.z + (rng() - 0.5) * 0.08,
+        z: ic.z + (rng() - 0.5) * 0.06,
         rotY: (f / 4) * Math.PI * 2 + rng() * 0.4,
-        splay: 0.18 + rng() * 0.22,
-        scale: (0.72 + rng() * 0.32) * ic.scale
+        splay: 0.18 + rng() * 0.20,
+        scale: (0.68 + rng() * 0.28) * ic.scale
       });
     }
   }
@@ -1151,40 +980,47 @@ export function createMeadowScene(
   if (irisInstanced.instanceColor) irisInstanced.instanceColor.needsUpdate = true;
   scene.add(irisInstanced);
 
-  // --- D. VELVET ENGLISH GARDEN ROSES (68 Cupped Spiral Roses) ---
-  const rosePalettes = ['#e11d48', '#fb7185', '#f43f5e', '#f472b6', '#fda4af', '#fbbf24'];
+  // --- 4. LIFELIKE 36-PETAL LAYERED GARDEN ROSES (56 Plush Roses Framing Path & Wish Bottle) ---
+  const rosePalettes = ['#e11d48', '#fb7185', '#f43f5e', '#f472b6', '#fda4af', '#fde68a'];
   const roseCoords = [
-    // Frame Egg #3 Crystal Wish Bottle at [0.18, z=2.65] symmetrically so dark grass silhouettes the crystal glass!
-    { x: -0.38, z: 2.68, scale: 1.15, height: 0.46, tint: '#e11d48' },
-    { x: 0.72, z: 2.62, scale: 1.14, height: 0.46, tint: '#fb7185' },
-    { x: -0.32, z: 2.16, scale: 1.08, height: 0.54, tint: '#fda4af' },
-    { x: 0.66, z: 2.16, scale: 1.08, height: 0.54, tint: '#f43f5e' }
+    // Egg #3 Hero Rose Alcove cradling Crystal Star-Sand Bottle at [0.82, 2.12] beside the path!
+    { x: 0.38, z: 2.22, scale: 1.06, height: 0.44, tint: '#e11d48' },
+    { x: 1.28, z: 2.08, scale: 1.08, height: 0.46, tint: '#fb7185' },
+    { x: 0.62, z: 1.66, scale: 1.02, height: 0.52, tint: '#fda4af' },
+    { x: 1.16, z: 1.68, scale: 1.00, height: 0.50, tint: '#f43f5e' },
+    // Cottage doorway climbing/border roses
+    { x: -1.18, z: -4.85, scale: 0.95, height: 0.46, tint: '#fb7185' },
+    { x: -2.42, z: -4.85, scale: 0.95, height: 0.46, tint: '#fda4af' }
   ];
   for (const rc of roseCoords) registerSpot(rc.x, rc.z, 0.18);
 
-  for (let i = 0; i < 360 && roseCoords.length < 68; i++) {
-    const x = (rng() - 0.5) * 13.8;
-    const z = 3.8 - rng() * 8.6;
-    if (canPlace(x, z, 0.19)) {
-      registerSpot(x, z, 0.17);
+  // Plant romantic rose drifts hugging both edges of the winding path & knoll bases
+  for (let i = 0; i < 320 && roseCoords.length < 56; i++) {
+    const t = 0.08 + rng() * 0.84;
+    const pt = PATH_CURVE_2D.getPointAt(t);
+    const side = rng() < 0.5 ? -1 : 1;
+    const offset = 0.72 + rng() * 1.65;
+    const x = pt.x + side * offset + (rng() - 0.5) * 0.8;
+    const z = pt.z + (rng() - 0.5) * 1.1;
+    if (canPlacePlant(x, z, 0.19, 0.64)) {
+      registerSpot(x, z, 0.18);
       roseCoords.push({
         x,
         z,
-        scale: 0.84 + rng() * 0.34,
-        height: 0.38 + rng() * 0.32,
+        scale: 0.78 + rng() * 0.28,
+        height: 0.36 + rng() * 0.26,
         tint: rosePalettes[roseCoords.length % rosePalettes.length]
       });
     }
   }
 
-  const roseGeo = createRoseGeometry();
-  const roseInstanced = new THREE.InstancedMesh(roseGeo, flowerMat, roseCoords.length);
+  const roseGeo = createRoseBloomGeometry();
+  const roseInstanced = new THREE.InstancedMesh(roseGeo, roseMat, roseCoords.length);
   for (let i = 0; i < roseCoords.length; i++) {
     const rc = roseCoords[i];
     const gy = meadowHeight(rc.x, rc.z);
-    const topY = gy + rc.height;
-    dummy.position.set(rc.x, topY, rc.z);
-    dummy.rotation.set((rng() - 0.5) * 0.20, rng() * Math.PI * 2, (rng() - 0.5) * 0.20);
+    dummy.position.set(rc.x, gy + rc.height, rc.z);
+    dummy.rotation.set((rng() - 0.5) * 0.18, rng() * Math.PI * 2, (rng() - 0.5) * 0.18);
     dummy.scale.setScalar(rc.scale);
     dummy.updateMatrix();
     roseInstanced.setMatrixAt(i, dummy.matrix);
@@ -1198,56 +1034,65 @@ export function createMeadowScene(
       rotY: rng() * Math.PI * 2,
       tiltX: 0,
       tiltZ: 0,
-      thick: 0.92
+      thick: 0.88
     });
+
+    // Pinnate rose foliage leaves on stems
+    for (let rl = 0; rl < 2; rl++) {
+      leafSpots.push({
+        x: rc.x,
+        z: rc.z,
+        ang: rl * Math.PI + rng() * 0.8,
+        scale: 0.52 * rc.scale,
+        lift: rc.height * (0.42 + rl * 0.24)
+      });
+    }
   }
   roseInstanced.instanceMatrix.needsUpdate = true;
   if (roseInstanced.instanceColor) roseInstanced.instanceColor.needsUpdate = true;
   scene.add(roseInstanced);
 
-  // --- E. MOONLIT LILY-GOBLET TULIPS (76 Slender Graceful Tulips) ---
-  const tulipPalettes = ['#fde68a', '#fda4af', '#fbbf24', '#f472b6', '#c4b5fd', '#7dd3fc'];
+  // --- 5. LIFELIKE DARWIN GOBLET TULIPS (64 Silky Cupped Tulips on Slopes & Path Verges) ---
+  const tulipPalettes = ['#fda4af', '#fde68a', '#f472b6', '#fbbf24', '#c4b5fd', '#fb7185'];
   const tulipCoords = [];
-  // Companion tulips near Egg #4 Iris & Tulip drift (non-overlapping!)
-  const tulipSeeds = [
-    [2.34, 2.22], [1.88, 1.68], [2.64, 2.04], [1.50, 1.88]
+  const heroTulipSeeds = [
+    [2.38, 1.65], [1.92, 1.12], [2.72, 1.42], [1.62, 1.32], [-0.42, 3.85], [0.85, 3.45]
   ];
-  for (const [tx, tz] of tulipSeeds) {
-    if (canPlace(tx, tz, 0.15)) {
+  for (const [tx, tz] of heroTulipSeeds) {
+    if (canPlacePlant(tx, tz, 0.15, 0.62)) {
       registerSpot(tx, tz, 0.15);
       tulipCoords.push({
         x: tx,
         z: tz,
-        scale: 1.02 + rng() * 0.18,
-        height: 0.48 + rng() * 0.18,
+        scale: 0.92 + rng() * 0.18,
+        height: 0.42 + rng() * 0.16,
         tint: tulipPalettes[tulipCoords.length % tulipPalettes.length]
       });
     }
   }
 
-  for (let i = 0; i < 420 && tulipCoords.length < 76; i++) {
-    const x = (rng() - 0.5) * 14.0;
-    const z = 3.9 - rng() * 8.8;
-    if (canPlace(x, z, 0.16)) {
+  for (let i = 0; i < 360 && tulipCoords.length < 64; i++) {
+    const x = (rng() - 0.5) * 11.5;
+    const z = 4.2 - rng() * 9.4;
+    if (canPlacePlant(x, z, 0.16, 0.64)) {
       registerSpot(x, z, 0.15);
       tulipCoords.push({
         x,
         z,
-        scale: 0.85 + rng() * 0.30,
-        height: 0.40 + rng() * 0.30,
+        scale: 0.78 + rng() * 0.26,
+        height: 0.36 + rng() * 0.24,
         tint: tulipPalettes[tulipCoords.length % tulipPalettes.length]
       });
     }
   }
 
-  const tulipGeo = createTulipGeometry();
-  const tulipInstanced = new THREE.InstancedMesh(tulipGeo, flowerMat, tulipCoords.length);
+  const tulipGeo = createTulipBloomGeometry();
+  const tulipInstanced = new THREE.InstancedMesh(tulipGeo, tulipMat, tulipCoords.length);
   for (let i = 0; i < tulipCoords.length; i++) {
     const tc = tulipCoords[i];
     const gy = meadowHeight(tc.x, tc.z);
-    const topY = gy + tc.height;
-    dummy.position.set(tc.x, topY, tc.z);
-    dummy.rotation.set((rng() - 0.5) * 0.16, rng() * Math.PI * 2, (rng() - 0.5) * 0.16);
+    dummy.position.set(tc.x, gy + tc.height, tc.z);
+    dummy.rotation.set((rng() - 0.5) * 0.14, rng() * Math.PI * 2, (rng() - 0.5) * 0.14);
     dummy.scale.setScalar(tc.scale);
     dummy.updateMatrix();
     tulipInstanced.setMatrixAt(i, dummy.matrix);
@@ -1261,18 +1106,17 @@ export function createMeadowScene(
       rotY: rng() * Math.PI * 2,
       tiltX: 0,
       tiltZ: 0,
-      thick: 0.85
+      thick: 0.80
     });
 
-    // Two clasping lance leaves at each tulip base
     for (let tl = 0; tl < 2; tl++) {
       swordSpots.push({
         x: tc.x,
         y: gy,
         z: tc.z,
         rotY: tl * Math.PI + rng() * 0.6,
-        splay: 0.28 + rng() * 0.15,
-        scale: 0.55 * tc.scale
+        splay: 0.26 + rng() * 0.14,
+        scale: 0.50 * tc.scale
       });
     }
   }
@@ -1280,9 +1124,9 @@ export function createMeadowScene(
   if (tulipInstanced.instanceColor) tulipInstanced.instanceColor.needsUpdate = true;
   scene.add(tulipInstanced);
 
-  // --- BUILD ALL REAL 3D SWAYING BOTANICAL STEMS & LEAVES ---
+  // --- BUILD ALL SWAYING 3D STEMS, VEINED BROAD LEAVES & SWORD LEAVES ---
   const stemGeo = createCurvedStemGeometry();
-  const stemInstanced = new THREE.InstancedMesh(stemGeo, stemAndLeafMat, stemRecords.length);
+  const stemInstanced = new THREE.InstancedMesh(stemGeo, stemAndSwordMat, stemRecords.length);
   for (let i = 0; i < stemRecords.length; i++) {
     const sr = stemRecords[i];
     dummy.position.set(sr.x, sr.y, sr.z);
@@ -1294,13 +1138,13 @@ export function createMeadowScene(
   stemInstanced.instanceMatrix.needsUpdate = true;
   scene.add(stemInstanced);
 
-  const leafGeo = createHydrangeaLeafGeometry();
-  const leafInstanced = new THREE.InstancedMesh(leafGeo, stemAndLeafMat, shrubLeafSpots.length);
-  for (let i = 0; i < shrubLeafSpots.length; i++) {
-    const ls = shrubLeafSpots[i];
+  const leafGeo = createBroadLeafGeometry();
+  const leafInstanced = new THREE.InstancedMesh(leafGeo, broadLeafMat, leafSpots.length);
+  for (let i = 0; i < leafSpots.length; i++) {
+    const ls = leafSpots[i];
     const gy = meadowHeight(ls.x, ls.z);
     dummy.position.set(ls.x, gy + ls.lift, ls.z);
-    dummy.rotation.set(0.16 + rng() * 0.26, -ls.ang + Math.PI * 0.5, (rng() - 0.5) * 0.18);
+    dummy.rotation.set(0.16 + rng() * 0.24, -ls.ang + Math.PI * 0.5, (rng() - 0.5) * 0.16);
     dummy.scale.setScalar(ls.scale);
     dummy.updateMatrix();
     leafInstanced.setMatrixAt(i, dummy.matrix);
@@ -1308,8 +1152,8 @@ export function createMeadowScene(
   leafInstanced.instanceMatrix.needsUpdate = true;
   scene.add(leafInstanced);
 
-  const swordGeo = createIrisSwordLeafGeometry();
-  const swordInstanced = new THREE.InstancedMesh(swordGeo, stemAndLeafMat, swordSpots.length);
+  const swordGeo = createSwordLeafGeometry();
+  const swordInstanced = new THREE.InstancedMesh(swordGeo, stemAndSwordMat, swordSpots.length);
   for (let i = 0; i < swordSpots.length; i++) {
     const sw = swordSpots[i];
     dummy.position.set(sw.x, sw.y, sw.z);
@@ -1321,64 +1165,51 @@ export function createMeadowScene(
   swordInstanced.instanceMatrix.needsUpdate = true;
   scene.add(swordInstanced);
 
-  // --- F. GYPSOPHILA "满天星" FOAMY STAR-CLOUD PANICLES (6,400 Blossoms + Fine Panicle Sprays) ---
-  const gypCount = 6400;
-  const gypGeo = createGypsophilaGeometry();
+  // --- 6. GYPSOPHILA ("满天星") LACY STAR-CLOUD BORDERS ALONG PATH & SHRUBS ---
+  const gypCount = 3400;
+  const gypGeo = createGypsophilaClusterGeometry();
   const gypInstanced = new THREE.InstancedMesh(gypGeo, gypMat, gypCount);
   const gypTints = [
     new THREE.Color('#ffffff'),
     new THREE.Color('#e0f2fe'),
-    new THREE.Color('#bae6fd'),
     new THREE.Color('#fef9c3'),
     new THREE.Color('#ede9fe')
   ];
 
-  // Create 90 organic Baby's Breath cloud panicles hugging shrubs, roses & winding Milky-Way ribbons
   const gypClouds = [];
-  for (const shrub of hydrangeaShrubs) {
-    for (let c = 0; c < 2; c++) {
-      const a = rng() * Math.PI * 2;
-      const d = (0.48 + rng() * 0.25) * shrub.scale;
-      gypClouds.push({
-        x: shrub.x + Math.cos(a) * d,
-        z: shrub.z + Math.sin(a) * d,
-        r: 0.32 + rng() * 0.18,
-        h: 0.24 + rng() * 0.18
-      });
+  // Fluffy baby's-breath cushions hugging the winding dirt path verges!
+  for (let i = 0; i < 44; i++) {
+    const t = 0.05 + (i / 44) * 0.88;
+    const pt = PATH_CURVE_2D.getPointAt(t);
+    const side = i % 2 === 0 ? -1 : 1;
+    const gx = pt.x + side * (0.68 + rng() * 0.55);
+    const gz = pt.z + (rng() - 0.5) * 0.45;
+    if (distToPath(gx, gz) > 0.56) {
+      gypClouds.push({ x: gx, z: gz, r: 0.26 + rng() * 0.16, h: 0.18 + rng() * 0.14 });
     }
   }
-  // Frame the Rose & Wish-Bottle romantic clearing with foamy Gypsophila clouds
-  gypClouds.push(
-    { x: -0.45, z: 2.55, r: 0.36, h: 0.26 },
-    { x: 0.85, z: 2.95, r: 0.38, h: 0.26 },
-    { x: 0.28, z: 3.22, r: 0.32, h: 0.22 }
-  );
-  while (gypClouds.length < 92) {
-    const u = gypClouds.length / 92;
-    // Milky-way floral ribbon winding S-like across the meadow
-    const ribbonX = (u - 0.5) * 13.5 + Math.sin(u * Math.PI * 3.0) * 1.4 + (rng() - 0.5) * 1.6;
-    const ribbonZ = 3.5 - u * 8.2 + (rng() - 0.5) * 1.5;
-    gypClouds.push({
-      x: ribbonX,
-      z: ribbonZ,
-      r: 0.30 + rng() * 0.22,
-      h: 0.20 + rng() * 0.18
-    });
+  for (const shrub of hydrangeaShrubs) {
+    const a = rng() * Math.PI * 2;
+    const d = (0.46 + rng() * 0.20) * shrub.scale;
+    const gx = shrub.x + Math.cos(a) * d;
+    const gz = shrub.z + Math.sin(a) * d;
+    if (distToPath(gx, gz) > 0.56) {
+      gypClouds.push({ x: gx, z: gz, r: 0.30 + rng() * 0.15, h: 0.22 + rng() * 0.14 });
+    }
   }
 
   for (let i = 0; i < gypCount; i++) {
     const cloud = gypClouds[i % gypClouds.length];
-    // Gaussian-like spherical cloud distribution so Baby's Breath forms airy puffs, not random confetti!
     const a = rng() * Math.PI * 2;
     const rad = cloud.r * Math.pow(rng(), 0.62);
     const gx = cloud.x + Math.cos(a) * rad;
     const gz = cloud.z + Math.sin(a) * rad;
     const dome = Math.sqrt(Math.max(0, 1 - (rad / (cloud.r + 0.01)) ** 2));
-    const gy = meadowHeight(gx, gz) + 0.10 + dome * cloud.h + (rng() - 0.5) * 0.09;
+    const gy = meadowHeight(gx, gz) + 0.09 + dome * cloud.h + (rng() - 0.5) * 0.07;
 
     dummy.position.set(gx, gy, gz);
-    dummy.rotation.set((rng() - 0.5) * 0.8, rng() * Math.PI * 2, (rng() - 0.5) * 0.8);
-    dummy.scale.setScalar(0.42 + rng() * 0.42);
+    dummy.rotation.set((rng() - 0.5) * 0.5, rng() * Math.PI * 2, (rng() - 0.5) * 0.5);
+    dummy.scale.setScalar(0.58 + rng() * 0.46);
     dummy.updateMatrix();
     gypInstanced.setMatrixAt(i, dummy.matrix);
     gypInstanced.setColorAt(i, gypTints[i % gypTints.length]);
@@ -1387,75 +1218,84 @@ export function createMeadowScene(
   if (gypInstanced.instanceColor) gypInstanced.instanceColor.needsUpdate = true;
   scene.add(gypInstanced);
 
-  // --- G. DENSE 14,000-BLADE PAINTERLY MEADOW GRASS CARPET (Zero Bare Plastic Ground!) ---
+  // --- 7. 18,000 SOFT MULTI-TONED FAIRYTALE GRASSLAND BLADES (Sparing Winding Path & Pond!) ---
   const grassGeo = createGrassBladeGeometry();
-  const totalBlades = 14000;
-  const grassInstanced = new THREE.InstancedMesh(grassGeo, grassMat, totalBlades);
+  const maxBlades = 18000;
+  const grassInstanced = new THREE.InstancedMesh(grassGeo, grassMat, maxBlades);
   const grassTints = [
-    new THREE.Color('#7dd3fc'),
+    new THREE.Color('#6ee7b7'),
+    new THREE.Color('#86efac'),
     new THREE.Color('#5eead4'),
-    new THREE.Color('#93c5fd'),
-    new THREE.Color('#fef08a')
+    new THREE.Color('#bef264')
   ];
 
-  for (let i = 0; i < totalBlades; i++) {
-    // Concentrate lush density in foreground & midground where camera sees between stems
-    const x = (rng() - 0.5) * 20.5;
-    const z = 4.6 - Math.pow(rng(), 0.82) * 11.2;
+  let gPlaced = 0;
+  for (let attempt = 0; attempt < maxBlades * 2 && gPlaced < maxBlades; attempt++) {
+    const x = (rng() - 0.5) * 21.0;
+    const z = 5.2 - Math.pow(rng(), 0.85) * 12.2;
+    const dP = distToPath(x, z);
+    if (dP < 0.46) continue; // Keep winding country dirt lane clean & crisp!
+    if (Math.hypot(x + 1.18, z - 3.45) < 0.72) continue; // Keep mirror dew pond clear!
+    if (Math.hypot(x - 2.35, z + 0.15) < 0.62) continue; // Keep 7-mushroom fairy ring visible!
+    if (Math.hypot(x + 1.85, z + 5.35) < 0.72) continue; // Keep cottage footprint clear!
+
     const y = meadowHeight(x, z);
-    const distBottle = Math.hypot(x - 0.18, z - 2.65);
-    const bottleTrim = distBottle < 0.38 ? 0.34 : 1.0;
+    const vergeShorten = smoothstep(0.46, 0.86, dP);
+    const slopeExpose = Math.hypot(x - 2.35, z - 1.35) < 0.85 ? 0.52 : 1.0; // Let warm earthen slope peek through!
+    const bottleTrim = Math.hypot(x - 0.82, z - 2.12) < 0.38 ? 0.30 : 1.0;
+
     dummy.position.set(x, y, z);
-    dummy.rotation.set((rng() - 0.5) * 0.22, rng() * Math.PI * 2, (rng() - 0.5) * 0.24);
-    const wScale = 0.85 + rng() * 0.55;
-    const hScale = (0.46 + rng() * 0.66) * bottleTrim;
+    dummy.rotation.set((rng() - 0.5) * 0.22, rng() * Math.PI * 2, (rng() - 0.5) * 0.22);
+    const wScale = 0.82 + rng() * 0.52;
+    const hScale = (0.34 + rng() * 0.58) * (0.35 + 0.65 * vergeShorten) * bottleTrim * slopeExpose;
     dummy.scale.set(wScale, hScale, 1);
     dummy.updateMatrix();
-    grassInstanced.setMatrixAt(i, dummy.matrix);
+    grassInstanced.setMatrixAt(gPlaced, dummy.matrix);
 
-    colorTmp.setRGB(0.82, 0.92, 0.94).lerp(grassTints[i % grassTints.length], 0.14);
-    grassInstanced.setColorAt(i, colorTmp);
+    colorTmp.setRGB(0.84, 0.94, 0.86).lerp(grassTints[gPlaced % grassTints.length], 0.20);
+    grassInstanced.setColorAt(gPlaced, colorTmp);
+    gPlaced++;
   }
+  grassInstanced.count = gPlaced;
   grassInstanced.instanceMatrix.needsUpdate = true;
   if (grassInstanced.instanceColor) grassInstanced.instanceColor.needsUpdate = true;
   scene.add(grassInstanced);
 
-  // ============================================================================
-  // 3. FIVE INTERACTIVE EASTER EGG TARGETS + CRYSTAL STAR-SAND WISH BOTTLE
-  // ============================================================================
+  // ==========================================================================
+  // E. 5 CORE LOVE-CONFESSION LANDMARKS + CRYSTAL STAR-SAND WISH BOTTLE
+  // ==========================================================================
   const eggNodes = new Map();
-  const raycastTargets = [];
+  const raycastTargets = [...worldProps.raycastTargets, fairySprite.hitSphere];
 
   for (const egg of eggs) {
     const [ex, ey, ez] = egg.position;
-    const worldY = egg.kind === 'meteor' ? ey : meadowHeight(ex, ez) + 0.48;
+    const worldY = egg.kind === 'meteor' ? ey : meadowHeight(ex, ez) + 0.42;
     const anchor = new THREE.Vector3(ex, worldY, ez);
     const eggGroup = new THREE.Group();
     eggGroup.position.copy(anchor);
     scene.add(eggGroup);
 
-    // Delicate glowing starlight aura ring on the meadow floor
-    const ringGeo = new THREE.RingGeometry(0.46, 0.53, 48);
+    const ringGeo = new THREE.RingGeometry(0.42, 0.49, 48);
     ringGeo.rotateX(-Math.PI * 0.5);
     const ringMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(egg.color || '#7dd3fc'),
       transparent: true,
-      opacity: egg.kind === 'meteor' ? 0.0 : 0.30,
+      opacity: egg.kind === 'meteor' ? 0.0 : 0.28,
       side: THREE.DoubleSide,
       blending: THREE.AdditiveBlending,
       depthWrite: false
     });
     const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-    ringMesh.position.y = -0.26;
+    ringMesh.position.y = -0.34;
     eggGroup.add(ringMesh);
 
     if (egg.kind === 'bottle') {
-      // Egg #3: Sculpted Fresnel-Glass Apothecary Wish Bottle with Cork, Ribbon & Glowing Love Scroll
+      // Sculpted Fresnel-Glass Apothecary Wish Bottle beside the central bend of the dirt path!
       const bottleGroup = new THREE.Group();
-      bottleGroup.position.y = 0.04;
-      bottleGroup.rotation.z = 0.24;
+      bottleGroup.position.y = -0.06;
+      bottleGroup.rotation.z = 0.22;
       bottleGroup.rotation.x = 0.08;
-      bottleGroup.scale.setScalar(1.26);
+      bottleGroup.scale.setScalar(1.22);
 
       const glassMat = new THREE.ShaderMaterial({
         transparent: true,
@@ -1476,17 +1316,13 @@ export function createMeadowScene(
           varying vec3 vV;
           void main() {
             float fresnel = pow(1.0 - clamp(abs(dot(normalize(vN), normalize(vV))), 0.0, 1.0), 1.65);
-            vec3 col = mix(vec3(0.22, 0.58, 0.92), vec3(0.88, 0.97, 1.0), fresnel);
-            float alpha = 0.22 + 0.68 * fresnel;
-            gl_FragColor = vec4(col, alpha);
+            vec3 col = mix(vec3(0.24, 0.62, 0.95), vec3(0.92, 0.98, 1.0), fresnel);
+            gl_FragColor = vec4(col, 0.24 + 0.68 * fresnel);
           }
         `
       });
 
       const body = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.44, 28, 1, true), glassMat);
-      const bottomCap = new THREE.Mesh(new THREE.CircleGeometry(0.16, 24), glassMat);
-      bottomCap.rotation.x = Math.PI * 0.5;
-      bottomCap.position.y = -0.22;
       const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.13, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.52), glassMat);
       shoulder.position.y = 0.19;
       const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.072, 0.16, 20, 1, true), glassMat);
@@ -1536,12 +1372,12 @@ export function createMeadowScene(
       starSand.position.y = -0.14;
       starSand.scale.set(1, 0.52, 1);
 
-      bottleGroup.add(starSand, scroll, scrollRibbon, body, bottomCap, shoulder, neck, lipRing, goldRibbon, cork);
+      bottleGroup.add(starSand, scroll, scrollRibbon, body, shoulder, neck, lipRing, goldRibbon, cork);
       eggGroup.add(bottleGroup);
     }
 
     const hitSphere = new THREE.Mesh(
-      new THREE.SphereGeometry(egg.kind === 'meteor' ? 1.45 : 1.15, 12, 12),
+      new THREE.SphereGeometry(egg.kind === 'meteor' ? 1.45 : 1.05, 12, 12),
       new THREE.MeshBasicMaterial({ visible: false })
     );
     hitSphere.userData.eggId = egg.id;
@@ -1553,28 +1389,27 @@ export function createMeadowScene(
       anchor,
       group: eggGroup,
       ringMesh,
-      unlocked: false,
-      hintPulse: 0
+      unlocked: false
     });
   }
 
-  // --- 220 Bioluminescent Fireflies & Rising Stardust Motes ---
-  const fireflyCount = 220;
+  // --- 260 Dreamy Fairytale Fireflies ---
+  const fireflyCount = 260;
   const ffPos = new Float32Array(fireflyCount * 3);
   const ffSeed = new Float32Array(fireflyCount * 4);
   const ffColor = new Float32Array(fireflyCount * 3);
 
   for (let i = 0; i < fireflyCount; i++) {
     const fx = (rng() - 0.5) * 16.5;
-    const fz = 4.2 - rng() * 10.5;
-    const fy = meadowHeight(fx, fz) + 0.22 + rng() * 2.1;
+    const fz = 4.6 - rng() * 11.2;
+    const fy = meadowHeight(fx, fz) + 0.18 + rng() * 2.0;
     ffPos[i * 3] = fx;
     ffPos[i * 3 + 1] = fy;
     ffPos[i * 3 + 2] = fz;
 
     ffSeed[i * 4] = rng() * Math.PI * 2;
-    ffSeed[i * 4 + 1] = 0.55 + rng() * 1.25;
-    ffSeed[i * 4 + 2] = 0.20 + rng() * 0.30;
+    ffSeed[i * 4 + 1] = 0.55 + rng() * 1.15;
+    ffSeed[i * 4 + 2] = 0.18 + rng() * 0.28;
     ffSeed[i * 4 + 3] = rng();
 
     const hex = i % 3 === 0 ? '#fde047' : (i % 3 === 1 ? '#7dd3fc' : '#fef9c3');
@@ -1610,13 +1445,13 @@ export function createMeadowScene(
         vColor = color;
         float t = uTime * aSeed.y + aSeed.x;
         vec3 p = position;
-        p.x += sin(t * 1.05) * 0.46 + cos(t * 0.48) * 0.22;
-        p.y += sin(t * 1.35) * 0.26 + uFinaleProgress * (0.95 + aSeed.w * 2.4);
-        p.z += cos(t * 0.88) * 0.44;
-        vPulse = 0.32 + 0.68 * pow(0.5 + 0.5 * sin(t * 2.2), 2.0);
+        p.x += sin(t * 1.05) * 0.44 + cos(t * 0.48) * 0.20;
+        p.y += sin(t * 1.32) * 0.24 + uFinaleProgress * (0.85 + aSeed.w * 2.2);
+        p.z += cos(t * 0.88) * 0.42;
+        vPulse = 0.30 + 0.70 * pow(0.5 + 0.5 * sin(t * 2.1), 2.0);
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
         gl_Position = projectionMatrix * mv;
-        gl_PointSize = (16.0 + 12.0 * vPulse) * aSeed.z * uPixelRatio * (16.0 / max(2.4, -mv.z));
+        gl_PointSize = (15.0 + 11.0 * vPulse) * aSeed.z * uPixelRatio * (15.0 / max(2.2, -mv.z));
       }
     `,
     fragmentShader: /* glsl */ `
@@ -1626,7 +1461,7 @@ export function createMeadowScene(
         vec2 uv = gl_PointCoord - 0.5;
         float d = length(uv);
         float core = exp(-d * d * 42.0);
-        float halo = exp(-d * d * 12.0) * 0.55;
+        float halo = exp(-d * d * 12.0) * 0.52;
         float glow = (core + halo) * vPulse;
         if (glow < 0.015) discard;
         vec3 srgb = pow(clamp(vColor, 0.0, 1.0), vec3(1.0 / 2.2));
@@ -1636,9 +1471,9 @@ export function createMeadowScene(
   });
   scene.add(new THREE.Points(ffGeo, ffMat));
 
-  // ============================================================================
-  // 4. CAMERA, RAYCASTING & ANIMATION LOOP
-  // ============================================================================
+  // ==========================================================================
+  // F. CAMERA MODES (PANORAMA / FOLLOW SPRITE / FOCUS) & POINTER INTERACTION
+  // ==========================================================================
   const raycaster = new THREE.Raycaster();
   const pointerNDC = new THREE.Vector2();
   const parallaxOffset = new THREE.Vector2(0, 0);
@@ -1653,8 +1488,7 @@ export function createMeadowScene(
     renderer.setPixelRatio(dpr);
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
-    // Slightly wider vertical framing on narrow mobile screens so sky + meadow balance naturally
-    camera.fov = width < 640 ? 50 : 44;
+    camera.fov = width < 640 ? 54 : 45;
     camera.updateProjectionMatrix();
     ffMat.uniforms.uPixelRatio.value = dpr;
   }
@@ -1662,38 +1496,49 @@ export function createMeadowScene(
   resize();
 
   function updateCameraTargets(nowMs) {
-    if (focusedEgg && nowMs < focusUntil) {
-      const node = eggNodes.get(focusedEgg);
-      if (node) {
-        const [ox, oy, oz] = node.egg.cameraOffset || [0, 1.4, 4.2];
-        cameraTargetPos.set(ox, oy, oz);
-        cameraTargetLook.copy(node.anchor);
-        return;
-      }
-    } else {
-      focusedEgg = null;
+    if (focusedTarget && nowMs < focusUntil) {
+      cameraTargetPos.copy(focusedTarget.camPos);
+      cameraTargetLook.copy(focusedTarget.lookAt);
+      return;
+    }
+    focusedTarget = null;
+
+    if (followSpriteMode) {
+      // Cozy third-person fairytale follow camera gliding softly behind the exploring sprite!
+      const sp = fairySprite.getPosition();
+      cameraTargetPos.set(
+        sp.x * 0.82 + parallaxOffset.x * 0.65 + dragYaw * 1.6,
+        sp.y + 1.52 + dragPitch * 0.45,
+        sp.z + 3.35
+      );
+      cameraTargetLook.set(
+        sp.x,
+        sp.y + 0.36 + dragPitch * 0.45,
+        sp.z - 1.25
+      );
+      return;
     }
 
     if (macroMode) {
       cameraTargetPos.set(
         parallaxOffset.x * 1.05 + dragYaw * 2.0,
-        1.02 + parallaxOffset.y * 0.20 + dragPitch * 0.48,
-        4.15
+        1.25 + parallaxOffset.y * 0.22 + dragPitch * 0.48,
+        4.45
       );
       cameraTargetLook.set(
         parallaxOffset.x * 0.55 + dragYaw * 2.5,
-        0.48 + dragPitch * 0.68,
-        -1.0
+        0.42 + dragPitch * 0.65,
+        -1.2
       );
     } else {
       cameraTargetPos.set(
-        cameraBase.x + parallaxOffset.x * 1.15 + dragYaw * 2.3,
-        cameraBase.y + parallaxOffset.y * 0.26 + dragPitch * 0.60,
+        cameraBase.x + parallaxOffset.x * 1.10 + dragYaw * 2.2,
+        cameraBase.y + parallaxOffset.y * 0.24 + dragPitch * 0.55,
         cameraBase.z
       );
       cameraTargetLook.set(
-        cameraLookBase.x + parallaxOffset.x * 0.70 + dragYaw * 3.0,
-        cameraLookBase.y + parallaxOffset.y * 0.34 + dragPitch * 0.85,
+        cameraLookBase.x + parallaxOffset.x * 0.68 + dragYaw * 2.8,
+        cameraLookBase.y + parallaxOffset.y * 0.32 + dragPitch * 0.80,
         cameraLookBase.z
       );
     }
@@ -1708,237 +1553,260 @@ export function createMeadowScene(
     lastFrameMs = nowMs;
 
     sharedUniforms.uTime.value += dt;
+    const timeSec = sharedUniforms.uTime.value;
     sharedUniforms.uPointerActive.value = Math.max(0, sharedUniforms.uPointerActive.value - dt * 0.85);
 
     for (let i = 0; i < ripples.length; i++) {
       if (ripples[i].w >= 0) {
-        ripples[i].w += dt * 4.2;
-        if (ripples[i].w > 11.5) ripples[i].w = -1;
+        ripples[i].w += dt * 4.4;
+        if (ripples[i].w > 12.0) ripples[i].w = -1;
       }
     }
 
     finaleProgress += (targetFinale - finaleProgress) * Math.min(1, dt * 1.8);
     sharedUniforms.uFinaleProgress.value = finaleProgress;
 
-    const t = sharedUniforms.uTime.value;
-    for (const node of eggNodes.values()) {
-      if (node.egg.kind === 'meteor') continue;
-      const pulse = 0.82 + 0.18 * Math.sin(t * 2.3 + node.egg.order);
-      node.hintPulse = Math.max(0, node.hintPulse - dt * 1.4);
-      node.ringMesh.scale.setScalar(pulse * (1 + node.hintPulse * 0.4));
-      node.ringMesh.material.opacity = (node.unlocked ? 0.14 : 0.32) * pulse + node.hintPulse * 0.24;
-    }
+    // Update the free-roaming Exploring Fairy Sprite & sync her warm lantern light!
+    fairySprite.update(dt, timeSec, renderer.getPixelRatio());
+    fairySprite.getLanternWorldPos(sharedUniforms.uFairyLightPos.value);
+
+    // Update interactive 3D fairytale props (chimney hearts, mushroom bounce, dandelions, pond ripples)
+    worldProps.update(dt, timeSec);
+
+    eggNodes.forEach((node, id) => {
+      const pulse = 0.5 + 0.5 * Math.sin(timeSec * 2.8 + id.length);
+      node.ringMesh.scale.setScalar(0.92 + pulse * 0.16);
+      if (node.egg.kind !== 'meteor') {
+        node.ringMesh.material.opacity = node.unlocked ? 0.14 : 0.24 + pulse * 0.18;
+      }
+    });
 
     updateCameraTargets(nowMs);
-    cameraCurrentPos.lerp(cameraTargetPos, Math.min(1, dt * 4.2));
-    cameraCurrentLook.lerp(cameraTargetLook, Math.min(1, dt * 4.2));
+    const camLerp = 1 - Math.exp(-dt * 3.4);
+    cameraCurrentPos.lerp(cameraTargetPos, camLerp);
+    cameraCurrentLook.lerp(cameraTargetLook, camLerp);
     camera.position.copy(cameraCurrentPos);
     camera.lookAt(cameraCurrentLook);
 
     renderer.render(scene, camera);
-    renderCount++;
+    renderCount += 1;
+    rafId = window.requestAnimationFrame(renderFrame);
   }
 
-  function loop(nowMs) {
-    if (disposed) return;
-    renderFrame(nowMs);
-    rafId = requestAnimationFrame(loop);
+  // Pointer grass-parting, drag-orbit & click-to-explore / click-on-secret!
+  let isPointerDown = false;
+  let downX = 0;
+  let downY = 0;
+  let movedDist = 0;
+
+  function updatePointerNDC(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(1, rect.width);
+    const h = Math.max(1, rect.height);
+    pointerNDC.x = ((clientX - rect.left) / w) * 2 - 1;
+    pointerNDC.y = -((clientY - rect.top) / h) * 2 + 1;
   }
 
-  renderFrame(performance.now());
-  rafId = requestAnimationFrame(loop);
+  function onPointerMove(ev) {
+    updatePointerNDC(ev.clientX, ev.clientY);
+    parallaxOffset.set(pointerNDC.x * 0.36, pointerNDC.y * 0.22);
 
-  let pointerDownX = 0;
-  let pointerDownY = 0;
-  let isDragging = false;
-  let draggedDistance = 0;
-
-  function toNormCoords(x, y) {
-    const width = Math.max(1, canvas.clientWidth || window.innerWidth || 1280);
-    const height = Math.max(1, canvas.clientHeight || window.innerHeight || 720);
-    if (x > 1.01 || y > 1.01) {
-      return { nx: x / width, ny: y / height, width, height };
+    if (isPointerDown) {
+      const dx = ev.clientX - downX;
+      const dy = ev.clientY - downY;
+      movedDist += Math.hypot(dx, dy);
+      dragYaw = clamp(dragYaw - dx * 0.0022, -1.15, 1.15);
+      dragPitch = clamp(dragPitch - dy * 0.0018, -0.45, 0.52);
+      downX = ev.clientX;
+      downY = ev.clientY;
     }
-    return { nx: x, ny: y, width, height };
-  }
 
-  function handlePointerMove(x, y) {
-    const { nx, ny, width, height } = toNormCoords(x, y);
-    if (isDragging) {
-      const dx = (x - pointerDownX) / width;
-      const dy = (y - pointerDownY) / height;
-      draggedDistance += Math.hypot(x - pointerDownX, y - pointerDownY);
-      pointerDownX = x;
-      pointerDownY = y;
-      dragYaw = clamp(dragYaw - dx * 1.15, -1.1, 1.1);
-      dragPitch = clamp(dragPitch - dy * 0.75, -0.45, 0.55);
-    }
-    parallaxOffset.set((nx - 0.5) * 2, (0.5 - ny) * 2);
-    pointerNDC.set(nx * 2 - 1, -(ny * 2 - 1));
     raycaster.setFromCamera(pointerNDC, camera);
-    const hits = raycaster.intersectObject(terrainMesh, false);
-    if (hits.length > 0) {
-      sharedUniforms.uPointerWorld.value.copy(hits[0].point);
+    const groundHits = raycaster.intersectObject(scene.children[0], false);
+    if (groundHits.length > 0) {
+      sharedUniforms.uPointerWorld.value.copy(groundHits[0].point);
       sharedUniforms.uPointerActive.value = 1.0;
     }
   }
 
-  function handlePointerDown(clientX, clientY) {
-    pointerDownX = clientX;
-    pointerDownY = clientY;
-    isDragging = true;
-    draggedDistance = 0;
+  function onPointerDown(ev) {
+    isPointerDown = true;
+    downX = ev.clientX;
+    downY = ev.clientY;
+    movedDist = 0;
+    updatePointerNDC(ev.clientX, ev.clientY);
   }
 
-  function handlePointerUp(clientX, clientY) {
-    const wasDragged = draggedDistance > 10;
-    isDragging = false;
-    if (wasDragged) {
-      return { dragged: true, hitEggId: null };
-    }
-    const { nx, ny } = toNormCoords(clientX, clientY);
-    const tap = handleTapAt(nx, ny);
-    return {
-      dragged: false,
-      hitEggId: tap.type === 'egg' ? tap.id : null,
-      tap
-    };
-  }
+  function onPointerUp(ev) {
+    if (!isPointerDown) return;
+    isPointerDown = false;
+    if (movedDist > 10) return;
 
-  function handleTapAt(normX, normY) {
-    pointerNDC.set(normX * 2 - 1, -(normY * 2 - 1));
+    updatePointerNDC(ev.clientX, ev.clientY);
     raycaster.setFromCamera(pointerNDC, camera);
 
-    const eggHits = raycaster.intersectObjects(raycastTargets, false);
-    if (eggHits.length > 0) {
-      const eggId = eggHits[0].object.userData.eggId;
-      if (eggId) {
-        triggerEggById(eggId);
-        return { type: 'egg', id: eggId };
+    // 1. Check 5 Core Confession Eggs AND 8 Interactive Fairytale Wonders / Sprite!
+    const hits = raycaster.intersectObjects(raycastTargets, false);
+    if (hits.length > 0) {
+      const ud = hits[0].object.userData;
+      if (ud.eggId) {
+        focusEgg(ud.eggId);
+        onEggTrigger(ud.eggId);
+        return;
+      }
+      if (ud.wonderId) {
+        triggerWonder(ud.wonderId);
+        return;
       }
     }
 
-    const terrainHits = raycaster.intersectObject(terrainMesh, false);
-    if (terrainHits.length > 0) {
-      const pt = terrainHits[0].point;
-      sharedUniforms.uPointerWorld.value.copy(pt);
-      sharedUniforms.uPointerActive.value = 1.0;
+    // 2. Clicking anywhere on the grassland or winding path sends the Exploring Sprite there!
+    const groundHits = raycaster.intersectObject(scene.children[0], false);
+    if (groundHits.length > 0) {
+      const pt = groundHits[0].point;
       spawnRipple(pt.x, pt.y, pt.z);
-      return { type: 'ripple', point: pt };
+      fairySprite.walkTo(pt.x, pt.z);
+    } else {
+      const rect = canvas.getBoundingClientRect();
+      const nx = (ev.clientX - rect.left) / Math.max(1, rect.width);
+      const ny = (ev.clientY - rect.top) / Math.max(1, rect.height);
+      onSkyTap({ nx, ny });
+    }
+  }
+
+  canvas.addEventListener('pointermove', onPointerMove, { passive: true });
+  canvas.addEventListener('pointerdown', onPointerDown);
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('resize', resize);
+
+  function focusEgg(eggId) {
+    const node = eggNodes.get(eggId);
+    if (!node) return;
+    const [ox, oy, oz] = node.egg.cameraOffset || [0, 1.5, 4.4];
+    focusedTarget = {
+      camPos: new THREE.Vector3(ox, oy, oz),
+      lookAt: node.anchor.clone()
+    };
+    focusUntil = performance.now() + 9500;
+    spawnRipple(node.anchor.x, meadowHeight(node.anchor.x, node.anchor.z), node.anchor.z);
+    if (node.egg.kind !== 'meteor') {
+      fairySprite.walkTo(node.anchor.x - 0.35, node.anchor.z + 0.38);
+    }
+  }
+
+  function triggerWonder(wonderId) {
+    if (wonderId === 'wonder-sprite') {
+      fairySprite.triggerJoySpin();
+      const sp = fairySprite.getPosition();
+      spawnRipple(sp.x, sp.y, sp.z);
+      onWonderTrigger('wonder-sprite');
+      return;
     }
 
-    spawnRipple(0, meadowHeight(0, 1.6), 1.6);
-    return { type: 'meteor' };
+    worldProps.triggerWonderEffect(wonderId);
+    const anchor = worldProps.wonderAnchors.get(wonderId);
+    if (anchor) {
+      spawnRipple(anchor.x, meadowHeight(anchor.x, anchor.z), anchor.z);
+      fairySprite.walkTo(anchor.x + 0.32, anchor.z + 0.42);
+      focusedTarget = {
+        camPos: new THREE.Vector3(
+          clamp(anchor.x * 0.72, -3.4, 3.4),
+          Math.max(1.25, anchor.y + 1.15),
+          Math.min(7.2, anchor.z + 3.4)
+        ),
+        lookAt: anchor.clone()
+      };
+      focusUntil = performance.now() + 9500;
+    }
+    onWonderTrigger(wonderId);
   }
 
   function markEggUnlocked(eggId) {
     const node = eggNodes.get(eggId);
-    if (!node) return false;
-    node.unlocked = true;
-    return true;
+    if (node) {
+      node.unlocked = true;
+      node.ringMesh.material.color.set('#fde047');
+    }
   }
 
-  function focusEgg(eggId) {
-    const node = eggNodes.get(eggId);
-    if (!node) return false;
-    focusedEgg = eggId;
-    focusUntil = performance.now() + 4800;
-    spawnRipple(node.anchor.x, meadowHeight(node.anchor.x, node.anchor.z), node.anchor.z);
-    return true;
+  function triggerFinaleState() {
+    targetFinale = 1.0;
+    fairySprite.triggerJoySpin('漫天星河与整片童话草坡都为你亮起来啦 ✨');
+    spawnRipple(0, meadowHeight(0, 1.8), 1.8);
+    spawnRipple(-2.1, meadowHeight(-2.1, 2.0), 2.0);
+    spawnRipple(2.1, meadowHeight(2.1, 1.2), 1.2);
   }
 
-  function triggerEggById(eggId) {
-    const node = eggNodes.get(eggId);
-    if (!node) return false;
-    node.unlocked = true;
-    focusedEgg = eggId;
-    focusUntil = performance.now() + 4800;
-    spawnRipple(node.anchor.x, meadowHeight(node.anchor.x, node.anchor.z), node.anchor.z);
-    onEggTrigger(node.egg.id);
-    return true;
-  }
-
-  function getEggScreenPositions() {
+  const projVec = new THREE.Vector3();
+  function projectWorldMap(mapEntries) {
     const width = canvas.clientWidth || window.innerWidth || 1280;
     const height = canvas.clientHeight || window.innerHeight || 720;
-    const padX = width < 600 ? 64 : 108;
-    const padTop = height < 600 ? 88 : 96;
-    const padBottom = height < 600 ? 84 : 98;
-    const result = [];
-    const proj = new THREE.Vector3();
-
-    for (const node of eggNodes.values()) {
-      proj.copy(node.anchor).project(camera);
-      const rawX = (proj.x * 0.5 + 0.5) * width;
-      const rawY = (-proj.y * 0.5 + 0.5) * height;
-      const visible = proj.z > -1 && proj.z < 1 && rawX >= -80 && rawX <= width + 80 && rawY >= -80 && rawY <= height + 80;
-      const x = clamp(rawX, padX, Math.max(padX, width - padX));
-      const y = clamp(rawY, padTop, Math.max(padTop, height - padBottom));
-      result.push({
-        id: node.egg.id,
-        badge: node.egg.badge,
-        hintLabel: node.egg.hintLabel,
-        kind: node.egg.kind,
-        unlocked: node.unlocked,
-        x,
-        y,
+    const result = {};
+    mapEntries.forEach((worldVec, id) => {
+      projVec.copy(worldVec);
+      projVec.project(camera);
+      const visible = projVec.z < 1.0 && Math.abs(projVec.x) <= 1.02 && Math.abs(projVec.y) <= 1.02;
+      result[id] = {
+        x: (projVec.x * 0.5 + 0.5) * width,
+        y: (-projVec.y * 0.5 + 0.5) * height,
         visible
-      });
-    }
+      };
+    });
     return result;
   }
 
-  function pulseHintBeacons() {
-    for (const node of eggNodes.values()) {
-      if (!node.unlocked) {
-        node.hintPulse = 1.6;
-        spawnRipple(node.anchor.x, meadowHeight(node.anchor.x, node.anchor.z), node.anchor.z);
-      }
-    }
+  function getEggScreenPositions() {
+    const m = new Map();
+    eggNodes.forEach((node, id) => m.set(id, node.anchor));
+    return projectWorldMap(m);
   }
 
-  window.addEventListener('resize', resize);
-  onStatus('ready', '梵高星月夜与繁花秘境已盛开');
+  function getWonderScreenPositions() {
+    const m = new Map(worldProps.wonderAnchors);
+    const sp = fairySprite.getPosition();
+    m.set('wonder-sprite', new THREE.Vector3(sp.x, sp.y + 0.52, sp.z));
+    return projectWorldMap(m);
+  }
+
+  function getSpriteScreenPosition() {
+    const width = canvas.clientWidth || window.innerWidth || 1280;
+    const height = canvas.clientHeight || window.innerHeight || 720;
+    return fairySprite.getHeadScreenPos(camera, width, height);
+  }
+
+  onStatus('ready', 'Three.js fairytale flower meadow initialized');
+  rafId = window.requestAnimationFrame(renderFrame);
 
   return {
     resize,
-    handlePointerMove,
-    handlePointerDown,
-    handlePointerUp,
-    handleTapAt,
-    triggerEggById,
-    markEggUnlocked,
     focusEgg,
-    pulseHintBeacons,
-    getEggScreenPositions,
+    triggerWonder,
+    markEggUnlocked,
+    triggerFinaleState,
     spawnRipple,
-    addLookDrag(dxNorm, dyNorm) {
-      dragYaw = clamp(dragYaw + dxNorm * 1.35, -1.1, 1.1);
-      dragPitch = clamp(dragPitch + dyNorm * 0.85, -0.45, 0.55);
-    },
-    clearFocus() {
-      focusedEgg = null;
-      focusUntil = 0;
-    },
-    setMacroMode(enabled) {
-      macroMode = Boolean(enabled);
-      focusedEgg = null;
+    toggleMacroMode() {
+      macroMode = !macroMode;
+      if (macroMode) followSpriteMode = false;
       return macroMode;
     },
-    setFinaleActive(active) {
-      targetFinale = active ? 1 : 0;
-      if (active) {
-        spawnRipple(0, meadowHeight(0, 1.6), 1.6);
+    toggleFollowSprite(forceState) {
+      followSpriteMode = typeof forceState === 'boolean' ? forceState : !followSpriteMode;
+      if (followSpriteMode) {
+        macroMode = false;
+        focusedTarget = null;
       }
+      return followSpriteMode;
     },
-    triggerFinaleState() {
-      targetFinale = 1;
-      spawnRipple(0, meadowHeight(0, 1.6), 1.6);
-    },
+    isFollowingSprite: () => followSpriteMode,
+    nudgeSprite: (dx, dz) => fairySprite.nudge(dx, dz),
+    walkSpriteTo: (x, z, msg) => fairySprite.walkTo(x, z, msg),
+    getEggScreenPositions,
+    getWonderScreenPositions,
+    getSpriteScreenPosition,
     getDiagnostics() {
       return {
         engine: 'three.js',
-        ready: !disposed,
+        ready: renderCount > 0 && !disposed,
         renderCount,
         species: ['hydrangea', 'sunflower', 'iris', 'rose', 'tulip', 'gypsophila'],
         counts: {
@@ -1947,25 +1815,32 @@ export function createMeadowScene(
           irises: irisCoords.length,
           roses: roseCoords.length,
           tulips: tulipCoords.length,
-          gypsophila: gypCount
+          gypsophila: gypCount,
+          grassBlades: gPlaced
         },
+        followSpriteMode,
         macroMode,
         finaleProgress,
-        eggs: Array.from(eggNodes.values()).map(n => ({
+        spritePosition: {
+          x: Number(fairySprite.getPosition().x.toFixed(2)),
+          z: Number(fairySprite.getPosition().z.toFixed(2))
+        },
+        eggs: [...eggNodes.values()].map((n) => ({
           id: n.egg.id,
           kind: n.egg.kind,
           unlocked: n.unlocked
-        }))
+        })),
+        wonders: [...worldProps.wonderAnchors.keys(), 'wonder-sprite']
       };
     },
     dispose() {
-      if (disposed) return;
       disposed = true;
+      window.cancelAnimationFrame(rafId);
+      canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('resize', resize);
-      cancelAnimationFrame(rafId);
       renderer.dispose();
     }
   };
 }
-
-export default createMeadowScene;

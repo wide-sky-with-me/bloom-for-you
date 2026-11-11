@@ -63,9 +63,18 @@ class TestStarryMeadowBuild(unittest.TestCase):
             ],
         )
         self.assertEqual(confessions["finale"]["id"], "finale-starry-bloom")
+        wonders = confessions.get("wonders", [])
+        self.assertEqual(len(wonders), 8)
 
     def test_javascript_modules_pass_node_syntax_check(self) -> None:
-        for js_name in ("app.js", "vangogh-sky.js", "flower-meadow.js", "audio.js"):
+        for js_name in (
+            "app.js",
+            "vangogh-sky.js",
+            "flower-meadow.js",
+            "botanical-assets.js",
+            "fairytale-props.js",
+            "audio.js",
+        ):
             js_path = ROOT / "site" / js_name
             proc = subprocess.run(
                 ["node", "--check", str(js_path)],

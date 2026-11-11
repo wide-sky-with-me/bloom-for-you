@@ -18,6 +18,8 @@ REQUIRED_SITE_FILES = (
     "app.js",
     "vangogh-sky.js",
     "flower-meadow.js",
+    "botanical-assets.js",
+    "fairytale-props.js",
     "audio.js",
     "gift.json",
     "assets/confessions.json",
