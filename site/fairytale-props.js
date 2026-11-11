@@ -1,6 +1,25 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const clamp = (v, min = 0, max = 1) => Math.max(min, Math.min(max, Number(v) || 0));
+
+const sharedGltfLoader = new GLTFLoader();
+const glbPromiseCache = new Map();
+
+/**
+ * Load a self-hosted Blender 4.0 .glb pack once and cache the parsed GLTF object.
+ */
+export function loadFairytaleGlb(url) {
+  if (!glbPromiseCache.has(url)) {
+    glbPromiseCache.set(
+      url,
+      new Promise((resolve, reject) => {
+        sharedGltfLoader.load(url, resolve, undefined, reject);
+      })
+    );
+  }
+  return glbPromiseCache.get(url);
+}
 
 /**
  * Silky radial view-space glow shader so spheres render as feathered light blooms with ZERO hard disk edges!
@@ -239,9 +258,61 @@ export function createFairyExplorer({
   );
   const lanternAura = new THREE.Mesh(
     new THREE.SphereGeometry(0.24, 18, 14),
-    createSoftGlowMaterial(0xfbbf24, 0.72, 2.6)
+    createSoftGlowMaterial(0xfbbf24, 0.68, 2.6)
   );
-  lanternBell.add(lanternCap, lanternCore, lanternAura);
+  const spriteLanternLight = new THREE.PointLight(0xfbbf24, 1.35, 4.6, 1.45);
+  lanternBell.add(lanternCap, lanternCore, lanternAura, spriteLanternLight);
+
+  // Mutable animation rig bindings — seamlessly rebound when Blender 4.0 fairy_sprite.glb resolves!
+  const rig = {
+    bodyPivot,
+    leftLeg,
+    rightLeg,
+    headGroup,
+    hatGroup,
+    lanternBell,
+    hatBaseRotZ: 0,
+    glbLoaded: false
+  };
+
+  loadFairytaleGlb('./assets/models/fairy_sprite.glb')
+    .then((gltf) => {
+      const spriteModel = gltf.scene;
+      spriteModel.scale.setScalar(1.08);
+      root.remove(bodyPivot);
+      root.add(spriteModel);
+
+      const glbBody = spriteModel.getObjectByName('BodyPivot') || spriteModel;
+      const glbHead = spriteModel.getObjectByName('HeadNode') || glbBody;
+      const glbHat = spriteModel.getObjectByName('HatNode') || glbHead;
+      const glbLeftLeg = spriteModel.getObjectByName('LeftLegNode') || leftLeg;
+      const glbRightLeg = spriteModel.getObjectByName('RightLegNode') || rightLeg;
+      const glbLantern = spriteModel.getObjectByName('LanternSwingNode') || lanternBell;
+
+      // Mount iridescent gossamer butterfly wings directly onto sculpted BodyPivot back!
+      wingUpperR.position.set(0.028, 0.29, -0.055);
+      wingUpperL.position.set(-0.028, 0.29, -0.055);
+      wingLowerR.position.set(0.024, 0.22, -0.058);
+      wingLowerL.position.set(-0.024, 0.22, -0.058);
+      glbBody.add(wingUpperR, wingUpperL, wingLowerR, wingLowerL);
+
+      // Mount feathered starlight aura + real-time warm PBR PointLight onto swinging brass lantern!
+      lanternAura.position.set(0, -0.018, 0);
+      spriteLanternLight.position.set(0, -0.018, 0);
+      glbLantern.add(lanternAura, spriteLanternLight);
+
+      rig.bodyPivot = glbBody;
+      rig.headGroup = glbHead;
+      rig.hatGroup = glbHat;
+      rig.leftLeg = glbLeftLeg;
+      rig.rightLeg = glbRightLeg;
+      rig.lanternBell = glbLantern;
+      rig.hatBaseRotZ = glbHat.rotation.z;
+      rig.glbLoaded = true;
+    })
+    .catch((err) => {
+      console.warn('[fairytale-props] Fallback procedural sprite active:', err);
+    });
 
   // Invisible generous raycast sphere so clicking the sprite triggers her joy-spin Easter egg!
   const hitSphere = new THREE.Mesh(
@@ -386,8 +457,8 @@ export function createFairyExplorer({
     if (pauseTimer > 0) {
       pauseTimer -= dt;
       // Gentle curious hover & look-around while admiring flowers
-      bodyPivot.position.y = 0.08 + Math.sin(timeSec * 3.4) * 0.032;
-      headGroup.rotation.y = Math.sin(timeSec * 2.1) * 0.28;
+      rig.bodyPivot.position.y = 0.08 + Math.sin(timeSec * 3.4) * 0.032;
+      rig.headGroup.rotation.y = Math.sin(timeSec * 2.1) * 0.28;
     } else {
       const dx = targetPos.x - pos.x;
       const dz = targetPos.z - pos.z;
@@ -422,10 +493,10 @@ export function createFairyExplorer({
         heading += diff * Math.min(1, dt * 6.5);
 
         stridePhase += dt * (hasPlayerTarget ? 12.5 : 8.8);
-        bodyPivot.position.y = 0.065 + Math.abs(Math.sin(stridePhase)) * 0.055;
-        leftLeg.rotation.x = Math.sin(stridePhase) * 0.55;
-        rightLeg.rotation.x = -Math.sin(stridePhase) * 0.55;
-        headGroup.rotation.y *= 0.88;
+        rig.bodyPivot.position.y = 0.065 + Math.abs(Math.sin(stridePhase)) * 0.055;
+        rig.leftLeg.rotation.x = Math.sin(stridePhase) * 0.55;
+        rig.rightLeg.rotation.x = -Math.sin(stridePhase) * 0.55;
+        rig.headGroup.rotation.y *= 0.88;
       }
     }
 
@@ -435,7 +506,7 @@ export function createFairyExplorer({
       joySpinTimer = Math.max(0, joySpinTimer - dt);
       const p = 1.0 - joySpinTimer / 1.15;
       extraSpin = p * Math.PI * 2;
-      bodyPivot.position.y += Math.sin(p * Math.PI) * 0.28;
+      rig.bodyPivot.position.y += Math.sin(p * Math.PI) * 0.28;
     }
 
     root.position.copy(pos);
@@ -450,9 +521,9 @@ export function createFairyExplorer({
     wingLowerL.rotation.y = flap * 0.82 + 0.1;
 
     // Swinging star-lantern & hat tip bell
-    lanternBell.rotation.z = Math.sin(timeSec * 3.8 + stridePhase * 0.5) * 0.16;
+    rig.lanternBell.rotation.z = Math.sin(timeSec * 3.8 + stridePhase * 0.5) * 0.16;
     lanternAura.scale.setScalar(0.92 + 0.14 * Math.sin(timeSec * 5.2));
-    hatGroup.rotation.z = Math.sin(stridePhase * 0.5) * 0.06;
+    rig.hatGroup.rotation.z = rig.hatBaseRotZ + Math.sin(stridePhase * 0.5) * 0.06;
 
     // Update trailing pixie dust
     dustAccum += dt;
@@ -474,11 +545,11 @@ export function createFairyExplorer({
 
   function getLanternWorldPos(target = lanternWorldTmp) {
     root.updateMatrixWorld();
-    return lanternBell.getWorldPosition(target);
+    return rig.lanternBell.getWorldPosition(target);
   }
 
   function getHeadScreenPos(camera, width, height) {
-    headScreenProj.set(pos.x, pos.y + 0.68, pos.z);
+    headScreenProj.set(pos.x, pos.y + 0.72, pos.z);
     headScreenProj.project(camera);
     const visible = headScreenProj.z < 1.0 && Math.abs(headScreenProj.x) <= 1.05 && Math.abs(headScreenProj.y) <= 1.05;
     return {
@@ -491,6 +562,7 @@ export function createFairyExplorer({
   return {
     root,
     hitSphere,
+    isGlbLoaded: () => rig.glbLoaded,
     getPosition: () => pos,
     getHeading: () => heading,
     getLanternWorldPos,
@@ -595,11 +667,13 @@ export function createFairytaleWorldProps({
   if (stoneInstanced.instanceColor) stoneInstanced.instanceColor.needsUpdate = true;
   scene.add(stoneInstanced);
 
-  // Ambient scene hemisphere & moonlight for solid fairytale props
-  const hemiLight = new THREE.HemisphereLight(0x93c5fd, 0x1e293b, 0.85);
-  const dirLight = new THREE.DirectionalLight(0xfef3c7, 1.15);
+  // Ambient scene hemisphere & moonlight for sculpted PBR fairytale props
+  const hemiLight = new THREE.HemisphereLight(0xbae6fd, 0x1e293b, 1.35);
+  const dirLight = new THREE.DirectionalLight(0xfffbeb, 1.65);
   dirLight.position.set(6, 12, 5);
   scene.add(hemiLight, dirLight);
+
+  const loadedPropPacks = new Set();
 
   // ==========================================================================
   // 2. WONDER #1: COZY HILLTOP STORYBOOK COTTAGE (山丘暖光童话小屋)
@@ -610,6 +684,7 @@ export function createFairytaleWorldProps({
   cottageGroup.rotation.y = 0.34;
   scene.add(cottageGroup);
 
+  const cottageFallback = new THREE.Group();
   const walls = new THREE.Mesh(
     new THREE.CylinderGeometry(0.62, 0.68, 0.74, 18),
     new THREE.MeshLambertMaterial({ color: 0xe2d5c1 })
@@ -634,7 +709,7 @@ export function createFairytaleWorldProps({
   chimney.position.set(0.36, 1.26, -0.12);
 
   // Warm golden glowing fairytale windows & arched door!
-  const warmWinMat = new THREE.MeshBasicMaterial({ color: 0xfde047 });
+  const warmWinMat = new THREE.MeshBasicMaterial({ color: 0xfde08a });
   const doorMesh = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.38, 0.08), new THREE.MeshLambertMaterial({ color: 0x7c2d12 }));
   doorMesh.position.set(0, 0.20, 0.64);
   const doorWin = new THREE.Mesh(new THREE.CircleGeometry(0.065, 14), warmWinMat);
@@ -646,14 +721,39 @@ export function createFairytaleWorldProps({
   const sideWinR = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.22), warmWinMat);
   sideWinR.position.set(0.38, 0.40, 0.52);
   sideWinR.rotation.y = 0.58;
+  cottageFallback.add(walls, roofLower, roofPeak, chimney, doorMesh, doorWin, sideWinL, sideWinR);
 
   const cottageGlow = new THREE.Mesh(
-    new THREE.SphereGeometry(1.25, 18, 14),
-    createSoftGlowMaterial(0xfbbf24, 0.36, 2.8)
+    new THREE.SphereGeometry(1.32, 18, 14),
+    createSoftGlowMaterial(0xfbbf24, 0.38, 2.8)
   );
-  cottageGlow.position.y = 0.45;
-  cottageGroup.add(walls, roofLower, roofPeak, chimney, doorMesh, doorWin, sideWinL, sideWinR, cottageGlow);
+  cottageGlow.position.y = 0.48;
+  const cottageDoorLight = new THREE.PointLight(0xfde047, 1.45, 5.2, 1.45);
+  cottageDoorLight.position.set(0, 0.52, 0.92);
+  cottageGroup.add(cottageFallback, cottageGlow, cottageDoorLight);
   registerWonder('wonder-cottage', cottagePos, 1.25, 0.72);
+
+  const chimneyEmitWorld = new THREE.Vector3(
+    cottagePos.x + 0.32,
+    cottagePos.y + 1.48,
+    cottagePos.z - 0.10
+  );
+
+  loadFairytaleGlb('./assets/models/storybook_cottage.glb')
+    .then((gltf) => {
+      const cottageModel = gltf.scene;
+      cottageModel.scale.setScalar(1.06);
+      cottageGroup.remove(cottageFallback);
+      cottageGroup.add(cottageModel);
+      // Compute world position of the sculpted stone chimney rim (local [0.35, 1.56, -0.10] * 1.06)
+      const localChimney = new THREE.Vector3(0.35 * 1.06, 1.56 * 1.06, -0.10 * 1.06);
+      localChimney.applyAxisAngle(new THREE.Vector3(0, 1, 0), cottageGroup.rotation.y);
+      chimneyEmitWorld.copy(cottagePos).add(localChimney);
+      loadedPropPacks.add('storybook_cottage');
+    })
+    .catch((err) => {
+      console.warn('[fairytale-props] Fallback cottage active:', err);
+    });
 
   // Rising Chimney Heart/Starlight Smoke Puffs (soft radial glow spheres!)
   const smokePuffs = [];
@@ -672,8 +772,8 @@ export function createFairytaleWorldProps({
   scene.add(mushroomGroup);
 
   const ringFloorGlow = new THREE.Mesh(
-    new THREE.CircleGeometry(0.72, 32),
-    createGroundGlowDiscMaterial(0xc084fc, 0.26)
+    new THREE.CircleGeometry(0.76, 32),
+    createGroundGlowDiscMaterial(0xc084fc, 0.28)
   );
   ringFloorGlow.rotation.x = -Math.PI * 0.5;
   ringFloorGlow.position.set(ringCenter.x, ringCenter.y + 0.025, ringCenter.z);
@@ -690,9 +790,10 @@ export function createFairytaleWorldProps({
 
     const mNode = new THREE.Group();
     mNode.position.set(mx, my, mz);
-    const scale = 1.18 + (i % 3) * 0.26;
+    const scale = 1.18 + (i % 3) * 0.24;
     mNode.scale.setScalar(scale);
 
+    const mFallback = new THREE.Group();
     const stalk = new THREE.Mesh(
       new THREE.CylinderGeometry(0.028, 0.042, 0.22, 12),
       new THREE.MeshBasicMaterial({ color: 0xfef3c7 })
@@ -718,20 +819,41 @@ export function createFairytaleWorldProps({
         new THREE.MeshBasicMaterial({ color: 0xffffff })
       );
       dot.position.set(Math.cos(da) * 0.076, 0.265, Math.sin(da) * 0.076);
-      mNode.add(dot);
+      mFallback.add(dot);
     }
+    mFallback.add(stalk, cap);
 
     const aura = new THREE.Mesh(
       new THREE.SphereGeometry(0.24, 14, 10),
-      createSoftGlowMaterial(capColors[i % capColors.length], 0.42, 2.6)
+      createSoftGlowMaterial(capColors[i % capColors.length], 0.40, 2.6)
     );
     aura.position.y = 0.20;
 
-    mNode.add(stalk, cap, aura);
+    mNode.add(mFallback, aura);
     mushroomGroup.add(mNode);
-    mushroomNodes.push({ group: mNode, baseScale: scale, phase: i * 0.9 });
+    mushroomNodes.push({ group: mNode, fallback: mFallback, baseScale: scale, phase: i * 0.9 });
   }
   registerWonder('wonder-mushrooms', ringCenter, 0.96, 0.34);
+
+  loadFairytaleGlb('./assets/models/mushroom_cluster.glb')
+    .then((gltf) => {
+      const archetypes = ['MushroomA', 'MushroomC', 'MushroomB', 'MushroomA', 'MushroomD', 'MushroomC', 'MushroomB']
+        .map((name) => gltf.scene.getObjectByName(name))
+        .filter(Boolean);
+      if (archetypes.length > 0) {
+        mushroomNodes.forEach((mn, idx) => {
+          const clone = archetypes[idx % archetypes.length].clone(true);
+          clone.position.set(0, 0, 0);
+          clone.rotation.y = idx * 1.15;
+          mn.group.remove(mn.fallback);
+          mn.group.add(clone);
+        });
+      }
+      loadedPropPacks.add('mushroom_cluster');
+    })
+    .catch((err) => {
+      console.warn('[fairytale-props] Fallback mushrooms active:', err);
+    });
 
   // ==========================================================================
   // 4. WONDER #3: WOODEN CROSSROADS SIGNPOST & GLOWING BLUEBIRD (童话指路木牌)
@@ -741,6 +863,7 @@ export function createFairytaleWorldProps({
   signGroup.position.copy(signPos);
   scene.add(signGroup);
 
+  const signFallback = new THREE.Group();
   const postMesh = new THREE.Mesh(
     new THREE.CylinderGeometry(0.036, 0.046, 0.72, 10),
     new THREE.MeshLambertMaterial({ color: 0x78350f })
@@ -780,8 +903,15 @@ export function createFairytaleWorldProps({
   bluebird.add(birdBody, birdBeak);
 
   signPivot.add(board1, board2, bluebird);
-  signGroup.add(postMesh, signPivot);
+  signFallback.add(postMesh, signPivot);
+  signGroup.add(signFallback);
   registerWonder('wonder-signpost', signPos, 0.82, 0.45);
+
+  const signRig = {
+    pivot: signPivot,
+    bird: bluebird,
+    birdBaseY: 0.14
+  };
 
   // ==========================================================================
   // 5. WONDER #4: WROUGHT-IRON FAIRY STREETLAMPS & WISHING BELL (许愿风铃路灯)
@@ -801,6 +931,7 @@ export function createFairytaleWorldProps({
     lGroup.rotation.y = sp.rotY;
     scene.add(lGroup);
 
+    const lampFallback = new THREE.Group();
     const pole = new THREE.Mesh(
       new THREE.CylinderGeometry(0.024, 0.036, 1.08, 10),
       new THREE.MeshLambertMaterial({ color: 0x334155 })
@@ -823,16 +954,18 @@ export function createFairytaleWorldProps({
       new THREE.SphereGeometry(0.36, 16, 14),
       createSoftGlowMaterial(0xfbbf24, 0.62, 2.7)
     );
-    lantern.add(glass, glow);
-    lGroup.add(pole, crook, lantern);
+    const ptLight = new THREE.PointLight(0xfbbf24, 0.92, 3.8, 1.55);
+    lantern.add(glass, glow, ptLight);
+    lampFallback.add(pole, crook, lantern);
+    lGroup.add(lampFallback);
 
     const worldLamp = new THREE.Vector3(
-      sp.x + Math.cos(sp.rotY) * 0.32,
+      sp.x + Math.cos(sp.rotY) * 0.34,
       ly + 0.96,
-      sp.z - Math.sin(sp.rotY) * 0.32
+      sp.z - Math.sin(sp.rotY) * 0.34
     );
     lampPositions.push(worldLamp);
-    lampBells.push({ lantern, glow });
+    lampBells.push({ group: lGroup, fallback: lampFallback, lantern, glow, ptLight });
 
     if (sp.isHero) {
       registerWonder('wonder-bell-lamp', new THREE.Vector3(sp.x, ly, sp.z), 0.95, 0.65);
@@ -988,6 +1121,7 @@ export function createFairytaleWorldProps({
   stumpGroup.rotation.y = -0.55;
   scene.add(stumpGroup);
 
+  const stumpFallback = new THREE.Group();
   const bark = new THREE.Mesh(
     new THREE.CylinderGeometry(0.24, 0.32, 0.34, 14),
     new THREE.MeshLambertMaterial({ color: 0x785549, emissive: 0x291d18, emissiveIntensity: 0.5 })
@@ -1003,13 +1137,88 @@ export function createFairytaleWorldProps({
     new THREE.MeshBasicMaterial({ color: 0x7dd3fc })
   );
   jar2.position.set(0.08, 0.36, -0.03);
+  stumpFallback.add(bark, jar1, jar2);
+
   const stumpGlow = new THREE.Mesh(
     new THREE.SphereGeometry(0.38, 16, 12),
     createSoftGlowMaterial(0xfacc15, 0.52, 2.8)
   );
-  stumpGlow.position.y = 0.36;
-  stumpGroup.add(bark, jar1, jar2, stumpGlow);
+  stumpGlow.position.y = 0.38;
+  stumpGroup.add(stumpFallback, stumpGlow);
   registerWonder('wonder-stump', stumpPos, 0.82, 0.35);
+
+  let wishBottleArchetype = null;
+  const wishBottleListeners = [];
+  function onWishBottleReady(cb) {
+    if (wishBottleArchetype) {
+      cb(wishBottleArchetype.clone(true));
+    } else {
+      wishBottleListeners.push(cb);
+    }
+  }
+
+  loadFairytaleGlb('./assets/models/fairytale_landmarks.glb')
+    .then((gltf) => {
+      // A. Sculpted Oak Signpost + Arrow Boards + Chubby Bluebird
+      const signModel = gltf.scene.getObjectByName('SignpostProp');
+      if (signModel) {
+        const sClone = signModel.clone(true);
+        sClone.position.set(0, 0, 0);
+        sClone.scale.setScalar(1.06);
+        signGroup.remove(signFallback);
+        signGroup.add(sClone);
+        const glbPivot = sClone.getObjectByName('SignPivotNode');
+        const glbBird = sClone.getObjectByName('BluebirdNode');
+        if (glbPivot) signRig.pivot = glbPivot;
+        if (glbBird) {
+          signRig.bird = glbBird;
+          signRig.birdBaseY = glbBird.position.y;
+        }
+      }
+
+      // B. 3 Scrolling Wrought-Iron Streetlamps + Swinging Brass Lantern Bells
+      const lampModel = gltf.scene.getObjectByName('StreetlampProp');
+      if (lampModel) {
+        for (const lb of lampBells) {
+          const lClone = lampModel.clone(true);
+          lClone.position.set(0, 0, 0);
+          lb.group.remove(lb.fallback);
+          lb.group.add(lClone);
+          const bellNode = lClone.getObjectByName('LampBellNode');
+          if (bellNode) {
+            lb.glow.position.set(0, -0.10, 0);
+            lb.ptLight.position.set(0, -0.10, 0);
+            bellNode.add(lb.glow, lb.ptLight);
+            lb.lantern = bellNode;
+          }
+        }
+      }
+
+      // C. Gnarled Buttress-Root Hollow Stump + Linen-Topped Starlight Honey Jars
+      const stumpModel = gltf.scene.getObjectByName('HollowStumpProp');
+      if (stumpModel) {
+        const stClone = stumpModel.clone(true);
+        stClone.position.set(0, 0, 0);
+        stClone.scale.setScalar(1.06);
+        stumpGroup.remove(stumpFallback);
+        stumpGroup.add(stClone);
+      }
+
+      // D. Faceted Crystal Apothecary Wish Bottle + Wax Seal + Love Scroll
+      const bottleModel = gltf.scene.getObjectByName('WishBottleProp');
+      if (bottleModel) {
+        wishBottleArchetype = bottleModel;
+        while (wishBottleListeners.length > 0) {
+          const fn = wishBottleListeners.shift();
+          fn(bottleModel.clone(true));
+        }
+      }
+
+      loadedPropPacks.add('fairytale_landmarks');
+    })
+    .catch((err) => {
+      console.warn('[fairytale-props] Fallback landmarks active:', err);
+    });
 
   // Interactive Animation Timers for Wonders
   const activeAnims = {
@@ -1053,9 +1262,9 @@ export function createFairytaleWorldProps({
       sp.age = (sp.age + dt * smokeSpeed) % 3.2;
       const p = sp.age / 3.2;
       sp.mesh.position.set(
-        cottagePos.x + 0.32 + Math.sin(timeSec * 1.6 + i) * 0.14 * p,
-        cottagePos.y + 1.48 + p * 1.45,
-        cottagePos.z - 0.10 + Math.cos(timeSec * 1.2 + i) * 0.10 * p
+        chimneyEmitWorld.x + Math.sin(timeSec * 1.6 + i) * 0.14 * p,
+        chimneyEmitWorld.y + p * 1.45,
+        chimneyEmitWorld.z + Math.cos(timeSec * 1.2 + i) * 0.10 * p
       );
       const scale = (0.7 + p * 1.7) * (activeAnims.cottageHearts > 0 ? 1.35 : 1.0);
       sp.mesh.scale.setScalar(scale);
@@ -1080,11 +1289,11 @@ export function createFairytaleWorldProps({
     if (activeAnims.signSpin > 0) {
       activeAnims.signSpin = Math.max(0, activeAnims.signSpin - dt);
       const t = 1.0 - activeAnims.signSpin / 1.4;
-      signPivot.rotation.y = Math.sin(t * Math.PI * 2) * Math.PI;
-      bluebird.position.y = 0.14 + Math.sin(t * Math.PI) * 0.26;
+      signRig.pivot.rotation.y = Math.sin(t * Math.PI * 2) * Math.PI;
+      signRig.bird.position.y = signRig.birdBaseY + Math.sin(t * Math.PI) * 0.26;
     } else {
-      signPivot.rotation.y = Math.sin(timeSec * 1.1) * 0.04;
-      bluebird.position.y = 0.14 + Math.abs(Math.sin(timeSec * 3.4)) * 0.025;
+      signRig.pivot.rotation.y = Math.sin(timeSec * 1.1) * 0.04;
+      signRig.bird.position.y = signRig.birdBaseY + Math.abs(Math.sin(timeSec * 3.4)) * 0.025;
     }
 
     // 4. Streetlamp wishing-bell sway & glow
@@ -1129,6 +1338,8 @@ export function createFairytaleWorldProps({
     raycastTargets,
     wonderAnchors,
     lampPositions,
+    onWishBottleReady,
+    getLoadedPacks: () => [...loadedPropPacks],
     triggerWonderEffect,
     update
   };

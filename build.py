@@ -26,8 +26,16 @@ REQUIRED_SITE_FILES = (
     "assets/flower-song.woff2",
     "assets/FONT-LICENSE.txt",
     "assets/flower.svg",
+    "assets/models/fairy_sprite.glb",
+    "assets/models/storybook_cottage.glb",
+    "assets/models/mushroom_cluster.glb",
+    "assets/models/fairytale_landmarks.glb",
+    "assets/models/botanical_blooms.glb",
     "vendor/three-0.186.1/three.module.js",
     "vendor/three-0.186.1/three.core.js",
+    "vendor/three-0.186.1/addons/loaders/GLTFLoader.js",
+    "vendor/three-0.186.1/addons/utils/BufferGeometryUtils.js",
+    "vendor/three-0.186.1/addons/utils/SkeletonUtils.js",
     "vendor/three-0.186.1/LICENSE",
     "vendor/p5-1.9.4/p5.min.js",
     "vendor/p5-1.9.4/LICENSE",
@@ -78,16 +86,36 @@ def verify_source(source: Path) -> dict:
     if not isinstance(finale, dict) or not isinstance(finale.get("title"), str):
         raise ValueError("confessions.json: finale object is required")
 
-    # Validate Three.js 0.186.1 vendor bundle
+    # Validate Three.js 0.186.1 vendor bundle + GLTFLoader addons
     three_dir = source / "vendor" / "three-0.186.1"
     three_meta = json.loads((three_dir / "metadata.json").read_text(encoding="utf-8"))
     if three_meta.get("name") != "three" or three_meta.get("version") != "0.186.1":
         raise ValueError("Unexpected Three.js vendor version")
-    for name in ("three.module.js", "three.core.js", "LICENSE"):
+    for name in (
+        "three.module.js",
+        "three.core.js",
+        "LICENSE",
+        "addons/loaders/GLTFLoader.js",
+        "addons/utils/BufferGeometryUtils.js",
+        "addons/utils/SkeletonUtils.js",
+    ):
         record = three_meta.get("files", {}).get(name, {})
         path = three_dir / name
         if not path.is_file() or _sha256(path) != record.get("sha256"):
             raise ValueError(f"Three.js vendor integrity failed: {name}")
+
+    # Validate Blender 4.0 binary .glb 3D model packs
+    for glb_rel in (
+        "assets/models/fairy_sprite.glb",
+        "assets/models/storybook_cottage.glb",
+        "assets/models/mushroom_cluster.glb",
+        "assets/models/fairytale_landmarks.glb",
+        "assets/models/botanical_blooms.glb",
+    ):
+        glb_path = source / glb_rel
+        header = glb_path.read_bytes()[:8]
+        if len(header) < 8 or header[:4] != b"glTF":
+            raise ValueError(f"Invalid glTF binary header in {glb_rel}")
 
     # Validate p5.js 1.9.4 vendor bundle
     p5_dir = source / "vendor" / "p5-1.9.4"

@@ -88,6 +88,22 @@ class TestStarryMeadowBuild(unittest.TestCase):
                 f"Syntax check failed for {js_name}: {proc.stderr}",
             )
 
+    def test_sculpted_blender_glb_models_have_valid_binary_headers(self) -> None:
+        expected_models = (
+            "fairy_sprite.glb",
+            "storybook_cottage.glb",
+            "mushroom_cluster.glb",
+            "fairytale_landmarks.glb",
+            "botanical_blooms.glb",
+        )
+        models_dir = ROOT / "site" / "assets" / "models"
+        for name in expected_models:
+            path = models_dir / name
+            self.assertTrue(path.is_file(), f"Missing .glb model pack: {name}")
+            raw = path.read_bytes()
+            self.assertGreater(len(raw), 1024)
+            self.assertEqual(raw[:4], b"glTF")
+
 
 if __name__ == "__main__":
     unittest.main()

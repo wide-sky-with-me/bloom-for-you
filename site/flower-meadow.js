@@ -15,7 +15,8 @@ import {
 } from './botanical-assets.js';
 import {
   createFairyExplorer,
-  createFairytaleWorldProps
+  createFairytaleWorldProps,
+  loadFairytaleGlb
 } from './fairytale-props.js';
 
 const clamp = (v, min = 0, max = 1) => Math.max(min, Math.min(max, Number(v) || 0));
@@ -400,6 +401,31 @@ export function createMeadowScene(
   renderer.setClearColor(0x000000, 0);
 
   const scene = new THREE.Scene();
+
+  // Build procedural Van Gogh Starry-Night PMREM environment so Blender 4.0 PBR .glb models
+  // (brass lanterns, glossy fairy eyes, slate shingles, wax seals & toadstool caps) gleam warmly!
+  const pmremGen = new THREE.PMREMGenerator(renderer);
+  const envScene = new THREE.Scene();
+  envScene.background = new THREE.Color(0x0d2149);
+  const envMoonDome = new THREE.Mesh(
+    new THREE.SphereGeometry(8, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0x3b82f6, side: THREE.BackSide })
+  );
+  const envMoonOrb = new THREE.Mesh(
+    new THREE.SphereGeometry(1.6, 12, 10),
+    new THREE.MeshBasicMaterial({ color: 0xfef08a })
+  );
+  envMoonOrb.position.set(4.2, 5.5, 3.2);
+  const envWarmBounce = new THREE.Mesh(
+    new THREE.SphereGeometry(2.2, 12, 10),
+    new THREE.MeshBasicMaterial({ color: 0xfbbf24 })
+  );
+  envWarmBounce.position.set(-2.5, -3.2, 2.5);
+  envScene.add(envMoonDome, envMoonOrb, envWarmBounce);
+  const envRenderTarget = pmremGen.fromScene(envScene, 0.04);
+  scene.environment = envRenderTarget.texture;
+  scene.environmentIntensity = 1.35;
+  pmremGen.dispose();
   const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 90);
   // Elevated panoramic fairytale viewpoint overlooking rolling knolls, winding dirt path & hilltop cottage!
   const cameraBase = new THREE.Vector3(0.0, 2.28, 7.35);
@@ -564,7 +590,8 @@ export function createMeadowScene(
       }
     `
   });
-  scene.add(new THREE.Mesh(terrainGeo, terrainMat));
+  const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
+  scene.add(terrainMesh);
 
   // ==========================================================================
   // B. FAIRYTALE PROPS, COTTAGE, MUSHROOM RING, POND & EXPLORING SPRITE!
@@ -1372,8 +1399,20 @@ export function createMeadowScene(
       starSand.position.y = -0.14;
       starSand.scale.set(1, 0.52, 1);
 
-      bottleGroup.add(starSand, scroll, scrollRibbon, body, shoulder, neck, lipRing, goldRibbon, cork);
+      const bottleFallback = new THREE.Group();
+      bottleFallback.add(starSand, scroll, scrollRibbon, body, shoulder, neck, lipRing, goldRibbon, cork);
+      bottleGroup.add(bottleFallback);
       eggGroup.add(bottleGroup);
+
+      worldProps.onWishBottleReady((sculptedBottle) => {
+        sculptedBottle.position.set(0, 0, 0);
+        const glassMesh = sculptedBottle.getObjectByName('BottleGlassMesh');
+        if (glassMesh) {
+          glassMesh.material = glassMat;
+        }
+        bottleGroup.remove(bottleFallback);
+        bottleGroup.add(sculptedBottle);
+      });
     }
 
     const hitSphere = new THREE.Mesh(
@@ -1392,6 +1431,66 @@ export function createMeadowScene(
       unlocked: false
     });
   }
+
+  // Upgrade GPU-instanced flower species with Blender 4.0 Subdivision-Sculpted .glb Bloom Meshes!
+  let botanicalGlbLoaded = false;
+
+  function prepareSculptedBloomGeometry(meshNode, innerRadiusMax = 0.14, aoFloor = 0.50) {
+    if (!meshNode || !meshNode.geometry) return null;
+    const geo = meshNode.geometry.clone();
+    meshNode.updateMatrix();
+    if (meshNode.matrix && !meshNode.matrix.equals(new THREE.Matrix4())) {
+      geo.applyMatrix4(meshNode.matrix);
+    }
+    const posAttr = geo.attributes.position;
+    const uvAttr = geo.attributes.uv;
+    if (!posAttr || !uvAttr) return null;
+
+    const count = posAttr.count;
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const x = posAttr.getX(i);
+      const z = posAttr.getZ(i);
+      const r = Math.hypot(x, z);
+      const u = clamp(uvAttr.getY(i), 0, 1);
+      const radialAo = aoFloor + (1.0 - aoFloor) * smoothstep(0.012, innerRadiusMax, r);
+      const shade = radialAo * (0.64 + 0.36 * u);
+      colors[i * 3] = shade;
+      colors[i * 3 + 1] = shade;
+      colors[i * 3 + 2] = shade;
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geo.computeBoundingSphere();
+    return geo;
+  }
+
+  loadFairytaleGlb('./assets/models/botanical_blooms.glb')
+    .then((gltf) => {
+      const sculptedRose = prepareSculptedBloomGeometry(gltf.scene.getObjectByName('RoseBloom'), 0.15, 0.46);
+      if (sculptedRose) {
+        roseInstanced.geometry.dispose();
+        roseInstanced.geometry = sculptedRose;
+      }
+      const sculptedTulip = prepareSculptedBloomGeometry(gltf.scene.getObjectByName('TulipBloom'), 0.10, 0.62);
+      if (sculptedTulip) {
+        tulipInstanced.geometry.dispose();
+        tulipInstanced.geometry = sculptedTulip;
+      }
+      const sculptedIris = prepareSculptedBloomGeometry(gltf.scene.getObjectByName('IrisBloom'), 0.16, 0.58);
+      if (sculptedIris) {
+        irisInstanced.geometry.dispose();
+        irisInstanced.geometry = sculptedIris;
+      }
+      const sculptedHydrangea = prepareSculptedBloomGeometry(gltf.scene.getObjectByName('HydrangeaFloret'), 0.06, 0.72);
+      if (sculptedHydrangea) {
+        hydrangeaInstanced.geometry.dispose();
+        hydrangeaInstanced.geometry = sculptedHydrangea;
+      }
+      botanicalGlbLoaded = true;
+    })
+    .catch((err) => {
+      console.warn('[flower-meadow] Fallback procedural blooms active:', err);
+    });
 
   // --- 260 Dreamy Fairytale Fireflies ---
   const fireflyCount = 260;
@@ -1622,7 +1721,7 @@ export function createMeadowScene(
     }
 
     raycaster.setFromCamera(pointerNDC, camera);
-    const groundHits = raycaster.intersectObject(scene.children[0], false);
+    const groundHits = raycaster.intersectObject(terrainMesh, false);
     if (groundHits.length > 0) {
       sharedUniforms.uPointerWorld.value.copy(groundHits[0].point);
       sharedUniforms.uPointerActive.value = 1.0;
@@ -1661,7 +1760,7 @@ export function createMeadowScene(
     }
 
     // 2. Clicking anywhere on the grassland or winding path sends the Exploring Sprite there!
-    const groundHits = raycaster.intersectObject(scene.children[0], false);
+    const groundHits = raycaster.intersectObject(terrainMesh, false);
     if (groundHits.length > 0) {
       const pt = groundHits[0].point;
       spawnRipple(pt.x, pt.y, pt.z);
@@ -1780,6 +1879,13 @@ export function createMeadowScene(
   return {
     resize,
     focusEgg,
+    focusCamera(camArr, lookArr, durationMs = 12000) {
+      focusedTarget = {
+        camPos: new THREE.Vector3(...camArr),
+        lookAt: new THREE.Vector3(...lookArr)
+      };
+      focusUntil = performance.now() + durationMs;
+    },
     triggerWonder,
     markEggUnlocked,
     triggerFinaleState,
@@ -1804,9 +1910,16 @@ export function createMeadowScene(
     getWonderScreenPositions,
     getSpriteScreenPosition,
     getDiagnostics() {
+      const loadedModelPacks = [
+        ...(fairySprite.isGlbLoaded() ? ['fairy_sprite'] : []),
+        ...worldProps.getLoadedPacks(),
+        ...(botanicalGlbLoaded ? ['botanical_blooms'] : [])
+      ];
       return {
         engine: 'three.js',
         ready: renderCount > 0 && !disposed,
+        modelsLoaded: loadedModelPacks.length === 5,
+        loadedModelPacks,
         renderCount,
         species: ['hydrangea', 'sunflower', 'iris', 'rose', 'tulip', 'gypsophila'],
         counts: {
@@ -1840,6 +1953,7 @@ export function createMeadowScene(
       canvas.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('resize', resize);
+      envRenderTarget.dispose();
       renderer.dispose();
     }
   };
