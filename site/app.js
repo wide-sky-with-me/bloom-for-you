@@ -5,10 +5,20 @@ import { createNightAudio } from "./audio.js";
 const STORAGE_KEY = "bloom_for_you_vangogh_unlocked_v2";
 
 const ACCENT_HEX = {
-  rose: "#ff8fb1",
-  gold: "#ffd54f",
+  rose: "#fda4af",
+  gold: "#fde047",
   cyan: "#7dd3fc",
   violet: "#c4b5fd",
+};
+
+const ROMAN_NUMERALS = ["Ⅰ", "Ⅱ", "Ⅲ", "Ⅳ", "Ⅴ", "Ⅵ", "Ⅶ"];
+
+const COMPACT_BEACON_LABELS = {
+  "egg-hydrangea": "Ⅰ · 无尽夏",
+  "egg-sunflower": "Ⅱ · 向日葵",
+  "egg-rose-bottle": "Ⅲ · 玫瑰星瓶",
+  "egg-iris-tulip": "Ⅳ · 鸢尾郁金香",
+  "egg-starry-sky": "Ⅴ · 星夜流星",
 };
 
 async function fetchJson(url, fallback) {
@@ -108,7 +118,7 @@ async function initApp() {
     },
   });
 
-  // 2. Initialize Lower Realm: Three.js Multi-Species 3D Flower Meadow
+  // 2. Initialize Lower Realm: Three.js Multi-Species 3D Painterly Flower Meadow
   const meadow = createMeadowScene(meadowCanvas, {
     eggs,
     onEggTrigger: (eggId) => {
@@ -134,7 +144,7 @@ async function initApp() {
     meadow.triggerFinaleState();
   }
 
-  // 3. Create Floating 3D-Projected Beacons & Quick Nav Chips
+  // 3. Create Floating 3D-Projected Starlight Beacons & Quick Nav Chips
   const beaconElements = new Map();
   const quickChipElements = new Map();
 
@@ -144,18 +154,21 @@ async function initApp() {
 
     eggs.forEach((egg, index) => {
       const colorHex = ACCENT_HEX[egg.accent] || ACCENT_HEX.gold;
+      const numeral = ROMAN_NUMERALS[index] || String(index + 1);
+      const compactTitle = COMPACT_BEACON_LABELS[egg.id] || `${numeral} · ${egg.shortLabel || egg.title}`;
 
-      // Floating beacon on scene
+      // Floating starlight gem beacon on scene
       const beacon = document.createElement("button");
       beacon.type = "button";
       beacon.className = "egg-beacon";
       beacon.dataset.eggId = egg.id;
       beacon.dataset.unlocked = unlockedIds.has(egg.id) ? "true" : "false";
       beacon.style.setProperty("--beacon-color", colorHex);
+      beacon.title = egg.hintLabel || egg.shortLabel || egg.title;
       beacon.innerHTML = `
         <span class="egg-beacon__orb" aria-hidden="true"></span>
-        <span class="egg-beacon__label">${egg.shortLabel || egg.title}</span>
-        <span class="egg-beacon__status">${unlockedIds.has(egg.id) ? "已寻获" : "✦ 寻觅"}</span>
+        <span class="egg-beacon__label">${compactTitle}</span>
+        <span class="egg-beacon__status">${unlockedIds.has(egg.id) ? "已点亮" : "✦"}</span>
       `;
       beacon.addEventListener("click", (ev) => {
         ev.stopPropagation();
@@ -194,7 +207,7 @@ async function initApp() {
         beacon.dataset.unlocked = isUnlocked ? "true" : "false";
         const statusSpan = beacon.querySelector(".egg-beacon__status");
         if (statusSpan) {
-          statusSpan.textContent = isUnlocked ? "已寻获" : "✦ 寻觅";
+          statusSpan.textContent = isUnlocked ? "已点亮" : "✦";
         }
       }
       const chip = quickChipElements.get(egg.id);
@@ -230,7 +243,7 @@ async function initApp() {
     } else {
       const nextEgg = eggs.find((e) => !unlockedIds.has(e.id));
       if (nextEgg) {
-        hintTextEl.textContent = `寻宝提示：${nextEgg.hint}（也可直接点击下方花朵标签）`;
+        hintTextEl.textContent = `寻宝提示：${nextEgg.hint}`;
       }
     }
   }
@@ -243,7 +256,12 @@ async function initApp() {
     cardTitle.textContent = item.title || "";
 
     cardBody.innerHTML = "";
-    const paragraphs = Array.isArray(item.paragraphs) ? item.paragraphs : [];
+    const paragraphs =
+      item.useGiftLetter && Array.isArray(giftData?.letter) && giftData.letter.length > 0
+        ? giftData.letter
+        : Array.isArray(item.paragraphs)
+          ? item.paragraphs
+          : [];
     paragraphs.forEach((text) => {
       const p = document.createElement("p");
       p.textContent = text;
@@ -289,8 +307,8 @@ async function initApp() {
       sky.setConstellationActive(true);
     }
     if (egg.id === "egg-starry-sky") {
-      sky.triggerMeteor({ startX: 0.2, startY: 0.12, vx: 11, vy: 4.5 });
-      sky.triggerMeteor({ startX: 0.55, startY: 0.08, vx: 9.5, vy: 4.0 });
+      sky.triggerMeteor({ startX: 0.22, startY: 0.11 });
+      sky.triggerMeteor({ startX: 0.54, startY: 0.08 });
     }
 
     if (unlockedIds.size >= eggs.length) {
@@ -334,7 +352,7 @@ async function initApp() {
       accent: "rose",
     };
     sky.setConstellationActive(true);
-    sky.triggerMeteor();
+    sky.triggerMeteor({ startX: 0.28, startY: 0.10 });
     audio.playDiscoveryChime(2);
     showConfessionCard(letterCard, { isFinale: false });
   }
@@ -349,47 +367,90 @@ async function initApp() {
     btnCollection.setAttribute("aria-expanded", "false");
   }
 
-  // 4. Synchronize 3D Projected Beacon Positions on animation frame
+  // 4. Synchronize 3D Projected Beacon Positions with 2D Pairwise Collision Avoidance!
   let rafId = 0;
   function updateBeaconLoop() {
     rafId = window.requestAnimationFrame(updateBeaconLoop);
     const projected = meadow.getEggScreenPositions();
     const width = window.innerWidth;
     const height = window.innerHeight;
+    const isCompact = width < 768;
+
+    const minX = isCompact ? 58 : 88;
+    const maxX = Math.max(minX, width - minX);
+    const meadowMinY = isCompact ? height * 0.48 : height * 0.45;
+    const meadowMaxY = isCompact ? height - 102 : height - 106;
+
+    const placed = [];
 
     projected.forEach((pos) => {
       const beacon = beaconElements.get(pos.id);
-      if (!beacon) {
-        return;
-      }
-      // Keep egg-starry-sky anchored comfortably in the upper starry sky
-      const isCompact = width < 768;
-      let x = pos.x;
-      let y = pos.y;
-      if (pos.id === "egg-starry-sky") {
-        x = Math.min(Math.max(x, width * 0.28), width * 0.72);
-        y = isCompact
-          ? Math.min(Math.max(y, 195), height * 0.36)
-          : Math.min(Math.max(y, height * 0.16), height * 0.34);
-      } else {
-        const minX = isCompact ? 88 : 96;
-        const maxBottom = isCompact ? height - 195 : height - 135;
-        x = Math.min(Math.max(x, minX), width - minX);
-        y = Math.min(Math.max(y, height * 0.42), maxBottom);
-      }
+      if (!beacon) return;
 
       if (!pos.visible) {
         beacon.style.opacity = "0";
         beacon.style.pointerEvents = "none";
-      } else {
-        beacon.style.opacity = "1";
-        beacon.style.pointerEvents = "auto";
-        beacon.style.transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0) translate(-50%, -50%)`;
+        return;
       }
+
+      let x = pos.x;
+      let y = pos.y;
+      const isSkyEgg = pos.id === "egg-starry-sky";
+
+      if (isSkyEgg) {
+        x = Math.min(Math.max(x, width * 0.30), width * 0.72);
+        y = isCompact
+          ? Math.min(Math.max(y, 108), height * 0.30)
+          : Math.min(Math.max(y, height * 0.14), height * 0.30);
+      } else {
+        x = Math.min(Math.max(x, minX), maxX);
+        y = Math.min(Math.max(y, meadowMinY), meadowMaxY);
+      }
+
+      placed.push({ id: pos.id, beacon, x, y, isSkyEgg });
     });
+
+    // Pairwise 2D elliptical repulsion so two beacons NEVER overlap on mobile or desktop!
+    const sepX = isCompact ? 106 : 138;
+    const sepY = isCompact ? 34 : 38;
+    for (let iter = 0; iter < 5; iter++) {
+      for (let i = 0; i < placed.length; i++) {
+        for (let j = i + 1; j < placed.length; j++) {
+          const a = placed[i];
+          const b = placed[j];
+          if (a.isSkyEgg !== b.isSkyEgg) continue;
+          let dx = b.x - a.x;
+          let dy = b.y - a.y;
+          const nx = dx / sepX;
+          const ny = dy / sepY;
+          const distSq = nx * nx + ny * ny;
+          if (distSq < 1.0) {
+            const dist = Math.sqrt(distSq) || 0.01;
+            const overlap = (1.0 - dist) * 0.52;
+            const ux = Math.abs(nx) < 0.02 ? (i % 2 === 0 ? -1 : 1) : nx / dist;
+            const uy = ny / dist;
+            a.x = Math.min(Math.max(a.x - ux * overlap * sepX, minX), maxX);
+            b.x = Math.min(Math.max(b.x + ux * overlap * sepX, minX), maxX);
+            a.y = Math.min(Math.max(a.y - uy * overlap * sepY, meadowMinY), meadowMaxY);
+            b.y = Math.min(Math.max(b.y + uy * overlap * sepY, meadowMinY), meadowMaxY);
+          }
+        }
+      }
+    }
+
+    for (const item of placed) {
+      item.beacon.style.opacity = "1";
+      item.beacon.style.pointerEvents = "auto";
+      item.beacon.style.transform = `translate3d(${Math.round(item.x)}px, ${Math.round(item.y)}px, 0) translate(-50%, -50%)`;
+    }
   }
 
-  // 5. Wire Pointer & UI Events
+  // 5. Wire Pointer, Resize & UI Events
+  window.addEventListener("resize", () => {
+    sky.resize();
+    meadow.resize();
+  });
+
   window.addEventListener("pointermove", (ev) => {
     const nx = ev.clientX / Math.max(1, window.innerWidth);
     const ny = ev.clientY / Math.max(1, window.innerHeight);
@@ -403,7 +464,6 @@ async function initApp() {
 
   window.addEventListener("pointerup", (ev) => {
     const result = meadow.handlePointerUp(ev.clientX, ev.clientY);
-    // If the user clicked in the upper sky portion, spawn a shooting star in p5.js!
     if (result && !result.dragged && !result.hitEggId) {
       const ny = ev.clientY / Math.max(1, window.innerHeight);
       const nx = ev.clientX / Math.max(1, window.innerWidth);
@@ -419,7 +479,9 @@ async function initApp() {
   btnAudio.addEventListener("click", () => {
     const active = audio.toggle();
     btnAudio.setAttribute("aria-pressed", active ? "true" : "false");
-    audioLabel.textContent = active ? "八音盒演奏中" : "星夜八音盒";
+    audioLabel.innerHTML = active
+      ? `<span class="hide-xs">八音盒</span>演奏中`
+      : `<span class="hide-xs">星夜</span>八音盒`;
     if (active) {
       audio.playDiscoveryChime(0);
     }

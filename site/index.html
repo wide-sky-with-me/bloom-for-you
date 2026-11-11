@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#040b1e">
+  <meta name="theme-color" content="#040b1f">
   <meta name="description" content="梵高星月夜与繁花满天星秘境 — Three.js + p5.js 沉浸式油画星空、六大立体花丛与隐藏爱的告白彩蛋。">
   <title>梵高星月夜 · 繁花与满天星告白秘境</title>
   <link rel="icon" href="./assets/flower.svg" type="image/svg+xml">
@@ -20,16 +20,16 @@
 </head>
 <body>
   <div id="app-shell" class="app-shell" data-ready="false">
-    <!-- Upper Realm: p5.js Van Gogh Starry Night & Starry Motes -->
+    <!-- Upper Realm: p5.js Van Gogh Starry Night, Cypress & Saint-Rémy Hills -->
     <div id="sky-container" class="sky-container" aria-hidden="true"></div>
 
-    <!-- Lower Realm: Three.js 3D Multi-Species Flower Meadow -->
+    <!-- Lower Realm: Three.js 3D Multi-Species Painterly Flower Meadow -->
     <canvas id="meadow-canvas" class="meadow-canvas" aria-label="梵高星夜与繁花满天星交互花丛"></canvas>
 
-    <!-- 3D-Projected Interactive Easter Egg Beacons -->
+    <!-- 3D-Projected Interactive Easter Egg Starlight Beacons -->
     <div id="egg-markers" class="egg-markers" aria-label="花丛与星河中的隐藏告白彩蛋"></div>
 
-    <!-- Top Floating HUD -->
+    <!-- Top Floating Gallery HUD -->
     <header class="hud-top">
       <div class="brand-badge">
         <span class="brand-dot" aria-hidden="true"></span>
@@ -42,28 +42,28 @@
       <div class="hud-actions">
         <button id="btn-audio" class="hud-pill hud-btn" type="button" aria-pressed="false" title="开启或关闭星夜八音盒">
           <span class="pill-icon" aria-hidden="true">♪</span>
-          <span id="audio-label">星夜八音盒</span>
+          <span id="audio-label"><span class="hide-xs">星夜</span>八音盒</span>
         </button>
 
         <button id="btn-meteor" class="hud-pill hud-btn" type="button" title="划破梵高星夜，召唤许愿流星">
           <span class="pill-icon" aria-hidden="true">彡</span>
-          <span>召唤流星</span>
+          <span><span class="hide-xs">召唤</span>流星</span>
         </button>
 
         <button id="btn-letter" class="hud-pill hud-btn hud-btn--rose" type="button" title="展读完整告白信笺">
           <span class="pill-icon" aria-hidden="true">✉</span>
-          <span>爱的信笺</span>
+          <span><span class="hide-xs">爱的</span>信笺</span>
         </button>
 
         <button id="btn-collection" class="hud-pill hud-counter" type="button" aria-expanded="false" title="查看已寻获的告白彩蛋">
           <span class="counter-star" aria-hidden="true">✦</span>
-          <span class="counter-label">已寻获心意</span>
+          <span class="counter-label"><span class="hide-xs">已寻获</span>心意</span>
           <strong id="counter-value" class="counter-value">0 / 5</strong>
         </button>
       </div>
     </header>
 
-    <!-- Bottom Guidance & Flower Species Quick-Discover Bar -->
+    <!-- Bottom Guidance & Flower Species Quick-Discover Dock -->
     <div class="hud-bottom">
       <div id="hint-banner" class="hint-banner" role="status" aria-live="polite">
         <span class="hint-sparkle" aria-hidden="true">✧</span>
@@ -73,16 +73,16 @@
       <nav id="egg-quick-nav" class="egg-quick-nav" aria-label="繁花与星河心意寻宝快捷导航"></nav>
     </div>
 
-    <!-- Confession Reading Modal (Frosted Midnight Glass Card) -->
+    <!-- Confession Reading Modal (Starlit Sapphire & Gold-Leaf Frame) -->
     <aside id="confession-modal" class="confession-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="card-title">
       <div id="modal-backdrop" class="modal-backdrop"></div>
       <article class="confession-card" data-accent="gold">
         <button id="btn-close-card" class="card-close" type="button" aria-label="关闭告白卡片">×</button>
 
         <div class="card-header">
-          <span id="card-badge" class="card-badge">彩蛋 I · 发光无尽夏与满天星</span>
+          <span id="card-badge" class="card-badge">彩蛋壹 · 蓝色无尽夏与满天星</span>
           <p id="card-subtitle" class="card-subtitle">无尽夏的蓝与满天星的白，是我第一眼望见你时的心跳</p>
-          <h2 id="card-title" class="card-title">初遇 · 星河落进花丛</h2>
+          <h2 id="card-title" class="card-title">初遇时的那抹星夜蓝</h2>
         </div>
 
         <div id="card-Divider" class="card-divider" aria-hidden="true">
