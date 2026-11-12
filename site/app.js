@@ -1,59 +1,17 @@
-// Master orchestrator for "予你花开 · 太阳雨中的童话星语花湾"
-// 3rd-person free orbit/pan/zoom anime cel-shaded ("三渲二") miniature diorama with zero UI clutter.
+// Realistic Coastal Villa, Botanical Flower Peninsula & Harbor Free-Exploration World
+// Supports seamless first-person walk-inside exploration (WASD + click-to-walk) & aerial panorama.
 
-import { THREE, PALETTE } from "./modules/toon-kit.js";
-import { createDioramaControls } from "./modules/diorama-controls.js";
-import { buildHarborBase } from "./modules/harbor-base.js";
-import { buildFairytaleVilla } from "./modules/fairytale-villa.js";
-import { buildHarborCraftAndProps } from "./modules/harbor-craft-and-props.js";
-import { buildSunshowerAtmosphere } from "./modules/sunshower-atmosphere.js";
-import { buildFlowerSeaWorld } from "./modules/flower-sea-world.js";
+import { THREE, clearNavigationRegistry, isPositionWalkable } from "./modules/pbr-kit.js";
+import { createExplorationControls } from "./modules/exploration-controls.js";
+import {
+  SUN_DIRECTION,
+  createRealisticSkyEnvironment,
+  buildRealisticOceanAndSky,
+} from "./modules/realistic-ocean-sky.js";
+import { buildHarborAndEstate } from "./modules/harbor-and-estate.js";
+import { buildCoastalVilla } from "./modules/coastal-villa.js";
+import { buildBotanicalFlora, createRoseBouquet } from "./modules/botanical-flora.js";
 import { createHarborAudio } from "./audio.js";
-
-function createSkyEnvironment(renderer) {
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const envScene = new THREE.Scene();
-
-  const skyGeo = new THREE.SphereGeometry(40, 24, 16);
-  const pos = skyGeo.attributes.position;
-  const colors = new Float32Array(pos.count * 3);
-  const cTop = new THREE.Color(0xd5eef3);
-  const cMid = new THREE.Color(0xf6faef);
-  const cBot = new THREE.Color(0x56b9b6);
-  const tmp = new THREE.Color();
-
-  for (let i = 0; i < pos.count; i += 1) {
-    const y = pos.getY(i) / 40;
-    if (y >= 0) {
-      tmp.copy(cMid).lerp(cTop, Math.pow(y, 0.75));
-    } else {
-      tmp.copy(cMid).lerp(cBot, Math.min(1, -y * 1.4));
-    }
-    colors[i * 3 + 0] = tmp.r;
-    colors[i * 3 + 1] = tmp.g;
-    colors[i * 3 + 2] = tmp.b;
-  }
-  skyGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  const skyMesh = new THREE.Mesh(
-    skyGeo,
-    new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })
-  );
-  envScene.add(skyMesh);
-
-  // Warm sun patch for specular glints on wet concrete & clear glass
-  const sunDisc = new THREE.Mesh(
-    new THREE.SphereGeometry(3.8, 12, 12),
-    new THREE.MeshBasicMaterial({ color: 0xfff6d6 })
-  );
-  sunDisc.position.set(16, 24, 12);
-  envScene.add(sunDisc);
-
-  const envRT = pmrem.fromScene(envScene, 0.03);
-  skyGeo.dispose();
-  sunDisc.geometry.dispose();
-  pmrem.dispose();
-  return envRT.texture;
-}
 
 async function loadGiftLetter() {
   try {
@@ -89,6 +47,10 @@ async function init() {
   const canvas = document.getElementById("diorama-canvas");
   const letterModal = document.getElementById("letter-modal");
   const letterClose = document.getElementById("letter-close");
+  const exploreBar = document.getElementById("explore-bar");
+  const exploreHint = document.getElementById("explore-hint");
+
+  clearNavigationRegistry();
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -96,124 +58,87 @@ async function init() {
     alpha: false,
     powerPreference: "high-performance",
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const gl = renderer.getContext();
+  const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+  const isSoftware = Boolean(
+    dbg && /SwiftShader|llvmpipe|Software/i.test(String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || ""))
+  );
+  renderer.setPixelRatio(isSoftware ? 1 : Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.06;
+  renderer.toneMappingExposure = 1.04;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.setClearColor(0xeaf5f4, 1);
+  if (isSoftware) {
+    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = true;
+  }
+  renderer.setClearColor(0xdce9f2, 1);
+
+  const fogColorHex = 0xdce9f2;
+  const fogDensity = 0.00068;
 
   const scene = new THREE.Scene();
-  scene.environment = createSkyEnvironment(renderer);
-  scene.environmentIntensity = 0.58;
-  scene.fog = new THREE.FogExp2(0xebf6f5, 0.0042);
-
-  // Seamless 3D Sunshower Watercolor Sky Dome (keeps alpha=1 for pure additive golden sunbeams)
-  const skyDomeGeo = new THREE.SphereGeometry(165, 32, 20);
-  const skyPos = skyDomeGeo.attributes.position;
-  const skyColors = new Float32Array(skyPos.count * 3);
-  const cZenith = new THREE.Color(0xd2edf2);
-  const cHorizon = new THREE.Color(0xf8f8ee);
-  const cLower = new THREE.Color(0xe6f2f1);
-  const cTmp = new THREE.Color();
-  for (let i = 0; i < skyPos.count; i += 1) {
-    const ny = skyPos.getY(i) / 165;
-    if (ny >= 0) {
-      cTmp.copy(cHorizon).lerp(cZenith, Math.pow(ny, 0.58));
-    } else {
-      cTmp.copy(cHorizon).lerp(cLower, Math.min(1, -ny * 2.5));
-    }
-    skyColors[i * 3 + 0] = cTmp.r;
-    skyColors[i * 3 + 1] = cTmp.g;
-    skyColors[i * 3 + 2] = cTmp.b;
-  }
-  skyDomeGeo.setAttribute("color", new THREE.BufferAttribute(skyColors, 3));
-  const skyDome = new THREE.Mesh(
-    skyDomeGeo,
-    new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, depthWrite: false, fog: false })
-  );
-  skyDome.raycast = () => {};
-  scene.add(skyDome);
+  scene.environment = createRealisticSkyEnvironment(renderer);
+  scene.environmentIntensity = 0.72;
+  scene.fog = new THREE.FogExp2(fogColorHex, fogDensity);
 
   const isPortrait = window.innerWidth < window.innerHeight;
   const camera = new THREE.PerspectiveCamera(
-    isPortrait ? 48 : 36,
+    isPortrait ? 62 : 54,
     window.innerWidth / Math.max(1, window.innerHeight),
-    0.25,
-    320
+    0.15,
+    2200
   );
 
-  const initialTarget = new THREE.Vector3(0.0, 1.25, 0.4);
-  const initialPosition = isPortrait
-    ? new THREE.Vector3(53.5, 39.5, 55.8)
-    : new THREE.Vector3(39.2, 28.2, 41.4);
-
-  const controls = createDioramaControls(camera, canvas, {
-    initialTarget,
-    initialPosition,
-    minRadius: 5.8,
-    maxRadius: 96.0,
-    panBound: 21.0,
-  });
-
-  // High-key sunlit watercolor anime lighting rig (covering 44m x 44m grand diorama)
-  const hemiLight = new THREE.HemisphereLight(0xf5fdff, 0x6ab4bc, 1.42);
-  hemiLight.position.set(0, 36, 0);
+  // Physically-balanced coastal sunlight + warm limestone hemisphere bounce
+  const hemiLight = new THREE.HemisphereLight(0xe2f1ff, 0xdccfb9, 0.96);
+  hemiLight.position.set(0, 80, 0);
   scene.add(hemiLight);
 
-  const sunLight = new THREE.DirectionalLight(0xfff5db, 1.68);
-  sunLight.position.set(24.5, 38.5, 19.5);
+  const sunLight = new THREE.DirectionalLight(0xfff4df, 2.35);
+  sunLight.position.copy(SUN_DIRECTION).multiplyScalar(140);
   sunLight.castShadow = true;
-  sunLight.shadow.mapSize.set(2048, 2048);
-  sunLight.shadow.camera.near = 6;
-  sunLight.shadow.camera.far = 98;
-  const shadowExtent = 29.5;
+  const shadowMapDim = isSoftware ? 1024 : 2048;
+  sunLight.shadow.mapSize.set(shadowMapDim, shadowMapDim);
+  sunLight.shadow.camera.near = 25;
+  sunLight.shadow.camera.far = 310;
+  const shadowExtent = 95;
   sunLight.shadow.camera.left = -shadowExtent;
   sunLight.shadow.camera.right = shadowExtent;
   sunLight.shadow.camera.top = shadowExtent;
   sunLight.shadow.camera.bottom = -shadowExtent;
-  sunLight.shadow.bias = -0.00045;
-  sunLight.shadow.normalBias = 0.022;
+  sunLight.shadow.bias = -0.00035;
+  sunLight.shadow.normalBias = 0.03;
   scene.add(sunLight);
 
-  const coolFill = new THREE.DirectionalLight(0xbce9ef, 0.54);
-  coolFill.position.set(-16, 11, -15);
-  scene.add(coolFill);
-
-  const cutawayBounce = new THREE.DirectionalLight(0xdaf5f4, 0.36);
-  cutawayBounce.position.set(14, 4, 18);
-  scene.add(cutawayBounce);
-
-  // Assemble the 4 miniature world subsystems
+  // Build Realistic Coastal World Subsystems
   const worldRoot = new THREE.Group();
-  worldRoot.name = "SunshowerFairytaleHarborWorld";
+  worldRoot.name = "RealisticCoastalEstateWorld";
   scene.add(worldRoot);
 
-  const harborBase = buildHarborBase();
-  worldRoot.add(harborBase.group);
+  const oceanSky = buildRealisticOceanAndSky({ fogColor: fogColorHex, fogDensity });
+  worldRoot.add(oceanSky.group);
 
-  const villa = buildFairytaleVilla();
+  const estate = buildHarborAndEstate();
+  worldRoot.add(estate.group);
+
+  const villa = buildCoastalVilla();
   worldRoot.add(villa.group);
 
-  const craftProps = buildHarborCraftAndProps(harborBase.anchors || {});
-  worldRoot.add(craftProps.group);
+  const flora = buildBotanicalFlora();
+  worldRoot.add(flora.group);
 
-  const flowerSea = buildFlowerSeaWorld();
-  worldRoot.add(flowerSea.group);
-
-  const allDripPoints = [
-    ...((craftProps && craftProps.dripPoints) || []),
-    ...((villa && villa.anchors && villa.anchors.dripPoints) || []),
-  ];
-
-  const atmosphere = buildSunshowerAtmosphere({
-    puddles: (harborBase.anchors && harborBase.anchors.puddles) || [],
-    dripPoints: allDripPoints,
-    boatReflections: craftProps.boatReflections || [],
+  const controls = createExplorationControls(camera, canvas, {
+    onModeChange(nextMode) {
+      if (!exploreHint) return;
+      exploreHint.textContent =
+        nextMode === "aerial"
+          ? "拖拽旋转 · 右键平移 · 滚轮拉近落地漫游"
+          : "WASD / 点击地面自由进屋探索 · 拖拽环顾";
+    },
   });
-  worldRoot.add(atmosphere.group);
 
   // Audio & Love Letter Modal
   const audio = createHarborAudio();
@@ -221,13 +146,11 @@ async function init() {
   populateLetterModal(giftData);
 
   function openLetterModal() {
-    if (!letterModal) return;
-    letterModal.hidden = false;
+    if (letterModal) letterModal.hidden = false;
   }
 
   function closeLetterModal() {
-    if (!letterModal) return;
-    letterModal.hidden = true;
+    if (letterModal) letterModal.hidden = true;
   }
 
   letterClose?.addEventListener("click", closeLetterModal);
@@ -240,225 +163,161 @@ async function init() {
     }
   });
 
-  // Collect interactive targets & manage subtle hover rim-highlight
-  const raycaster = new THREE.Raycaster();
-  const pointerNDC = new THREE.Vector2();
-  let hoveredRoot = null;
-  const savedEmissives = new Map();
+  // Presets supporting both human-eye walk-inside views and panoramic aerial views
+  const CAMERA_PRESETS = {
+    courtyardWalk: { type: "walk", x: -14.0, z: 13.8, yaw: 0.0, pitch: 0.04 },
+    villaLivingWalk: { type: "walk", x: -22.5, z: 3.05, yaw: -0.96, pitch: -0.04 },
+    villaMasterWalk: { type: "walk", x: -17.4, z: -4.4, yaw: 0.42, pitch: -0.06 },
+    villaStudyWalk: { type: "walk", x: -11.3, z: -4.25, yaw: -0.48, pitch: -0.05 },
+    gazeboFlowerWalk: { type: "walk", x: -51.5, z: 31.8, yaw: 2.26, pitch: 0.01 },
+    harborPierWalk: { type: "walk", x: 34.0, z: 4.5, yaw: -1.32, pitch: -0.02 },
+    creekBridgeWalk: { type: "walk", x: 1.5, z: -34.5, yaw: -0.45, pitch: 0.05 },
+    aerialEstateOverview: { type: "aerial", target: [-4.0, 3.0, 2.0], radius: 132.0, phi: 1.06, theta: 0.62 },
+    aerialVillaHarbor: { type: "aerial", target: [6.0, 2.5, 4.0], radius: 68.0, phi: 1.12, theta: 0.52 },
+    mobileOverview: { type: "walk", x: -14.0, z: 15.2, yaw: 0.0, pitch: 0.05 },
+  };
 
-  function setHoveredRoot(nextRoot) {
-    if (hoveredRoot === nextRoot) return;
-    if (hoveredRoot) {
-      hoveredRoot.traverse((child) => {
-        if (child.isMesh && savedEmissives.has(child.uuid)) {
-          const prev = savedEmissives.get(child.uuid);
-          if (child.material && child.material.emissive) {
-            child.material.emissive.copy(prev.color);
-            child.material.emissiveIntensity = prev.intensity;
-          }
-        }
-      });
-      savedEmissives.clear();
-    }
-    hoveredRoot = nextRoot;
-    canvas.classList.toggle("is-hover-interactive", Boolean(hoveredRoot));
-
-    if (hoveredRoot) {
-      const accent = new THREE.Color(
-        (hoveredRoot.userData.interactive && hoveredRoot.userData.interactive.accentColor) ||
-          PALETTE.brassGold
-      );
-      hoveredRoot.traverse((child) => {
-        if (
-          child.isMesh &&
-          child.material &&
-          child.material.emissive &&
-          !child.material.transparent
-        ) {
-          // Clone shared cached material lazily on first hover so highlight stays isolated
-          if (!child.userData.hoverClonedMat) {
-            child.material = child.material.clone();
-            child.userData.hoverClonedMat = true;
-          }
-          savedEmissives.set(child.uuid, {
-            color: child.material.emissive.clone(),
-            intensity: child.material.emissiveIntensity || 0,
-          });
-          child.material.emissive.lerp(accent, 0.42);
-          child.material.emissiveIntensity = Math.max(
-            0.28,
-            (child.material.emissiveIntensity || 0) + 0.24
-          );
-        }
-      });
-    }
+  function markActivePill(presetName) {
+    if (!exploreBar) return;
+    exploreBar.querySelectorAll(".explore-pill").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.preset === presetName);
+    });
   }
 
-  function pickInteractive(clientX, clientY) {
+  function setCameraPreset(name) {
+    const p = CAMERA_PRESETS[name];
+    if (!p) return false;
+    if (p.type === "walk") {
+      controls.teleportWalk(p.x, p.z, p.yaw, p.pitch);
+    } else {
+      controls.setAerialImmediate(p.target, p.radius, p.phi, p.theta);
+    }
+    markActivePill(name);
+    return true;
+  }
+
+  exploreBar?.querySelectorAll(".explore-pill").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      audio.unlock();
+      const preset = btn.dataset.preset;
+      if (preset) setCameraPreset(preset);
+    });
+  });
+
+  // Subtle auto-dimming of the exploration capsule when pointer is idle
+  let idleTimer = null;
+  function bumpCapsuleActivity() {
+    if (!exploreBar) return;
+    exploreBar.classList.remove("is-idle");
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => exploreBar.classList.add("is-idle"), 4500);
+  }
+  window.addEventListener("pointermove", bumpCapsuleActivity, { passive: true });
+  window.addEventListener("keydown", bumpCapsuleActivity, { passive: true });
+  bumpCapsuleActivity();
+
+  // Interactive 3D Raycasting & Click-to-Walk
+  const raycaster = new THREE.Raycaster();
+  const pointerNDC = new THREE.Vector2();
+
+  function pickScene(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     pointerNDC.x = ((clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
     pointerNDC.y = -((clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
     raycaster.setFromCamera(pointerNDC, camera);
     const hits = raycaster.intersectObjects(worldRoot.children, true);
+    let groundPoint = null;
     for (let i = 0; i < hits.length; i += 1) {
-      let cur = hits[i].object;
+      const h = hits[i];
+      if (!groundPoint && h.point) groundPoint = h.point;
+      let cur = h.object;
       while (cur) {
         if (cur.userData && cur.userData.interactive) {
-          return { root: cur.userData.interactiveRoot || cur, hitPoint: hits[i].point };
+          return { interactive: cur.userData.interactive, root: cur, hitPoint: h.point };
         }
         cur = cur.parent;
       }
     }
-    return null;
+    return { interactive: null, hitPoint: groundPoint };
   }
 
-  function triggerInteraction(id, hitObject = null) {
+  function triggerInteraction(id) {
     switch (id) {
-      case "villa-roof": {
-        villa.toggleRoof();
-        audio.playRoofChime(villa.isRoofOpen());
-        return { id, roofOpen: villa.isRoofOpen() };
-      }
       case "mailbox":
-      case "love-letter": {
+      case "love-letter":
         openLetterModal();
         audio.playLetterUnfold();
         return { id, letterOpen: true };
-      }
-      case "lighthouse": {
-        harborBase.flashLighthouse?.(true);
-        atmosphere.triggerRainbow?.();
+      case "lighthouse":
+        estate.flashLighthouse?.();
+        oceanSky.triggerRainbow?.();
         audio.playLighthouseBell();
-        return { id, lighthouseLit: true, rainbow: true };
-      }
-      case "boat": {
-        const idx =
-          hitObject && hitObject.userData && typeof hitObject.userData.boatIndex === "number"
-            ? hitObject.userData.boatIndex
-            : undefined;
-        craftProps.rockBoat?.(idx);
+        return { id, lighthouseLit: true };
+      case "boat":
+        estate.rockBoats?.();
         audio.playShipBell();
         return { id, rocked: true };
-      }
       case "instruments":
-      case "umbrella": {
-        craftProps.chimeInstruments?.();
+      case "umbrella":
         audio.playDuetArpeggio();
         return { id, duetPlayed: true };
-      }
-      case "vending":
-      case "radio": {
-        craftProps.pulseVending?.();
-        audio.playVendingClink();
-        return { id, pulsed: true };
-      }
-      case "underwater-fish": {
-        harborBase.burstFish?.();
-        audio.playFishRipple();
-        return { id, fishBurst: true };
-      }
       case "flower-gazebo":
-      case "bicycle": {
-        flowerSea.burstPetals?.();
+      case "bicycle":
+        estate.swingGazebo?.();
+        flora.burstPetals?.();
         audio.playPetalGlissando();
         return { id, petalsBurst: true };
-      }
-      case "windmill": {
-        flowerSea.boostWindmill?.();
-        flowerSea.burstPetals?.();
-        audio.playPetalGlissando();
+      case "windmill":
+        estate.boostWindmill?.();
+        flora.burstPetals?.();
+        audio.playRoofChime(true);
         return { id, windmillBoosted: true };
-      }
-      case "tram": {
-        flowerSea.ringTram?.();
-        audio.playTramBell();
-        return { id, tramRung: true };
-      }
       default:
-        return { id };
+        return null;
     }
   }
 
   canvas.addEventListener("pointermove", (e) => {
-    if (e.buttons !== 0) {
-      if (hoveredRoot) setHoveredRoot(null);
-      return;
-    }
-    const picked = pickInteractive(e.clientX, e.clientY);
-    setHoveredRoot(picked ? picked.root : null);
+    if (e.buttons !== 0) return;
+    const picked = pickScene(e.clientX, e.clientY);
+    canvas.classList.toggle("is-hover-interactive", Boolean(picked.interactive));
   });
 
   canvas.addEventListener("pointerup", (e) => {
-    if (e.button !== 0 || controls.wasClickDrag()) return;
-    if (letterModal && !letterModal.hidden) return;
-    const picked = pickInteractive(e.clientX, e.clientY);
-    if (picked && picked.root && picked.root.userData.interactive) {
-      triggerInteraction(picked.root.userData.interactive.id, picked.root);
+    audio.unlock();
+    if (!controls.wasClickGesture()) return;
+    const picked = pickScene(e.clientX, e.clientY);
+    if (picked.interactive) {
+      triggerInteraction(picked.interactive.id);
+      return;
     }
-  });
-
-  canvas.addEventListener("dblclick", (e) => {
-    const picked = pickInteractive(e.clientX, e.clientY);
-    if (picked) {
-      controls.focusOn(picked.hitPoint, 11.5);
-    } else {
-      controls.resetView();
+    if (picked.hitPoint && isPositionWalkable(picked.hitPoint.x, picked.hitPoint.z, 0.28)) {
+      controls.walkTo(picked.hitPoint.x, picked.hitPoint.z);
     }
   });
 
   window.addEventListener("resize", () => {
     const w = window.innerWidth;
     const h = Math.max(1, window.innerHeight);
-    camera.fov = w < h ? 48 : 36;
+    camera.fov = w < h ? 62 : 54;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h, false);
   });
-
-  // Camera presets for multi-angle inspection & automated visual verification
-  const CAMERA_PRESETS = {
-    overview: { target: [0.0, 1.25, 0.4], radius: 64.2, phi: 1.06, theta: 0.75 },
-    mobileOverview: { target: [0.0, 1.25, 0.6], radius: 81.5, phi: 1.06, theta: 0.75 },
-    flowerSeaPromontory: { target: [-13.2, 2.2, 10.6], radius: 19.6, phi: 1.10, theta: 0.86 },
-    sakuraTramHills: { target: [-5.8, 2.55, -14.2], radius: 24.5, phi: 1.12, theta: 0.24 },
-    cutaway: { target: [8.5, -0.45, 15.5], radius: 22.5, phi: 1.30, theta: 0.58 },
-    harborInteriors: { target: [2.8, 1.65, -2.2], radius: 14.2, phi: 1.16, theta: 0.34 },
-    villaRooms: { target: [-7.4, 2.15, 3.8], radius: 11.4, phi: 0.72, theta: 1.18 },
-    rainbowArch: { target: [0.4, 2.1, -2.2], radius: 56.5, phi: 1.16, theta: 0.65 },
-    justLeftSteps: { target: [-1.8, 1.05, 6.2], radius: 9.2, phi: 1.14, theta: 0.88 },
-  };
-
-  function setCameraPreset(name) {
-    const p = CAMERA_PRESETS[name];
-    if (!p) return false;
-    controls.setPoseImmediate(
-      new THREE.Vector3(...p.target),
-      p.radius,
-      p.phi,
-      p.theta
-    );
-    return true;
-  }
 
   // Animation loop
   const clock = new THREE.Clock();
   let elapsed = 0;
   let paused = false;
 
-  function tickScene(dt) {
+  function stepWorld(dt) {
     elapsed += dt;
-    controls.update();
-    harborBase.update?.(elapsed, dt);
+    controls.update(dt);
+    oceanSky.update?.(elapsed, dt);
+    estate.update?.(elapsed, dt);
     villa.update?.(elapsed, dt);
-    craftProps.update?.(elapsed, dt);
-    flowerSea.update?.(elapsed, dt);
-    atmosphere.update?.(elapsed, dt);
-
-    const cloudFactor = atmosphere.getCloudFactor ? atmosphere.getCloudFactor() : 1.0;
-    sunLight.intensity = 1.48 + 0.26 * cloudFactor;
-    hemiLight.intensity = 1.34 + 0.12 * cloudFactor;
-
-    renderer.render(scene, camera);
+    flora.update?.(elapsed, dt);
   }
 
   function animate() {
@@ -468,43 +327,34 @@ async function init() {
       return;
     }
     const dt = Math.min(clock.getDelta(), 0.05);
-    tickScene(dt);
+    stepWorld(dt);
+    renderer.render(scene, camera);
   }
 
   animate();
 
-  // Expose deterministic inspection API for browser QA
+  // Deterministic QA & inspection API
   window.__fairytaleWorld = {
     ready: true,
     scene,
     camera,
     controls,
-    harborBase,
+    oceanSky,
+    estate,
     villa,
-    craftProps,
-    flowerSea,
-    atmosphere,
+    flora,
     openLetterModal,
     closeLetterModal,
     triggerInteraction,
     setCameraPreset,
-    setPaused(nextPaused) {
-      paused = Boolean(nextPaused);
+    setPaused(next) {
+      paused = Boolean(next);
     },
     advanceAndRender(totalSeconds = 0.25, stepDt = 0.05) {
       const steps = Math.max(1, Math.round(totalSeconds / stepDt));
       for (let i = 0; i < steps; i += 1) {
-        elapsed += stepDt;
-        controls.update();
-        harborBase.update?.(elapsed, stepDt);
-        villa.update?.(elapsed, stepDt);
-        craftProps.update?.(elapsed, stepDt);
-        flowerSea.update?.(elapsed, stepDt);
-        atmosphere.update?.(elapsed, stepDt);
+        stepWorld(stepDt);
       }
-      const cloudFactor = atmosphere.getCloudFactor ? atmosphere.getCloudFactor() : 1.0;
-      sunLight.intensity = 1.48 + 0.26 * cloudFactor;
-      hemiLight.intensity = 1.34 + 0.12 * cloudFactor;
       return new Promise((resolve) => {
         requestAnimationFrame(() => {
           renderer.render(scene, camera);
@@ -534,13 +384,18 @@ async function init() {
           interactiveIds.add(obj.userData.interactive.id);
         }
       });
+      const wp = controls.getWalkPosition();
       return {
+        mode: controls.getMode(),
+        walkPosition: [
+          Number(wp.x.toFixed(2)),
+          Number(wp.y.toFixed(2)),
+          Number(wp.z.toFixed(2)),
+        ],
         meshes,
-        instancedFlowersAndPetals: instancedCount,
+        instancedFloraCount: instancedCount,
         triangles: Math.round(triangles),
         interactiveIds: Array.from(interactiveIds).sort(),
-        roofOpen: villa.isRoofOpen(),
-        rainbowActive: atmosphere.isRainbowActive ? atmosphere.isRainbowActive() : false,
         letterVisible: Boolean(letterModal && !letterModal.hidden),
       };
     },

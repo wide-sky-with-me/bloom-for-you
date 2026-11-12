@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "site"
 
 
-class SunshowerHarborDioramaTests(unittest.TestCase):
+class RealisticCoastalEstateTests(unittest.TestCase):
     def test_build_produces_verified_release_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "dist"
@@ -24,25 +24,25 @@ class SunshowerHarborDioramaTests(unittest.TestCase):
             self.assertTrue((built / "THIRD_PARTY_NOTICES.md").is_file())
 
             manifest = json.loads((built / "release.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["schema"], 5)
-            self.assertEqual(manifest["style"], "japanese-flower-sea-harbor-diorama-v2")
-            self.assertEqual(manifest["worldSizeMeters"], 44)
+            self.assertEqual(manifest["schema"], 6)
+            self.assertEqual(manifest["style"], "realistic-coastal-villa-flower-estate-v3")
+            self.assertEqual(manifest["worldSizeMeters"], 260)
             self.assertEqual(manifest["renderer"], "three-0.186.1")
-            self.assertEqual(manifest["uiChrome"], "zero-hud-tabletop-diorama")
+            self.assertEqual(manifest["navigation"], "first-person-walk-inside-and-aerial-roam")
             for mod in (
-                "modules/toon-kit.js",
-                "modules/diorama-controls.js",
-                "modules/harbor-base.js",
-                "modules/fairytale-villa.js",
-                "modules/harbor-craft-and-props.js",
-                "modules/flower-sea-world.js",
-                "modules/sunshower-atmosphere.js",
+                "modules/pbr-kit.js",
+                "modules/exploration-controls.js",
+                "modules/realistic-ocean-sky.js",
+                "modules/harbor-and-estate.js",
+                "modules/coastal-villa.js",
+                "modules/botanical-flora.js",
             ):
                 self.assertIn(mod, manifest["files"])
 
-    def test_zero_permanent_ui_chrome_in_index_html(self) -> None:
+    def test_clean_exploration_markup_in_index_html(self) -> None:
         html = (SITE / "index.html").read_text(encoding="utf-8")
         self.assertIn('id="diorama-canvas"', html)
+        self.assertIn('id="explore-bar"', html)
         self.assertIn('id="letter-modal"', html)
         self.assertIn("hidden", html)
         for forbidden_hud in ("sw-topbar", "sw-nav", "sw-route", "sw-scrollbar", "sw-copylayer"):
@@ -66,13 +66,16 @@ class SunshowerHarborDioramaTests(unittest.TestCase):
                     f"External runtime URL forbidden in first-party file {rel}",
                 )
                 checked += 1
-        self.assertGreaterEqual(checked, 10)
+        self.assertGreaterEqual(checked, 9)
 
-    def test_legacy_files_removed(self) -> None:
+    def test_legacy_anime_and_scrub_files_removed(self) -> None:
         legacy_paths = (
             SITE / "diorama-stage.js",
             SITE / "scrub-world.js",
-            SITE / "assets" / "models" / "bloom_scroll_world.glb",
+            SITE / "modules" / "toon-kit.js",
+            SITE / "modules" / "fairytale-villa.js",
+            SITE / "modules" / "flower-sea-world.js",
+            SITE / "modules" / "sunshower-atmosphere.js",
             ROOT / "tools",
         )
         for p in legacy_paths:
@@ -95,7 +98,7 @@ class SunshowerHarborDioramaTests(unittest.TestCase):
             SITE / "audio.js",
             *sorted((SITE / "modules").glob("*.js")),
         ]
-        self.assertGreaterEqual(len(js_files), 9)
+        self.assertEqual(len(js_files), 8)
         for js_path in js_files:
             proc = subprocess.run(
                 [node, "--check", str(js_path)],

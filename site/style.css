@@ -167,3 +167,94 @@ body {
     transform: translateY(0) scale(1);
   }
 }
+
+
+/* Subtle Frosted-Glass Free-Exploration Waypoint Capsule */
+.explore-capsule {
+  position: fixed;
+  left: 50%;
+  bottom: max(14px, env(safe-area-inset-bottom, 14px));
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100vw - 20px);
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: rgba(20, 30, 38, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 10px 30px rgba(10, 18, 26, 0.22);
+  transition: opacity 0.45s ease;
+}
+
+.explore-capsule.is-idle {
+  opacity: 0.38;
+}
+
+.explore-capsule:hover {
+  opacity: 1;
+}
+
+.explore-hint {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: rgba(255, 252, 246, 0.86);
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.explore-pills {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  max-width: 100%;
+  scrollbar-width: none;
+}
+
+.explore-pills::-webkit-scrollbar {
+  display: none;
+}
+
+.explore-pill {
+  appearance: none;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(255, 252, 246, 0.92);
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  font-weight: 500;
+  padding: 5px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+
+.explore-pill:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.explore-pill.is-active {
+  background: rgba(255, 248, 238, 0.92);
+  color: #1f2e3a;
+  border-color: rgba(255, 255, 255, 0.95);
+}
+
+@media (max-width: 640px) {
+  .explore-capsule {
+    border-radius: 18px;
+    padding: 6px 9px;
+  }
+  .explore-hint {
+    font-size: 0.67rem;
+  }
+  .explore-pill {
+    font-size: 0.72rem;
+    padding: 4px 9px;
+  }
+}

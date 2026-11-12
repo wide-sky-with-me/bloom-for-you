@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the '予你花开 · 太阳雨中的童话星语花湾' 3D Anime Diorama static Pages artifact."""
+"""Build the '予你花开 · 写实海景花墅与漫山花海自由漫游世界' 3D PBR static Pages artifact."""
 
 from __future__ import annotations
 
@@ -18,13 +18,12 @@ REQUIRED_SITE_FILES = (
     "app.js",
     "audio.js",
     "gift.json",
-    "modules/toon-kit.js",
-    "modules/diorama-controls.js",
-    "modules/harbor-base.js",
-    "modules/fairytale-villa.js",
-    "modules/harbor-craft-and-props.js",
-    "modules/flower-sea-world.js",
-    "modules/sunshower-atmosphere.js",
+    "modules/pbr-kit.js",
+    "modules/exploration-controls.js",
+    "modules/realistic-ocean-sky.js",
+    "modules/harbor-and-estate.js",
+    "modules/coastal-villa.js",
+    "modules/botanical-flora.js",
     "assets/flower-song.woff2",
     "assets/FONT-LICENSE.txt",
     "assets/flower.svg",
@@ -47,7 +46,6 @@ def verify_source(source: Path) -> dict:
         if not target.is_file():
             raise FileNotFoundError(f"Missing required site asset: {rel}")
 
-    # Validate preserved gift.json love letter
     gift = json.loads((source / "gift.json").read_text(encoding="utf-8"))
     for key in ("recipient", "salutation", "signature"):
         if not isinstance(gift.get(key), str) or not gift[key].strip():
@@ -59,7 +57,6 @@ def verify_source(source: Path) -> dict:
     ):
         raise ValueError("gift.json: letter must contain non-empty text paragraphs")
 
-    # Validate Three.js 0.186.1 vendor bundle integrity
     three_dir = source / "vendor" / "three-0.186.1"
     three_meta = json.loads((three_dir / "metadata.json").read_text(encoding="utf-8"))
     if three_meta.get("name") != "three" or three_meta.get("version") != "0.186.1":
@@ -102,11 +99,11 @@ def build(output: Path) -> Path:
             file_hashes[rel] = _sha256(file_path)
 
     release = {
-        "schema": 5,
-        "style": "japanese-flower-sea-harbor-diorama-v2",
-        "worldSizeMeters": 44,
+        "schema": 6,
+        "style": "realistic-coastal-villa-flower-estate-v3",
+        "worldSizeMeters": 260,
         "renderer": "three-0.186.1",
-        "uiChrome": "zero-hud-tabletop-diorama",
+        "navigation": "first-person-walk-inside-and-aerial-roam",
         "modules": summary["modules"],
         "revision": os.environ.get("BLOOM_BUILD_REVISION", "local"),
         "files": file_hashes,
@@ -115,7 +112,7 @@ def build(output: Path) -> Path:
         json.dumps(release, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    print(f"Built Sunshower Fairytale Harbor 3D Diorama: {output}")
+    print(f"Built Realistic Coastal Villa & Flower Estate 3D World: {output}")
     return output
 
 

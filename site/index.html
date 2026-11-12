@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>予你花开 · 太阳雨中的日系花海与星语花湾</title>
-  <meta name="description" content="献给最爱的老婆：44m×44m 可自由拖拽、旋转、缩放与互动的日系三渲二海岸花海、微缩渔港与两室一厅童话花墅。" />
+  <title>予你花开 · 海景花墅与漫山花海自由漫游</title>
+  <meta name="description" content="献给最爱的老婆：写实风格 3D 漫山花海半岛、海港游艇与可自由步入探索的两室一厅海景花墅。" />
   <link rel="icon" href="./assets/flower.svg" type="image/svg+xml" />
   <link rel="preload" href="./assets/flower-song.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="./style.css" />
@@ -18,7 +18,20 @@
   </script>
 </head>
 <body>
-  <canvas id="diorama-canvas" aria-label="太阳雨中的童话星语花湾微缩三维模型"></canvas>
+  <canvas id="diorama-canvas" aria-label="写实海景两室一厅花墅与海岸花海自由探索世界"></canvas>
+
+  <nav class="explore-capsule" id="explore-bar" aria-label="自由探索视角切换">
+    <span class="explore-hint" id="explore-hint">WASD / 点击地面行走 · 拖拽环顾</span>
+    <div class="explore-pills">
+      <button type="button" class="explore-pill is-active" data-preset="courtyardWalk">庭院门廊</button>
+      <button type="button" class="explore-pill" data-preset="villaLivingWalk">走进客厅</button>
+      <button type="button" class="explore-pill" data-preset="villaMasterWalk">海景主卧</button>
+      <button type="button" class="explore-pill" data-preset="villaStudyWalk">书房信笺</button>
+      <button type="button" class="explore-pill" data-preset="gazeboFlowerWalk">海岬花亭</button>
+      <button type="button" class="explore-pill" data-preset="harborPierWalk">海港游艇</button>
+      <button type="button" class="explore-pill" data-preset="aerialEstateOverview">高空全景</button>
+    </div>
+  </nav>
 
   <div class="letter-backdrop" id="letter-modal" role="dialog" aria-modal="true" aria-labelledby="letter-salutation" hidden>
     <article class="letter-sheet">
