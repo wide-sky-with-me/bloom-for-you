@@ -1,5 +1,5 @@
 import { createVanGoghSky } from "./vangogh-sky.js";
-import { createMeadowScene } from "./flower-meadow.js";
+import { createMeadowScene, villaLocalToWorld } from "./flower-meadow.js";
 import { createNightAudio } from "./audio.js";
 import { mountFairytaleScrollWorld } from "./scroll-world-engine.js";
 
@@ -85,6 +85,8 @@ async function initApp() {
   const btnModeToggle = document.getElementById("btn-mode-toggle");
   const modeToggleIcon = document.getElementById("mode-toggle-icon");
   const modeToggleLabel = document.getElementById("mode-toggle-label");
+  const btnRoofToggle = document.getElementById("btn-roof-toggle");
+  const roofToggleLabel = document.getElementById("roof-toggle-label");
   const btnFollowSprite = document.getElementById("btn-follow-sprite");
   const followLabel = document.getElementById("follow-label");
   const btnAudio = document.getElementById("btn-audio");
@@ -211,6 +213,43 @@ async function initApp() {
     }
   }
 
+  let lastRoofOpenState = null;
+  function syncRoofButtonUI() {
+    if (!btnRoofToggle) return;
+    const isOpen = meadow.getVillaRoofOpen() > 0.45;
+    if (isOpen === lastRoofOpenState) return;
+    lastRoofOpenState = isOpen;
+    btnRoofToggle.setAttribute("aria-pressed", isOpen ? "true" : "false");
+    if (roofToggleLabel) {
+      roofToggleLabel.innerHTML = isOpen
+        ? `<span class="hide-xs">合拢</span>屋顶`
+        : `<span class="hide-xs">两室</span>一厅`;
+    }
+  }
+
+  function handleRoofToggleAction() {
+    if (scrollWorld.isEnabled()) {
+      const idx = scrollWorld.getActiveIndex();
+      if (idx < 4 || idx > 6) {
+        scrollWorld.jumpTo(4);
+        return;
+      }
+      scrollWorld.setEnabled(false);
+    }
+    const nextOpen = meadow.toggleVillaRoof();
+    const camArr = nextOpen > 0.5
+      ? villaLocalToWorld(0.65, 3.48, 3.95)
+      : villaLocalToWorld(0.32, 1.82, 4.65);
+    const lookArr = nextOpen > 0.5
+      ? villaLocalToWorld(-0.08, 0.48, -0.05)
+      : villaLocalToWorld(-0.02, 0.90, 0.12);
+    meadow.focusCamera(camArr, lookArr, 14000, false);
+    hintTextEl.textContent = nextOpen > 0.5
+      ? "🏠 已掀开石板屋顶进入自由看房视角：拖拽旋转、滚轮缩放，细看两室一厅每一件微缩家具"
+      : "🏠 已合拢石板屋顶回到庭院外观视角：点击顶部「漫游飞越」可继续一镜到底旅程";
+    syncRoofButtonUI();
+  }
+
   // 2B. Mount Scroll-World Continuous 3D Camera-Flight Engine (adapted from oso95/scroll-world)
   const scrollWorld = mountFairytaleScrollWorld({
     shellEl: appShell,
@@ -233,11 +272,27 @@ async function initApp() {
         openOriginalLoveLetter();
       } else if (actionName === "enter-explore") {
         scrollWorld.setEnabled(false);
+      } else if (actionName === "jump-villa") {
+        if (!scrollWorld.isEnabled()) scrollWorld.setEnabled(true);
+        scrollWorld.jumpTo(4);
+      } else if (actionName === "toggle-roof") {
+        handleRoofToggleAction();
+      } else if (actionName === "explore-villa") {
+        scrollWorld.setEnabled(false);
+        meadow.setVillaRoofOpen(1.0, false);
+        meadow.focusCamera(
+          villaLocalToWorld(0.65, 3.48, 3.95),
+          villaLocalToWorld(-0.08, 0.48, -0.05),
+          15000,
+          false
+        );
+        hintTextEl.textContent = "🏠 已进入 360° 自由看房模式：拖拽旋转、滚轮缩放，细看两室一厅壁炉、餐厨、画室与主卧";
       }
     },
     onModeChange: (isScrollMode) => {
       syncModeButtonUI(isScrollMode);
       syncFollowButtonUI();
+      syncRoofButtonUI();
     },
   });
   syncModeButtonUI(scrollWorld.isEnabled());
@@ -593,6 +648,7 @@ async function initApp() {
     const modalOpen = modalEl.getAttribute("aria-hidden") === "false";
     const scrollActive = scrollWorld.isEnabled();
     appShell.dataset.modalOpen = modalOpen ? "true" : "false";
+    syncRoofButtonUI();
 
     const minX = isCompact ? 56 : 86;
     const maxX = Math.max(minX, width - (scrollActive ? 74 : minX));
@@ -751,8 +807,14 @@ async function initApp() {
     btnModeToggle.addEventListener("click", () => {
       const nextScrollMode = scrollWorld.toggleEnabled();
       if (!nextScrollMode) {
-        hintTextEl.textContent = "✧ 已进入 360° 自由探索模式：拖拽旋转镜头，点击任意花丛、小路或彩蛋与提灯小精灵互动";
+        hintTextEl.textContent = "✧ 已进入 360° 自由探索模式：拖拽旋转、滚轮缩放镜头，点击任意花丛、小路或两室一厅小屋互动";
       }
+    });
+  }
+
+  if (btnRoofToggle) {
+    btnRoofToggle.addEventListener("click", () => {
+      handleRoofToggleAction();
     });
   }
 
@@ -885,6 +947,11 @@ async function initApp() {
     },
     setScrollWorldMode(enabled) {
       scrollWorld.setEnabled(enabled);
+      return this.getDiagnostics();
+    },
+    setVillaRoofOpen(openVal, snap = true) {
+      meadow.setVillaRoofOpen(openVal, snap);
+      syncRoofButtonUI();
       return this.getDiagnostics();
     },
     getScrollSegments() {

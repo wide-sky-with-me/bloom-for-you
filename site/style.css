@@ -32,13 +32,18 @@
   padding: 0;
 }
 
-html,
-body {
+html {
   width: 100%;
   min-height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
+  background-color: var(--bg-deep);
+}
+
+body {
+  width: 100%;
+  min-height: 100%;
   background-color: var(--bg-deep);
   color: var(--text-primary);
   font-family: var(--font-sans);
@@ -515,6 +520,10 @@ html[data-scroll-world="false"] body {
 
 .hud-btn--fairy {
   border-color: rgba(254, 240, 138, 0.46);
+}
+
+.hud-btn--villa {
+  border-color: rgba(251, 191, 36, 0.52);
 }
 
 .hud-btn--fairy[aria-pressed="true"] {

@@ -37,15 +37,43 @@ function createRng(seed = 20261111) {
 }
 
 // ============================================================================
-// 1. WINDING FAIRYTALE PATH & ROLLING KNOLL / EARTHEN SLOPE TOPOGRAPHY ("草原·土坡·小路")
+// 1. WINDING FAIRYTALE PATH, HILLTOP VILLA TERRACE & ROLLING KNOLL TOPOGRAPHY
 // ============================================================================
+export const VILLA_CENTER = { x: -1.25, z: -5.85, rotY: 0.16 };
+const VILLA_COS = Math.cos(VILLA_CENTER.rotY);
+const VILLA_SIN = Math.sin(VILLA_CENTER.rotY);
+
+export function worldToVillaLocal(x, z) {
+  const dx = x - VILLA_CENTER.x;
+  const dz = z - VILLA_CENTER.z;
+  return {
+    lx: dx * VILLA_COS - dz * VILLA_SIN,
+    lz: dx * VILLA_SIN + dz * VILLA_COS
+  };
+}
+
+export function villaLocalToWorld(lx, ly, lz) {
+  return [
+    VILLA_CENTER.x + lx * VILLA_COS + lz * VILLA_SIN,
+    VILLA_TERRACE_Y + ly,
+    VILLA_CENTER.z - lx * VILLA_SIN + lz * VILLA_COS
+  ];
+}
+
+export function isInsideVillaFootprint(x, z, margin = 0) {
+  const { lx, lz } = worldToVillaLocal(x, z);
+  const inMain = Math.abs(lx) <= 2.42 + margin && lz >= -1.68 - margin && lz <= 1.88 + margin;
+  const inSteps = lx >= -0.48 - margin && lx <= 0.82 + margin && lz >= 1.72 - margin && lz <= 2.52 + margin;
+  return inMain || inSteps;
+}
+
 const RAW_PATH_WAYPOINTS = [
   [0.52, 5.85],
   [-0.78, 3.65],
   [0.24, 1.75],
   [1.32, -0.45],
-  [-0.38, -2.75],
-  [-1.68, -5.05]
+  [-0.18, -2.05],
+  [-0.71, -3.52]
 ];
 
 const PATH_CURVE_2D = new THREE.CatmullRomCurve3(
@@ -77,11 +105,7 @@ export function distToPath(x, z) {
   return Math.sqrt(minD2);
 }
 
-/**
- * Fairytale Grassland, Rolling Knolls & Terraced Earthen Slopes ("起伏草坡与土坡")
- * with a gently worn country dirt footpath hollow winding up to the hilltop cottage!
- */
-export function meadowHeight(x, z) {
+function rawMeadowHeight(x, z) {
   // Gentle valley rise from foreground (+5.5) toward distant Saint-Rémy hills (-8.5)
   const valleyRise = -0.108 * (z - 2.3) - 1.02;
 
@@ -90,7 +114,7 @@ export function meadowHeight(x, z) {
   const rightTerracedSlope = 0.64 * Math.exp(-(((x - 2.65) ** 2) / 4.6 + ((z - 0.45) ** 2) / 5.4))
     + 0.22 * smoothstep(1.25, 1.95, x) * Math.exp(-((z - 1.35) ** 2) / 8.5);
   const sunflowerSlopeBank = 0.38 * Math.exp(-(((x + 1.45) ** 2) / 3.4 + ((z + 1.95) ** 2) / 3.2));
-  const cottageHilltop = 0.78 * Math.exp(-(((x + 1.95) ** 2) / 6.8 + ((z + 5.15) ** 2) / 6.2));
+  const cottageHilltop = 0.72 * Math.exp(-(((x + 1.25) ** 2) / 11.5 + ((z + 5.65) ** 2) / 9.2));
   const dandelionMound = 0.34 * Math.exp(-(((x - 1.55) ** 2) / 3.6 + ((z + 2.15) ** 2) / 4.0));
   const softRoll = Math.sin(x * 0.45 + 0.3) * Math.cos(z * 0.38 - 0.2) * 0.08;
 
@@ -115,6 +139,21 @@ export function meadowHeight(x, z) {
     + pathShoulder
     + pondBasin
   );
+}
+
+export const VILLA_TERRACE_Y = rawMeadowHeight(VILLA_CENTER.x, VILLA_CENTER.z);
+
+/**
+ * Fairytale Grassland, Rolling Knolls & Level Hilltop Villa Garden Terrace ("起伏草坡与山丘庭院平台")
+ */
+export function meadowHeight(x, z) {
+  const baseH = rawMeadowHeight(x, z);
+  const { lx, lz } = worldToVillaLocal(x, z);
+  const wx = 1.0 - smoothstep(2.45, 3.45, Math.abs(lx));
+  const wzBack = smoothstep(-2.65, -1.75, lz);
+  const wzFront = 1.0 - smoothstep(2.40, 3.35, lz);
+  const wTerrace = wx * wzBack * wzFront;
+  return baseH * (1.0 - wTerrace) + VILLA_TERRACE_Y * wTerrace;
 }
 
 // ============================================================================
@@ -427,7 +466,7 @@ export function createMeadowScene(
   scene.environment = envRenderTarget.texture;
   scene.environmentIntensity = 1.35;
   pmremGen.dispose();
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 90);
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.08, 90);
   // Elevated panoramic fairytale viewpoint overlooking rolling knolls, winding dirt path & hilltop cottage!
   const cameraBase = new THREE.Vector3(0.0, 2.28, 7.35);
   const cameraLookBase = new THREE.Vector3(0.0, 0.42, -1.85);
@@ -487,9 +526,9 @@ export function createMeadowScene(
   // ==========================================================================
   // A. SCULPTED GRASSLAND, EARTHEN SLOPES ("土坡") & WINDING DIRT PATH ("小路")
   // ==========================================================================
-  const terrainGeo = new THREE.PlaneGeometry(36, 20, 128, 84);
+  const terrainGeo = new THREE.PlaneGeometry(36, 22, 136, 92);
   terrainGeo.rotateX(-Math.PI * 0.5);
-  terrainGeo.translate(0, 0, -1.6);
+  terrainGeo.translate(0, 0, -2.2);
   const tPos = terrainGeo.attributes.position;
   for (let i = 0; i < tPos.count; i++) {
     const x = tPos.getX(i);
@@ -584,13 +623,13 @@ export function createMeadowScene(
 
         // Camera-aware indigo horizon blend into p5.js Saint-Rémy foothills (stays vivid on hilltop fly-ins!)
         float camNear = smoothstep(2.2, 6.2, length(vWorldPos - cameraPosition));
-        float farMix = smoothstep(-2.4, -7.8, vWorldPos.z) * (0.28 + 0.72 * camNear);
+        float farMix = smoothstep(-3.2, -9.2, vWorldPos.z) * (0.28 + 0.72 * camNear);
         lit = mix(lit, vec3(0.014, 0.036, 0.095), farMix * 0.78);
 
         vec3 mapped = (lit * (2.51 * lit + 0.03)) / (lit * (2.43 * lit + 0.59) + 0.14);
         vec3 srgb = pow(clamp(mapped, 0.0, 1.0), vec3(1.0 / 2.2));
 
-        float edgeAlpha = smoothstep(-9.8, -5.8, vWorldPos.z) * smoothstep(17.2, 12.2, abs(vWorldPos.x));
+        float edgeAlpha = smoothstep(-11.2, -7.6, vWorldPos.z) * smoothstep(17.2, 12.2, abs(vWorldPos.x));
         gl_FragColor = vec4(srgb, edgeAlpha);
       }
     `
@@ -599,13 +638,19 @@ export function createMeadowScene(
   scene.add(terrainMesh);
 
   // ==========================================================================
-  // B. FAIRYTALE PROPS, COTTAGE, MUSHROOM RING, POND & EXPLORING SPRITE!
+  // B. FAIRYTALE PROPS, 2BR+1LR VILLA, MUSHROOM RING, POND & EXPLORING SPRITE!
   // ==========================================================================
   const worldProps = createFairytaleWorldProps({
     scene,
     meadowHeight,
     pathCurve: PATH_CURVE_2D,
-    rng
+    rng,
+    villaSpec: {
+      x: VILLA_CENTER.x,
+      y: VILLA_TERRACE_Y,
+      z: VILLA_CENTER.z,
+      rotY: VILLA_CENTER.rotY
+    }
   });
 
   // Sync warm streetlamp world positions into shared shader uniforms!
@@ -623,8 +668,8 @@ export function createMeadowScene(
     { x: 0.95, z: 0.45, whisper: '顺着蜿蜒土坡往上走，晚风里全是花香～' },
     { x: 2.05, z: -0.15, whisper: '哇！小土坡上的七彩荧光蘑菇圈在偷偷唱歌！' },
     { x: 1.15, z: -1.85, whisper: '轻轻吹一口月光蒲公英，把心愿寄给漫天繁星 ✧' },
-    { x: -0.52, z: -2.65, whisper: '穿过这座爬满蔷薇与星灯的花拱门，前面就是童话小屋啦～' },
-    { x: -1.45, z: -4.45, whisper: '山顶暖光童话小屋的烟囱，正在冒金色爱心烟圈呢！' },
+    { x: -0.52, z: -2.65, whisper: '穿过这座爬满蔷薇与星灯的花拱门，前面就是童话小家啦～' },
+    { x: -0.70, z: -3.42, whisper: '推开院门掀开屋顶，看看我们两室一厅的童话小家吧 🏡' },
     { x: -2.15, z: 0.25, whisper: '点击草坡或小路任意地方，我都会提灯跑过去找你哦～' }
   ];
 
@@ -646,7 +691,6 @@ export function createMeadowScene(
 
   // Reserve clearings around fairytale props so flowers frame rather than bury them!
   registerSpot(0.82, 2.12, 0.42);   // Egg #3 Crystal Wish Bottle alcove beside path
-  registerSpot(-1.85, -5.35, 1.05); // Hilltop Cozy Cottage yard
   registerSpot(2.35, -0.15, 0.78);  // 7-Mushroom Fairy Ring clearing
   registerSpot(-0.62, 1.65, 0.36);  // Wooden Signpost
   registerSpot(-1.48, 0.85, 0.92);  // Dew Pond & Frog Prince clearing
@@ -659,6 +703,7 @@ export function createMeadowScene(
   }
 
   function canPlacePlant(x, z, r, minPathDist = 0.56) {
+    if (isInsideVillaFootprint(x, z, 0.18 + r * 0.5)) return false;
     if (distToPath(x, z) < minPathDist) return false;
     for (let i = 0; i < occupied.length; i++) {
       const o = occupied[i];
@@ -778,9 +823,9 @@ export function createMeadowScene(
     { x: -2.25, z: 2.35, scale: 1.08, palette: hydrangeaPalettes[1] },
     { x: -3.05, z: 1.75, scale: 0.96, palette: hydrangeaPalettes[0] },
     { x: -1.68, z: 2.85, scale: 0.90, palette: hydrangeaPalettes[2] },
-    // Scenic shrubs along cottage garden, slopes & distant bends
-    { x: -2.85, z: -4.65, scale: 0.94, palette: hydrangeaPalettes[1] },
-    { x: -0.95, z: -5.45, scale: 0.90, palette: hydrangeaPalettes[3] },
+    // Scenic shrubs flanking Villa garden fence, slopes & distant bends
+    { x: -3.88, z: -4.26, scale: 0.94, palette: hydrangeaPalettes[1] },
+    { x: 1.73, z: -5.26, scale: 0.92, palette: hydrangeaPalettes[3] },
     { x: 3.45, z: 2.15, scale: 0.96, palette: hydrangeaPalettes[0] },
     { x: -3.65, z: -0.65, scale: 0.94, palette: hydrangeaPalettes[2] },
     { x: 2.85, z: -3.15, scale: 0.92, palette: hydrangeaPalettes[1] }
@@ -1046,9 +1091,9 @@ export function createMeadowScene(
     { x: 1.28, z: 2.08, scale: 1.08, height: 0.46, tint: '#fb7185' },
     { x: 0.62, z: 1.66, scale: 1.02, height: 0.52, tint: '#fda4af' },
     { x: 1.16, z: 1.68, scale: 1.00, height: 0.50, tint: '#f43f5e' },
-    // Cottage doorway climbing/border roses
-    { x: -1.18, z: -4.85, scale: 0.95, height: 0.46, tint: '#fb7185' },
-    { x: -2.42, z: -4.85, scale: 0.95, height: 0.46, tint: '#fda4af' }
+    // Villa front picket-fence border roses flanking the limestone porch steps
+    { x: -1.67, z: -3.58, scale: 0.95, height: 0.46, tint: '#fb7185' },
+    { x: 0.17, z: -3.87, scale: 0.95, height: 0.46, tint: '#fda4af' }
   ];
   for (const rc of roseCoords) registerSpot(rc.x, rc.z, 0.18);
 
@@ -1248,7 +1293,7 @@ export function createMeadowScene(
     const side = i % 2 === 0 ? -1 : 1;
     const gx = pt.x + side * (0.68 + rng() * 0.55);
     const gz = pt.z + (rng() - 0.5) * 0.45;
-    if (distToPath(gx, gz) > 0.56 && Math.hypot(gx + 1.48, gz - 0.85) > 0.92) {
+    if (distToPath(gx, gz) > 0.56 && Math.hypot(gx + 1.48, gz - 0.85) > 0.92 && !isInsideVillaFootprint(gx, gz, 0.22)) {
       gypClouds.push({ x: gx, z: gz, r: 0.26 + rng() * 0.16, h: 0.18 + rng() * 0.14 });
     }
   }
@@ -1257,7 +1302,7 @@ export function createMeadowScene(
     const d = (0.46 + rng() * 0.20) * shrub.scale;
     const gx = shrub.x + Math.cos(a) * d;
     const gz = shrub.z + Math.sin(a) * d;
-    if (distToPath(gx, gz) > 0.56 && Math.hypot(gx + 1.48, gz - 0.85) > 0.92) {
+    if (distToPath(gx, gz) > 0.56 && Math.hypot(gx + 1.48, gz - 0.85) > 0.92 && !isInsideVillaFootprint(gx, gz, 0.22)) {
       gypClouds.push({ x: gx, z: gz, r: 0.30 + rng() * 0.15, h: 0.22 + rng() * 0.14 });
     }
   }
@@ -1274,6 +1319,11 @@ export function createMeadowScene(
       const pushAng = Math.atan2(gz - 0.85, gx + 1.48);
       gx = -1.48 + Math.cos(pushAng) * 0.86;
       gz = 0.85 + Math.sin(pushAng) * 0.86;
+    }
+    if (isInsideVillaFootprint(gx, gz, 0.08)) {
+      const [wx, , wz] = villaLocalToWorld(-2.75, 0, 1.35);
+      gx = wx;
+      gz = wz;
     }
     const dome = Math.sqrt(Math.max(0, 1 - (rad / (cloud.r + 0.01)) ** 2));
     const gy = meadowHeight(gx, gz) + 0.09 + dome * cloud.h + (rng() - 0.5) * 0.07;
@@ -1308,7 +1358,7 @@ export function createMeadowScene(
     if (dP < 0.46) continue; // Keep winding country dirt lane clean & crisp!
     if (Math.hypot(x + 1.48, z - 0.85) < 0.78) continue; // Keep mirror dew pond & Frog Prince clear!
     if (Math.hypot(x - 2.35, z + 0.15) < 0.62) continue; // Keep 7-mushroom fairy ring visible!
-    if (Math.hypot(x + 1.85, z + 5.35) < 0.72) continue; // Keep cottage footprint clear!
+    if (isInsideVillaFootprint(x, z, 0.08)) continue; // Keep 2BR+1LR Villa floor & steps spotless!
 
     const y = meadowHeight(x, z);
     const vergeShorten = smoothstep(0.46, 0.86, dP);
@@ -1605,8 +1655,10 @@ export function createMeadowScene(
 
   for (let i = 0; i < fireflyCount; i++) {
     const fx = (rng() - 0.5) * 16.5;
-    const fz = 4.6 - rng() * 11.2;
-    const fy = meadowHeight(fx, fz) + 0.18 + rng() * 2.0;
+    const fz = 4.6 - rng() * 11.8;
+    const fy = isInsideVillaFootprint(fx, fz, 0.35)
+      ? VILLA_TERRACE_Y + 2.65 + rng() * 1.1
+      : meadowHeight(fx, fz) + 0.18 + rng() * 2.0;
     ffPos[i * 3] = fx;
     ffPos[i * 3 + 1] = fy;
     ffPos[i * 3 + 2] = fz;
@@ -1681,8 +1733,20 @@ export function createMeadowScene(
   const raycaster = new THREE.Raycaster();
   const pointerNDC = new THREE.Vector2();
   const parallaxOffset = new THREE.Vector2(0, 0);
+  const zoomDirTmp = new THREE.Vector3();
   let dragYaw = 0;
   let dragPitch = 0;
+  let exploreZoom = 0;
+
+  function applyExploreZoom() {
+    if (Math.abs(exploreZoom) < 0.001) return;
+    zoomDirTmp.copy(cameraTargetPos).sub(cameraTargetLook);
+    const len = zoomDirTmp.length();
+    if (len < 0.25) return;
+    zoomDirTmp.divideScalar(len);
+    const nextLen = clamp(len + exploreZoom, 1.35, 13.5);
+    cameraTargetPos.copy(cameraTargetLook).addScaledVector(zoomDirTmp, nextLen);
+  }
 
   function resize() {
     if (disposed) return;
@@ -1703,6 +1767,11 @@ export function createMeadowScene(
     if (focusedTarget && nowMs < focusUntil) {
       cameraTargetPos.copy(focusedTarget.camPos);
       cameraTargetLook.copy(focusedTarget.lookAt);
+      if (!scrollCameraMode) {
+        cameraTargetPos.x += dragYaw * 1.45;
+        cameraTargetPos.y += dragPitch * 0.65;
+        applyExploreZoom();
+      }
       return;
     }
     focusedTarget = null;
@@ -1720,18 +1789,19 @@ export function createMeadowScene(
         sp.y + 0.36 + dragPitch * 0.45,
         sp.z - 1.25
       );
+      applyExploreZoom();
       return;
     }
 
     if (scrollCameraMode) {
       cameraTargetPos.set(
-        scrollCamPos.x + parallaxOffset.x * 0.28,
-        scrollCamPos.y + parallaxOffset.y * 0.12,
+        scrollCamPos.x + parallaxOffset.x * 0.24,
+        scrollCamPos.y + parallaxOffset.y * 0.10,
         scrollCamPos.z
       );
       cameraTargetLook.set(
-        scrollCamLook.x + parallaxOffset.x * 0.18,
-        scrollCamLook.y + parallaxOffset.y * 0.10,
+        scrollCamLook.x + parallaxOffset.x * 0.14,
+        scrollCamLook.y + parallaxOffset.y * 0.08,
         scrollCamLook.z
       );
       return;
@@ -1760,6 +1830,7 @@ export function createMeadowScene(
         cameraLookBase.z
       );
     }
+    applyExploreZoom();
   }
 
   let lastFrameMs = performance.now();
@@ -1895,8 +1966,16 @@ export function createMeadowScene(
     }
   }
 
+  function onWheel(ev) {
+    if (scrollCameraMode) return;
+    ev.preventDefault();
+    const step = Math.sign(ev.deltaY) * 0.42;
+    exploreZoom = clamp(exploreZoom + step, -4.2, 2.6);
+  }
+
   canvas.addEventListener('pointermove', onPointerMove, { passive: true });
   canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('wheel', onWheel, { passive: false });
   window.addEventListener('pointerup', onPointerUp);
   window.addEventListener('resize', resize);
 
@@ -1927,17 +2006,35 @@ export function createMeadowScene(
     worldProps.triggerWonderEffect(wonderId);
     const anchor = worldProps.wonderAnchors.get(wonderId);
     if (anchor) {
-      spawnRipple(anchor.x, meadowHeight(anchor.x, anchor.z), anchor.z);
-      fairySprite.walkTo(anchor.x + 0.32, anchor.z + 0.42);
-      focusedTarget = {
-        camPos: new THREE.Vector3(
-          clamp(anchor.x * 0.72, -3.4, 3.4),
-          Math.max(1.25, anchor.y + 1.15),
-          Math.min(7.2, anchor.z + 3.4)
-        ),
-        lookAt: anchor.clone()
-      };
-      focusUntil = performance.now() + 9500;
+      if (wonderId === 'wonder-cottage') {
+        const [sx, , sz] = villaLocalToWorld(0.16, 0, 2.48);
+        spawnRipple(sx, meadowHeight(sx, sz), sz);
+        fairySprite.walkTo(sx, sz);
+        const roofOpen = worldProps.getVillaRoofOpen() > 0.45;
+        const camArr = roofOpen
+          ? villaLocalToWorld(0.18, 3.65, 4.15)
+          : villaLocalToWorld(0.22, 1.85, 4.75);
+        const lookArr = roofOpen
+          ? villaLocalToWorld(-0.04, 0.52, -0.05)
+          : villaLocalToWorld(-0.02, 0.92, 0.12);
+        focusedTarget = {
+          camPos: new THREE.Vector3(...camArr),
+          lookAt: new THREE.Vector3(...lookArr)
+        };
+        focusUntil = performance.now() + 10500;
+      } else {
+        spawnRipple(anchor.x, meadowHeight(anchor.x, anchor.z), anchor.z);
+        fairySprite.walkTo(anchor.x + 0.32, anchor.z + 0.42);
+        focusedTarget = {
+          camPos: new THREE.Vector3(
+            clamp(anchor.x * 0.72, -3.4, 3.4),
+            Math.max(1.25, anchor.y + 1.15),
+            Math.min(7.2, anchor.z + 3.4)
+          ),
+          lookAt: anchor.clone()
+        };
+        focusUntil = performance.now() + 9500;
+      }
     }
     onWonderTrigger(wonderId);
   }
@@ -2024,6 +2121,7 @@ export function createMeadowScene(
         macroMode = false;
         dragYaw = 0;
         dragPitch = 0;
+        exploreZoom = 0;
       }
       return scrollCameraMode;
     },
@@ -2042,6 +2140,9 @@ export function createMeadowScene(
         camera.lookAt(scrollCamLook);
       }
     },
+    setVillaRoofOpen: (openVal, snap = false) => worldProps.setVillaRoofOpen(openVal, snap),
+    getVillaRoofOpen: () => worldProps.getVillaRoofOpen(),
+    toggleVillaRoof: () => worldProps.toggleVillaRoof(),
     triggerWonder,
     markEggUnlocked,
     triggerFinaleState,
@@ -2098,6 +2199,7 @@ export function createMeadowScene(
         followSpriteMode,
         scrollCameraMode,
         macroMode,
+        villaRoofOpen: Number(worldProps.getVillaRoofOpen().toFixed(3)),
         finaleProgress,
         spritePosition: {
           x: Number(fairySprite.getPosition().x.toFixed(2)),
@@ -2116,6 +2218,7 @@ export function createMeadowScene(
       window.cancelAnimationFrame(rafId);
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('wheel', onWheel);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('resize', resize);
       envRenderTarget.dispose();

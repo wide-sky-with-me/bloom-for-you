@@ -11,21 +11,24 @@
  *   insets, and `prefers-reduced-motion` instant transitions
  */
 
+import { villaLocalToWorld } from "./flower-meadow.js";
+
 export const FAIRYTALE_SCROLL_SECTIONS = [
   {
     id: "prologue",
     label: "序章 · 星夜入口",
     accent: "#fde047",
-    scroll: 1.45,
+    scroll: 1.40,
     linger: 0.42,
+    roofOpen: [0, 0],
     eyebrow: "STARRY FAIRYTALE WORLD · 序章",
-    title: "星月夜下的童话花坡",
-    body: "轻滚滚轮或上下滑动，跟随戴风铃草花帽的提灯小精灵，一镜到底飞越为你盛开的梵高星夜秘境。",
-    tags: ["一镜到底飞越", "Blender 3D 精雕", "13 处隐藏彩蛋"],
+    title: "星月夜下的童话花坡与小家",
+    body: "轻滚滚轮或上下滑动，跟随提灯小精灵穿过繁花与蔷薇拱门，掀开山丘小屋的石板屋顶，走进为你筑造的两室一厅。",
+    tags: ["一镜到底飞越", "Cycles 光追烘焙", "两室一厅微缩屋"],
     eggId: null,
     wonderId: "wonder-sprite",
     spriteSpot: [-0.06, 2.24],
-    spriteWhisper: "向下滚动，我提着星光灯笼带你飞越整座童话花坡 ✨",
+    spriteWhisper: "向下滚动，我提着星光灯笼带你飞进山顶两室一厅的小家 ✨",
     skyParallax: [0, 0],
     desktop: {
       diveStart: { cam: [-0.24, 2.28, 7.35], look: [-0.82, 0.42, -1.85] },
@@ -36,7 +39,7 @@ export const FAIRYTALE_SCROLL_SECTIONS = [
       diveEnd: { cam: [-0.08, 1.32, 5.12], look: [-0.08, -0.52, 1.38] },
     },
     actions: [
-      { label: "✧ 唤小精灵旋转洒星尘", kind: "wonder", target: "wonder-sprite", primary: true },
+      { label: "🏠 直达两室一厅剖面小屋", kind: "special", target: "jump-villa", primary: true },
       { label: "♪ 开启星夜八音盒", kind: "special", target: "toggle-audio" },
     ],
   },
@@ -44,8 +47,9 @@ export const FAIRYTALE_SCROLL_SECTIONS = [
     id: "hydrangea-pond",
     label: "壹 · 无尽夏露珠潭",
     accent: "#7dd3fc",
-    scroll: 1.55,
-    linger: 0.48,
+    scroll: 1.45,
+    linger: 0.46,
+    roofOpen: [0, 0],
     eyebrow: "CHAPTER I · 仲夏初遇",
     title: "无尽夏与睡莲露珠潭",
     body: "四萼蓝紫无尽夏簇拥着澄澈露珠小潭，金冠青蛙王子守在十六瓣立体睡莲旁，像初见你眼眸时的心动。",
@@ -72,8 +76,9 @@ export const FAIRYTALE_SCROLL_SECTIONS = [
     id: "rose-bottle",
     label: "贰 · 玫瑰星砂瓶",
     accent: "#fda4af",
-    scroll: 1.55,
-    linger: 0.48,
+    scroll: 1.45,
+    linger: 0.46,
+    roofOpen: [0, 0],
     eyebrow: "CHAPTER II · 花间密语",
     title: "高心玫瑰与水晶星砂瓶",
     body: "四十瓣丝绒玫瑰与绿色反卷花萼层层托起浪漫，把系着红丝带与玫瑰火漆印章的长信封存在小路弯道旁。",
@@ -97,27 +102,29 @@ export const FAIRYTALE_SCROLL_SECTIONS = [
     ],
   },
   {
-    id: "iris-mushrooms",
-    label: "叁 · 鸢尾蘑菇圈",
+    id: "iris-archway",
+    label: "叁 · 鸢尾蔷薇门",
     accent: "#c4b5fd",
-    scroll: 1.50,
-    linger: 0.46,
-    eyebrow: "CHAPTER III · 朝暮并肩",
-    title: "紫蓝鸢尾与唱歌蘑菇圈",
-    body: "暖褐土坡上并肩盛开的羽冠鸢尾与丝绸郁金香，伴着七朵立体菌褶波点蘑菇仙女圈，把朝暮写成童话。",
-    tags: ["羽冠有髯鸢尾", "杯形郁金香", "七彩波点蘑菇圈"],
+    scroll: 1.48,
+    linger: 0.45,
+    roofOpen: [0, 0],
+    eyebrow: "CHAPTER III · 穿过花门回家",
+    title: "紫蓝鸢尾与星灯蔷薇门",
+    body: "掠过并肩盛放的羽冠鸢尾与唱歌蘑菇圈，穿过垂挂暖黄串灯的攀援蔷薇拱门，前方石阶上便是灯火温暖的小屋。",
+    tags: ["羽冠鸢尾 × 郁金香", "攀援蔷薇花门", "庭院暖黄串灯"],
     eggId: "egg-iris-tulip",
     wonderId: "wonder-mushrooms",
-    spriteSpot: [1.54, 0.42],
-    spriteWhisper: "紫蓝鸢尾与七彩波点蘑菇圈，正在晚风里轻轻弹跳呢 🍄",
-    skyParallax: [-18, 8],
+    spriteSpot: [-0.42, -2.15],
+    spriteWhisper: "穿过垂满暖黄串灯的蔷薇花拱门，前面石阶就是我们的小家啦 🏡",
+    skyParallax: [-12, 10],
+    constellation: true,
     desktop: {
-      diveStart: { cam: [1.58, 1.02, 3.25], look: [1.38, -0.18, 0.72] },
-      diveEnd: { cam: [1.62, 0.48, 2.08], look: [1.70, -0.22, -0.15] },
+      diveStart: { cam: [1.46, 1.06, 2.65], look: [1.35, -0.18, 0.35] },
+      diveEnd: { cam: [0.12, 1.12, -0.22], look: [-0.78, 0.42, -3.25] },
     },
     mobile: {
-      diveStart: { cam: [2.12, 1.14, 3.48], look: [2.16, -0.52, 0.72] },
-      diveEnd: { cam: [2.06, 0.58, 2.28], look: [2.22, -0.48, -0.15] },
+      diveStart: { cam: [1.96, 1.16, 2.95], look: [2.05, -0.48, 0.35] },
+      diveEnd: { cam: [0.10, 1.18, -0.05], look: [-0.48, 0.14, -3.25] },
     },
     actions: [
       { label: "✉ 展读信笺肆 · 鸢尾郁金香", kind: "egg", target: "egg-iris-tulip", primary: true },
@@ -125,61 +132,130 @@ export const FAIRYTALE_SCROLL_SECTIONS = [
     ],
   },
   {
-    id: "arch-dandelion",
-    label: "肆 · 蔷薇花拱门",
-    accent: "#fde047",
-    scroll: 1.50,
-    linger: 0.46,
-    eyebrow: "CHAPTER IV · 向光而行",
-    title: "蔷薇花门与星夜向日葵",
-    body: "哥特铁艺拱门缠满攀援玫瑰与双悬星灯，高挑向日葵在夜色中依然仰望你，蒲公英冠毛正把喜欢吹向星河。",
-    tags: ["攀援玫瑰花拱门", "双层花瓣向日葵", "3D 冠毛蒲公英"],
-    eggId: "egg-sunflower",
-    wonderId: "wonder-dandelions",
-    spriteSpot: [-0.18, -1.55],
-    spriteWhisper: "穿过攀援蔷薇花拱门，向日葵和月光蒲公英都在向你招手 🌻",
-    skyParallax: [-4, 12],
+    id: "villa-cutaway",
+    label: "肆 · 掀顶两室一厅",
+    accent: "#fbbf24",
+    scroll: 1.72,
+    linger: 0.48,
+    jumpProgress: 0.88,
+    roofOpen: [0.06, 1.0],
+    eyebrow: "CHAPTER IV · 微缩娃娃屋剖面",
+    title: "屋顶轻启 · 俯瞰两室一厅",
+    body: "二百一十片石板叠瓦与十字花窗缓缓升起，露出光线追踪全局光照烘焙的温暖小家：右侧壁炉餐厨一厅，左侧画室与双人主卧。",
+    tags: ["Cycles 全局光追烘焙", "等距微缩娃娃屋", "白栅栏玫瑰庭院"],
+    eggId: null,
+    wonderId: "wonder-cottage",
+    spriteSpot: [-0.70, -3.42],
+    spriteWhisper: "哇！石板屋顶轻轻掀开啦，两室一厅每个角落都暖融融的 ✨",
+    skyParallax: [8, 15],
     constellation: true,
     desktop: {
-      diveStart: { cam: [0.22, 1.24, 0.88], look: [-0.74, 0.28, -2.55] },
-      diveEnd: { cam: [0.08, 0.96, -0.28], look: [-0.72, 0.34, -3.05] },
+      diveStart: {
+        cam: villaLocalToWorld(0.42, 1.68, 4.38),
+        look: villaLocalToWorld(-0.78, 0.86, 0.15),
+      },
+      diveEnd: {
+        cam: villaLocalToWorld(0.72, 3.46, 3.86),
+        look: villaLocalToWorld(-0.74, 0.44, -0.08),
+      },
     },
     mobile: {
-      diveStart: { cam: [0.18, 1.34, 1.12], look: [-0.28, 0.02, -2.55] },
-      diveEnd: { cam: [0.12, 1.04, -0.12], look: [-0.32, 0.06, -3.08] },
+      diveStart: {
+        cam: villaLocalToWorld(0.22, 1.82, 5.15),
+        look: villaLocalToWorld(0.0, 0.32, 0.12),
+      },
+      diveEnd: {
+        cam: villaLocalToWorld(1.25, 4.45, 4.95),
+        look: villaLocalToWorld(-0.04, -0.46, 0.06),
+      },
     },
     actions: [
-      { label: "✉ 展读信笺贰 · 向日葵", kind: "egg", target: "egg-sunflower", primary: true },
-      { label: "✧ 吹散月光蒲公英绒球", kind: "wonder", target: "wonder-dandelions" },
+      { label: "🏠 切换屋顶开合视角", kind: "special", target: "toggle-roof", primary: true },
+      { label: "✧ 点亮烟囱星尘烟圈", kind: "wonder", target: "wonder-cottage" },
     ],
   },
   {
-    id: "storybook-cottage",
-    label: "伍 · 山丘暖光小屋",
-    accent: "#fbbf24",
-    scroll: 1.55,
+    id: "villa-living-dining",
+    label: "伍 · 一厅壁炉餐厨",
+    accent: "#fda4af",
+    scroll: 1.65,
     linger: 0.50,
-    eyebrow: "CHAPTER V · 归途暖灯",
-    title: "穿过花门抵达童话小屋",
-    body: "一百四十八片石板叠瓦下亮着橘黄圆窗与玫瑰花箱，歪斜红砖烟囱冒出粉金星尘烟圈——这是我们温暖的小家。",
-    tags: ["148 片叠瓦屋顶", "半木构暖窗花箱", "粉金星尘烟囱"],
+    roofOpen: [1.0, 1.0],
+    eyebrow: "CHAPTER V · 一厅 · 人间烟火",
+    title: "壁炉客厅与草莓蛋糕餐桌",
+    body: "奶油转角沙发围着热茶圆几，黄铜大喇叭留声机缓缓转动黑胶；炉火映亮开放式薄荷绿冰箱与摆好双人草莓蛋糕的原木餐桌。",
+    tags: ["L 型奶油布艺沙发", "旋转黑胶留声机", "双人草莓蛋糕餐厨"],
     eggId: null,
-    wonderId: "wonder-cottage",
-    spriteSpot: [-1.28, -3.95],
-    spriteWhisper: "蜿蜒小路的尽头，就是亮着暖黄窗灯的童话小家呀 🏡",
-    skyParallax: [10, 16],
+    wonderId: "wonder-bell-lamp",
+    spriteSpot: [-0.52, -3.55],
+    spriteWhisper: "茶几上泡好了热茶，餐桌上还有双人草莓蛋糕和转动的留声机呢 🍰",
+    skyParallax: [14, 18],
     constellation: true,
     desktop: {
-      diveStart: { cam: [-0.76, 1.28, -2.02], look: [-2.34, 0.78, -5.35] },
-      diveEnd: { cam: [-0.96, 1.22, -2.78], look: [-2.38, 0.86, -5.35] },
+      diveStart: {
+        cam: villaLocalToWorld(0.62, 1.84, 2.38),
+        look: villaLocalToWorld(0.50, 0.46, 0.24),
+      },
+      diveEnd: {
+        cam: villaLocalToWorld(0.48, 1.66, 1.62),
+        look: villaLocalToWorld(0.56, 0.56, -0.68),
+      },
     },
     mobile: {
-      diveStart: { cam: [-0.86, 1.34, -1.85], look: [-1.76, 0.42, -5.35] },
-      diveEnd: { cam: [-1.04, 1.26, -2.65], look: [-1.82, 0.50, -5.35] },
+      diveStart: {
+        cam: villaLocalToWorld(0.96, 2.15, 2.85),
+        look: villaLocalToWorld(1.06, 0.06, 0.18),
+      },
+      diveEnd: {
+        cam: villaLocalToWorld(0.86, 1.96, 2.08),
+        look: villaLocalToWorld(1.04, 0.12, -0.70),
+      },
     },
     actions: [
-      { label: "✧ 点亮小屋粉金星尘烟圈", kind: "wonder", target: "wonder-cottage", primary: true },
-      { label: "✧ 摇响小路许愿风铃灯", kind: "wonder", target: "wonder-bell-lamp" },
+      { label: "✉ 展读致老婆珍藏长信", kind: "special", target: "open-letter", primary: true },
+      { label: "♪ 开启留声机八音盒", kind: "special", target: "toggle-audio" },
+    ],
+  },
+  {
+    id: "villa-two-bedrooms",
+    label: "陆 · 两室画室主卧",
+    accent: "#7dd3fc",
+    scroll: 1.68,
+    linger: 0.50,
+    roofOpen: [1.0, 1.0],
+    eyebrow: "CHAPTER VI · 两室 · 星梦栖居",
+    title: "星空画室次卧与浪漫主卧",
+    body: "前侧次卧满墙彩绘书脊伴着《星月夜》木画架、原木书桌与吉他卧榻；后侧主卧双盏百褶暖灯轻拢软包大床与看星空的飘窗。",
+    tags: ["《星月夜》油画架", "36 册彩绘满墙书柜", "百褶暖灯飘窗主卧"],
+    eggId: "egg-sunflower",
+    wonderId: "wonder-dandelions",
+    spriteSpot: [-1.52, -3.52],
+    spriteWhisper: "一间画满你喜欢的梵高星空，一间留给岁岁年年的甜梦 🌙",
+    skyParallax: [4, 18],
+    constellation: true,
+    desktop: {
+      diveStart: {
+        cam: villaLocalToWorld(-1.26, 1.92, 2.36),
+        look: villaLocalToWorld(-1.58, 0.48, 0.36),
+      },
+      diveEnd: {
+        cam: villaLocalToWorld(-0.62, 2.08, 1.18),
+        look: villaLocalToWorld(-1.52, 0.56, -0.78),
+      },
+    },
+    mobile: {
+      diveStart: {
+        cam: villaLocalToWorld(-1.12, 2.22, 2.78),
+        look: villaLocalToWorld(-1.18, 0.08, 0.32),
+      },
+      diveEnd: {
+        cam: villaLocalToWorld(-0.78, 2.32, 1.52),
+        look: villaLocalToWorld(-1.18, 0.14, -0.82),
+      },
+    },
+    actions: [
+      { label: "✉ 展读信笺贰 · 向日葵星光", kind: "egg", target: "egg-sunflower", primary: true },
+      { label: "✧ 吹散窗外月光蒲公英", kind: "wonder", target: "wonder-dandelions" },
     ],
   },
   {
@@ -188,14 +264,15 @@ export const FAIRYTALE_SCROLL_SECTIONS = [
     accent: "#fde047",
     scroll: 1.70,
     linger: 0.45,
+    roofOpen: [0.0, 0.0],
     eyebrow: "FINALE · 致我最爱的老婆",
-    title: "万千星河，皆为你盛开",
-    body: "当许愿流星划破梵高旋转的油画夜空，整座山坡的繁花与心形星群同时苏醒——星月夜永不落幕，我对你的偏爱也是。",
-    tags: ["星月夜许愿流星", "心形星群共鸣", "致老婆珍藏长信"],
+    title: "万千星河与小家，皆属于你",
+    body: "屋顶轻柔合拢护住满室暖光，许愿流星划破梵高旋转的油画夜空——山坡繁花与山顶小家永远亮着灯，等你回家。",
+    tags: ["星月夜许愿流星", "心形星群共鸣", "360° 自由缩放看房"],
     eggId: "egg-starry-sky",
     wonderId: "wonder-stump",
     spriteSpot: [-0.06, 2.24],
-    spriteWhisper: "漫天梵高星河与整座童话花坡，今晚都只为你一人盛放 ✨",
+    spriteWhisper: "漫天梵高星河与山顶温暖的两室一厅，今晚都只为你盛放 ✨",
     skyParallax: [0, -6],
     constellation: true,
     meteorOnEnter: true,
@@ -210,12 +287,12 @@ export const FAIRYTALE_SCROLL_SECTIONS = [
     actions: [
       { label: "✦ 唤醒星夜终章盛典", kind: "special", target: "trigger-finale", primary: true },
       { label: "✉ 展读信笺伍 · 星夜流星", kind: "egg", target: "egg-starry-sky" },
-      { label: "✧ 切换自由探索模式", kind: "special", target: "enter-explore" },
+      { label: "🏠 自由探索并掀顶看房", kind: "special", target: "explore-villa" },
     ],
   },
 ];
 
-// Frame-locked aerial & trail-gliding connector midpoints between consecutive sections
+// Frame-locked aerial, archway fly-through & indoor room-to-room connector midpoints (7 connectors for 8 sections)
 const CONNECTOR_ARCS = [
   // 0 -> 1: Prolog clearing -> swoop left over baby's-breath verge toward Hydrangeas & Dew Pond
   {
@@ -227,25 +304,54 @@ const CONNECTOR_ARCS = [
     desktop: { midCam: [-0.55, 0.86, 3.45], midLook: [-0.62, -0.32, 1.55] },
     mobile: { midCam: [-0.32, 0.98, 3.65], midLook: [-0.28, -0.58, 1.62] },
   },
-  // 2 -> 3: Rose Bottle -> rise past Mossy Stump Honey Jars onto Terraced Iris & Mushroom Slope
+  // 2 -> 3: Rose Bottle -> rise past Mossy Stump onto Terraced Iris Slope toward Rose Archway
   {
-    desktop: { midCam: [1.18, 0.88, 3.55], midLook: [1.05, -0.28, 1.38] },
-    mobile: { midCam: [1.45, 1.02, 3.72], midLook: [1.52, -0.52, 1.38] },
+    desktop: { midCam: [1.18, 0.92, 3.45], midLook: [1.05, -0.24, 1.15] },
+    mobile: { midCam: [1.45, 1.04, 3.62], midLook: [1.52, -0.48, 1.15] },
   },
-  // 3 -> 4: Mushroom Ring -> sweep across Wishing-Bell Streetlamp up toward Climbing-Rose Archway
+  // 3 -> 4: Signature Fly-Through — glide DIRECTLY THROUGH the Climbing-Rose Archway under courtyard string lights!
   {
-    desktop: { midCam: [1.02, 1.18, 1.55], midLook: [0.35, 0.08, -1.45] },
-    mobile: { midCam: [1.15, 1.28, 1.75], midLook: [0.68, -0.15, -1.45] },
+    desktop: {
+      midCam: [-0.38, 1.16, -1.25],
+      midLook: villaLocalToWorld(-0.42, 0.72, 0.35),
+    },
+    mobile: {
+      midCam: [-0.36, 1.22, -1.05],
+      midLook: villaLocalToWorld(0.0, 0.35, 0.35),
+    },
   },
-  // 4 -> 5: Signature Scroll-World Fly-Through — glide DIRECTLY THROUGH the Climbing-Rose Archway!
+  // 4 -> 5: Isometric Cutaway Overview -> swoop smoothly down into `一厅` Living Room & Dining Kitchen!
   {
-    desktop: { midCam: [-0.36, 1.08, -1.22], midLook: [-1.52, 0.58, -4.35] },
-    mobile: { midCam: [-0.38, 1.14, -1.08], midLook: [-1.12, 0.28, -4.35] },
+    desktop: {
+      midCam: villaLocalToWorld(0.76, 2.52, 3.05),
+      midLook: villaLocalToWorld(-0.05, 0.45, 0.12),
+    },
+    mobile: {
+      midCam: villaLocalToWorld(1.12, 3.15, 3.78),
+      midLook: villaLocalToWorld(0.55, -0.18, 0.12),
+    },
   },
-  // 5 -> 6: Hilltop Cottage -> majestic crane-up reveal of full Starry Night & illuminated meadow!
+  // 5 -> 6: `一厅` Living/Kitchen -> pan smoothly across central hallway into `两室` Art Studio & Master Bedroom!
   {
-    desktop: { midCam: [-0.58, 1.88, 1.15], midLook: [-1.42, 0.92, -4.45] },
-    mobile: { midCam: [-0.52, 1.98, 1.35], midLook: [-0.85, 0.66, -4.35] },
+    desktop: {
+      midCam: villaLocalToWorld(-0.38, 1.88, 2.08),
+      midLook: villaLocalToWorld(-0.55, 0.50, -0.12),
+    },
+    mobile: {
+      midCam: villaLocalToWorld(-0.15, 2.15, 2.48),
+      midLook: villaLocalToWorld(-0.12, 0.10, -0.12),
+    },
+  },
+  // 6 -> 7: `两室` Master Bedroom -> graceful high crane-up as the slate roof settles back onto the glowing Villa!
+  {
+    desktop: {
+      midCam: [-0.85, 3.45, -0.35],
+      midLook: [-1.12, 0.88, -4.65],
+    },
+    mobile: {
+      midCam: [-0.65, 3.65, -0.15],
+      midLook: [-0.72, 0.68, -4.55],
+    },
   },
 ];
 
@@ -440,6 +546,7 @@ export function mountFairytaleScrollWorld({
 
   const camOut = [0, 0, 0];
   const lookOut = [0, 0, 0];
+  let roofOut = 0;
 
   function syncModeDOM() {
     document.documentElement.dataset.scrollWorld = enabled ? "true" : "false";
@@ -477,6 +584,8 @@ export function mountFairytaleScrollWorld({
       const eased = seg.linger ? lingerEase(local, seg.linger) : local;
       lerp3(camOut, kf.diveStart.cam, kf.diveEnd.cam, eased);
       lerp3(lookOut, kf.diveStart.look, kf.diveEnd.look, eased);
+      const [r0, r1] = seg.section.roofOpen || [0, 0];
+      roofOut = r0 + (r1 - r0) * eased;
     } else {
       const kfFrom = mobileFlag ? seg.fromSection.mobile : seg.fromSection.desktop;
       const kfTo = mobileFlag ? seg.toSection.mobile : seg.toSection.desktop;
@@ -485,8 +594,11 @@ export function mountFairytaleScrollWorld({
       const u = 0.28 * local + 0.72 * smooth(local);
       quadBez3(camOut, kfFrom.diveEnd.cam, arcKf.midCam, kfTo.diveStart.cam, u);
       quadBez3(lookOut, kfFrom.diveEnd.look, arcKf.midLook, kfTo.diveStart.look, u);
+      const rFrom = (seg.fromSection.roofOpen || [0, 0])[1];
+      const rTo = (seg.toSection.roofOpen || [0, 0])[0];
+      roofOut = rFrom + (rTo - rFrom) * u;
     }
-    return { ci, seg, local };
+    return { ci, seg, local, roofOut };
   }
 
   function updateOverlaysAtY(yPx) {
@@ -504,8 +616,10 @@ export function mountFairytaleScrollWorld({
       const before = yPx < seg.start;
       const after = yPx > seg.end;
       let cop;
+      const peak = sections[i].jumpProgress || 0.5;
       if (i === 0) cop = after ? 0 : smooth(1 - pr / 0.68);
       else if (i === N - 1) cop = before ? 0 : smooth(pr / 0.42);
+      else if (peak > 0.65) cop = before || after ? 0 : smooth(1 - Math.abs(pr - 0.68) / 0.55);
       else cop = before || after ? 0 : smooth(1 - Math.abs(pr - 0.5) / 0.5);
 
       const c = copies[i];
@@ -569,6 +683,7 @@ export function mountFairytaleScrollWorld({
       curY = targetY;
       computeCameraAtY(curY, isMobile());
       meadow.setScrollCameraPose(camOut, lookOut, true);
+      meadow.setVillaRoofOpen(roofOut, true);
       updateOverlaysAtY(curY);
     }
   }
@@ -584,6 +699,7 @@ export function mountFairytaleScrollWorld({
       }
       computeCameraAtY(curY, isMobile());
       meadow.setScrollCameraPose(camOut, lookOut, false);
+      meadow.setVillaRoofOpen(roofOut, false);
       updateOverlaysAtY(curY);
     }
     rafId = window.requestAnimationFrame(rafLoop);
@@ -591,14 +707,16 @@ export function mountFairytaleScrollWorld({
 
   function jumpTo(sectionIndex, instant = false) {
     const idx = clamp(sectionIndex, 0, N - 1);
-    const seg = sections[idx]._seg;
+    const sec = sections[idx];
+    const seg = sec._seg;
     let targetTop;
     if (idx === 0) {
       targetTop = 0;
     } else if (idx === N - 1) {
       targetTop = seg.start + (seg.end - seg.start) * 0.85;
     } else {
-      targetTop = seg.start + (seg.end - seg.start) * 0.5;
+      const frac = typeof sec.jumpProgress === "number" ? sec.jumpProgress : 0.5;
+      targetTop = seg.start + (seg.end - seg.start) * frac;
     }
 
     if (instant || reduceMotion) {
@@ -607,6 +725,7 @@ export function mountFairytaleScrollWorld({
       curY = targetY;
       computeCameraAtY(curY, isMobile());
       meadow.setScrollCameraPose(camOut, lookOut, true);
+      meadow.setVillaRoofOpen(roofOut, true);
       updateOverlaysAtY(curY);
     } else {
       window.scrollTo({ top: targetTop, behavior: "smooth" });
@@ -622,6 +741,7 @@ export function mountFairytaleScrollWorld({
       curY = topPx;
       computeCameraAtY(curY, isMobile());
       meadow.setScrollCameraPose(camOut, lookOut, true);
+      meadow.setVillaRoofOpen(roofOut, true);
       updateOverlaysAtY(curY);
     }
   }
@@ -636,6 +756,7 @@ export function mountFairytaleScrollWorld({
       curY = targetY;
       computeCameraAtY(curY, isMobile());
       meadow.setScrollCameraPose(camOut, lookOut, false);
+      meadow.setVillaRoofOpen(roofOut, false);
       updateOverlaysAtY(curY);
     } else {
       copies.forEach((c) => {
@@ -722,6 +843,7 @@ export function mountFairytaleScrollWorld({
       activeSectionId: sections[Math.max(0, activeIndex)]?.id || null,
       segmentIndex: currentSegIndex,
       segmentKind: SEGMENTS[currentSegIndex]?.kind || "dive",
+      roofOpen: Number(roofOut.toFixed(3)),
       progress: Number(clamp(curY / maxScrollPx, 0, 1).toFixed(4)),
       maxScrollPx: Math.round(maxScrollPx),
       isMobile: isMobile(),

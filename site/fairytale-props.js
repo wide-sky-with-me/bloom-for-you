@@ -591,7 +591,8 @@ export function createFairytaleWorldProps({
   scene,
   meadowHeight,
   pathCurve,
-  rng
+  rng,
+  villaSpec = null
 }) {
   const raycastTargets = [];
   const wonderAnchors = new Map();
@@ -655,12 +656,12 @@ export function createFairytaleWorldProps({
     sIdx++;
   }
 
-  // 18 larger mossy boulders tucked into the earthen slope ("土坡") embankments!
+  // 18 larger mossy boulders tucked into the earthen slope ("土坡") embankments (clear of Villa courtyard!)
   const boulderCoords = [
     [-2.95, 2.85], [-3.65, 1.35], [2.15, 2.35], [3.45, 1.55], [2.95, -0.95],
-    [1.85, -2.85], [-2.55, -1.65], [-3.25, -3.85], [0.95, -4.45], [-0.85, -5.05],
+    [1.85, -2.85], [-2.55, -1.65], [-4.25, -4.45], [1.85, -4.65], [2.15, -5.85],
     [3.85, 0.25], [-1.85, 4.35], [2.45, 3.45], [-4.15, -0.45], [3.25, -2.35],
-    [-2.85, 0.45], [1.95, 0.85], [-2.35, -4.65]
+    [-2.85, 0.45], [1.95, 0.85], [-4.15, -5.65]
   ];
   for (let i = 0; i < boulderCoords.length && sIdx < stoneCount; i++) {
     const [bx, bz] = boulderCoords[i];
@@ -686,79 +687,169 @@ export function createFairytaleWorldProps({
   const loadedPropPacks = new Set();
 
   // ==========================================================================
-  // 2. WONDER #1: COZY HILLTOP STORYBOOK COTTAGE (山丘暖光童话小屋)
+  // 2. WONDER #1: CYCLES-BAKED 2BR+1LR FAIRYTALE VILLA ("山丘两室一厅童话小屋")
   // ==========================================================================
-  const cottagePos = new THREE.Vector3(-1.85, meadowHeight(-1.85, -5.35), -5.35);
+  const vX = villaSpec ? villaSpec.x : -1.25;
+  const vZ = villaSpec ? villaSpec.z : -5.85;
+  const vY = villaSpec ? villaSpec.y : meadowHeight(vX, vZ);
+  const vRotY = villaSpec ? villaSpec.rotY : 0.16;
+
+  const cottagePos = new THREE.Vector3(vX, vY, vZ);
   const cottageGroup = new THREE.Group();
   cottageGroup.position.copy(cottagePos);
-  cottageGroup.rotation.y = 0.34;
+  cottageGroup.rotation.y = vRotY;
   scene.add(cottageGroup);
+
+  function villaLocalVec(lx, ly, lz) {
+    const v = new THREE.Vector3(lx, ly, lz);
+    v.applyAxisAngle(new THREE.Vector3(0, 1, 0), vRotY);
+    return v.add(cottagePos);
+  }
 
   const cottageFallback = new THREE.Group();
   const walls = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.62, 0.68, 0.74, 18),
-    new THREE.MeshLambertMaterial({ color: 0xe2d5c1 })
+    new THREE.BoxGeometry(4.1, 1.85, 2.8),
+    new THREE.MeshLambertMaterial({ color: 0xe8dcc8 })
   );
-  walls.position.y = 0.35;
+  walls.position.y = 1.05;
   const roofLower = new THREE.Mesh(
-    new THREE.ConeGeometry(0.88, 0.56, 20),
-    new THREE.MeshLambertMaterial({ color: 0x3b4d6b })
+    new THREE.ConeGeometry(2.8, 1.15, 4),
+    new THREE.MeshLambertMaterial({ color: 0x2c4268 })
   );
-  roofLower.position.y = 0.94;
-  const roofPeak = new THREE.Mesh(
-    new THREE.ConeGeometry(0.52, 0.48, 18),
-    new THREE.MeshLambertMaterial({ color: 0x47597a })
+  roofLower.rotation.y = Math.PI * 0.25;
+  roofLower.position.y = 2.45;
+  cottageFallback.add(walls, roofLower);
+
+  const cottageDoorLight = new THREE.PointLight(0xfde047, 1.35, 5.8, 1.45);
+  cottageDoorLight.position.set(0.16, 1.42, 2.05);
+
+  const hearthGlowMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.32, 14, 12),
+    createSoftGlowMaterial(0xfb923c, 0.42, 2.5)
   );
-  roofPeak.position.set(-0.04, 1.28, 0);
-  roofPeak.rotation.z = 0.12;
+  hearthGlowMesh.position.set(1.80, 0.42, 0.45);
+  cottageGroup.add(cottageFallback, cottageDoorLight, hearthGlowMesh);
 
-  const chimney = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.09, 0.11, 0.46, 10),
-    new THREE.MeshLambertMaterial({ color: 0x785549 })
-  );
-  chimney.position.set(0.36, 1.26, -0.12);
+  const villaPorchAnchor = villaLocalVec(0.16, 0.72, 1.55);
+  registerWonder('wonder-cottage', villaPorchAnchor, 2.05, 0.45);
 
-  // Warm golden glowing fairytale windows & arched door!
-  const warmWinMat = new THREE.MeshBasicMaterial({ color: 0xfde08a });
-  const doorMesh = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.38, 0.08), new THREE.MeshLambertMaterial({ color: 0x7c2d12 }));
-  doorMesh.position.set(0, 0.20, 0.64);
-  const doorWin = new THREE.Mesh(new THREE.CircleGeometry(0.065, 14), warmWinMat);
-  doorWin.position.set(0, 0.27, 0.685);
+  const chimneyEmitWorld = villaLocalVec(2.08, 2.68, 0.45);
 
-  const sideWinL = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.22), warmWinMat);
-  sideWinL.position.set(-0.38, 0.40, 0.52);
-  sideWinL.rotation.y = -0.58;
-  const sideWinR = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.22), warmWinMat);
-  sideWinR.position.set(0.38, 0.40, 0.52);
-  sideWinR.rotation.y = 0.58;
-  cottageFallback.add(walls, roofLower, roofPeak, chimney, doorMesh, doorWin, sideWinL, sideWinR);
+  const villaRig = {
+    roofNode: null,
+    frontUpperNode: null,
+    gramophoneNode: null,
+    fireEmberNode: null,
+    chimneyTipNode: null,
+    cutawayMats: [],
+    roofTarget: 0,
+    roofCurrent: 0
+  };
 
-  const cottageGlow = new THREE.Mesh(
-    new THREE.SphereGeometry(1.32, 18, 14),
-    createSoftGlowMaterial(0xfbbf24, 0.38, 2.8)
-  );
-  cottageGlow.position.y = 0.48;
-  const cottageDoorLight = new THREE.PointLight(0xfde047, 1.45, 5.2, 1.45);
-  cottageDoorLight.position.set(0, 0.52, 0.92);
-  cottageGroup.add(cottageFallback, cottageGlow, cottageDoorLight);
-  registerWonder('wonder-cottage', cottagePos, 1.25, 0.72);
+  function applyVillaCutawayPose(openVal) {
+    const t = clamp(openVal, 0, 1);
+    const e = t * t * (3 - 2 * t);
+    if (villaRig.roofNode) {
+      villaRig.roofNode.position.y = e * 2.35;
+      villaRig.roofNode.position.z = -e * 0.48;
+      villaRig.roofNode.rotation.x = -e * 0.22;
+    }
+    if (villaRig.frontUpperNode) {
+      villaRig.frontUpperNode.position.y = e * 1.78;
+      villaRig.frontUpperNode.position.z = e * 0.28;
+    }
+    const alpha = 1.0 - clamp((e - 0.12) / 0.68, 0, 1);
+    const showCutawayParts = alpha > 0.015;
+    if (villaRig.roofNode) villaRig.roofNode.visible = showCutawayParts;
+    if (villaRig.frontUpperNode) villaRig.frontUpperNode.visible = showCutawayParts;
+    for (let i = 0; i < villaRig.cutawayMats.length; i++) {
+      const item = villaRig.cutawayMats[i];
+      item.mat.transparent = e > 0.015 || item.baseOpacity < 0.99;
+      item.mat.depthWrite = item.baseOpacity >= 0.99 && alpha > 0.86;
+      item.mat.opacity = item.baseOpacity * alpha;
+    }
+  }
 
-  const chimneyEmitWorld = new THREE.Vector3(
-    cottagePos.x + 0.32,
-    cottagePos.y + 1.48,
-    cottagePos.z - 0.10
-  );
+  function setVillaRoofOpen(openVal, snap = false) {
+    villaRig.roofTarget = clamp(openVal, 0, 1);
+    if (snap) {
+      villaRig.roofCurrent = villaRig.roofTarget;
+      applyVillaCutawayPose(villaRig.roofCurrent);
+    }
+    return villaRig.roofTarget;
+  }
+
+  function toggleVillaRoof() {
+    const next = villaRig.roofTarget > 0.45 ? 0.0 : 1.0;
+    setVillaRoofOpen(next, false);
+    return next;
+  }
 
   loadFairytaleGlb('./assets/models/storybook_cottage.glb')
     .then((gltf) => {
       const cottageModel = gltf.scene;
-      cottageModel.scale.setScalar(1.06);
+      cottageModel.scale.setScalar(1.0);
       cottageGroup.remove(cottageFallback);
       cottageGroup.add(cottageModel);
-      // Compute world position of the sculpted stone chimney rim (local [0.35, 1.56, -0.10] * 1.06)
-      const localChimney = new THREE.Vector3(0.35 * 1.06, 1.56 * 1.06, -0.10 * 1.06);
-      localChimney.applyAxisAngle(new THREE.Vector3(0, 1, 0), cottageGroup.rotation.y);
-      chimneyEmitWorld.copy(cottagePos).add(localChimney);
+
+      villaRig.roofNode = cottageModel.getObjectByName('CottageRoofNode');
+      villaRig.frontUpperNode = cottageModel.getObjectByName('CottageFrontUpperNode');
+      villaRig.gramophoneNode = cottageModel.getObjectByName('GramophoneDiscNode');
+      villaRig.fireEmberNode = cottageModel.getObjectByName('FireplaceEmberNode');
+      villaRig.chimneyTipNode = cottageModel.getObjectByName('ChimneyTipNode');
+
+      function isInsideCutawaySubtree(obj) {
+        let cur = obj;
+        while (cur) {
+          if (cur === villaRig.roofNode || cur === villaRig.frontUpperNode) return true;
+          cur = cur.parent;
+        }
+        return false;
+      }
+
+      const bakedMatCache = new Map();
+      cottageModel.traverse((child) => {
+        if (!child.isMesh) return;
+        const inCutaway = isInsideCutawaySubtree(child);
+        if (child.name.startsWith('Glass')) {
+          const gMat = new THREE.MeshBasicMaterial({
+            color: 0xdbeafe,
+            transparent: true,
+            opacity: 0.14,
+            depthWrite: false,
+            side: THREE.DoubleSide
+          });
+          child.material = gMat;
+          if (inCutaway) {
+            villaRig.cutawayMats.push({ mat: gMat, baseOpacity: 0.14 });
+          }
+          return;
+        }
+        const srcMat = child.material;
+        if (srcMat && srcMat.name && srcMat.name.endsWith('BakedMat') && srcMat.map) {
+          srcMat.map.colorSpace = THREE.SRGBColorSpace;
+          srcMat.map.anisotropy = 4;
+          const cacheKey = `${srcMat.name}_${inCutaway ? 'cut' : 'base'}`;
+          let unlit = bakedMatCache.get(cacheKey);
+          if (!unlit) {
+            unlit = new THREE.MeshBasicMaterial({
+              map: srcMat.map,
+              side: THREE.DoubleSide
+            });
+            bakedMatCache.set(cacheKey, unlit);
+            if (inCutaway) {
+              villaRig.cutawayMats.push({ mat: unlit, baseOpacity: 1.0 });
+            }
+          }
+          child.material = unlit;
+        }
+      });
+
+      cottageGroup.updateMatrixWorld(true);
+      if (villaRig.chimneyTipNode) {
+        villaRig.chimneyTipNode.getWorldPosition(chimneyEmitWorld);
+      }
+      applyVillaCutawayPose(villaRig.roofCurrent);
       loadedPropPacks.add('storybook_cottage');
     })
     .catch((err) => {
@@ -929,7 +1020,7 @@ export function createFairytaleWorldProps({
   const lampSpecs = [
     { x: -2.45, z: 0.35, rotY: 0.45, isHero: true },
     { x: 1.05, z: 0.15, rotY: -2.35, isHero: false },
-    { x: -0.95, z: -3.25, rotY: 0.65, isHero: false }
+    { x: -1.72, z: -3.02, rotY: 0.38, isHero: false }
   ];
   const lampPositions = [];
   const lampBells = [];
@@ -1001,6 +1092,50 @@ export function createFairytaleWorldProps({
   const archGlowR = archGlowL.clone();
   archGlowR.position.set(0.54, 1.16, 0);
   archGroup.add(archGlowL, archGlowR);
+
+  // Draped Fairytale Courtyard String Lights ("庭院暖黄星光串灯") framing the front walk from Archway to Villa!
+  archGroup.updateMatrixWorld(true);
+  const garlandBulbs = [];
+  const wireMat = new THREE.MeshBasicMaterial({ color: 0x3b281e });
+  const bulbCoreGeo = new THREE.SphereGeometry(0.024, 10, 8);
+  const bulbCoreMat = new THREE.MeshBasicMaterial({ color: 0xfffbeb });
+  const bulbHaloGeo = new THREE.SphereGeometry(0.092, 12, 10);
+
+  const garlandPairs = [
+    [
+      archGroup.localToWorld(new THREE.Vector3(-0.62, 1.46, 0)),
+      villaLocalVec(-2.08, 0.88, 1.76)
+    ],
+    [
+      archGroup.localToWorld(new THREE.Vector3(0.62, 1.46, 0)),
+      villaLocalVec(2.08, 0.88, 1.76)
+    ]
+  ];
+
+  for (let s = 0; s < garlandPairs.length; s++) {
+    const [pStart, pEnd] = garlandPairs[s];
+    const pMid = pStart.clone().lerp(pEnd, 0.5);
+    pMid.y -= 0.24;
+    const strandCurve = new THREE.QuadraticBezierCurve3(pStart, pMid, pEnd);
+    const wireMesh = new THREE.Mesh(
+      new THREE.TubeGeometry(strandCurve, 20, 0.0055, 6, false),
+      wireMat
+    );
+    scene.add(wireMesh);
+
+    const numBulbs = 8;
+    for (let b = 1; b <= numBulbs; b++) {
+      const u = b / (numBulbs + 1);
+      const bp = strandCurve.getPoint(u);
+      const core = new THREE.Mesh(bulbCoreGeo, bulbCoreMat);
+      core.position.set(bp.x, bp.y - 0.022, bp.z);
+      const haloMat = createSoftGlowMaterial(b % 2 === 0 ? 0xfef08a : 0xfbbf24, 0.50, 2.6);
+      const halo = new THREE.Mesh(bulbHaloGeo, haloMat);
+      halo.position.copy(core.position);
+      scene.add(core, halo);
+      garlandBulbs.push({ halo, haloMat, phase: s * 2.1 + b * 0.65 });
+    }
+  }
 
   // ==========================================================================
   // 6. WONDER #5: MOONLIT GIANT DANDELION PUFFS (月光蒲公英绒球簇 + 飘飞种子)
@@ -1331,9 +1466,29 @@ export function createFairytaleWorldProps({
   function update(dt, timeSec) {
     waterMat.uniforms.uTime.value = timeSec;
 
-    // 1. Cottage chimney rising warm starlight smoke
+    // 0. Smoothly animate Villa cutaway roof + front-upper lift, spinning gramophone & warm fireplace!
+    const roofDiff = villaRig.roofTarget - villaRig.roofCurrent;
+    if (Math.abs(roofDiff) > 0.0005) {
+      villaRig.roofCurrent += roofDiff * Math.min(1, dt * 6.5);
+      applyVillaCutawayPose(villaRig.roofCurrent);
+    }
+    if (villaRig.gramophoneNode) {
+      villaRig.gramophoneNode.rotation.y += dt * 1.45;
+    }
+    const fireFlicker = 0.88 + 0.16 * Math.sin(timeSec * 6.4) + 0.08 * Math.cos(timeSec * 11.3);
+    hearthGlowMesh.scale.setScalar(fireFlicker);
+    if (villaRig.fireEmberNode) {
+      villaRig.fireEmberNode.scale.set(fireFlicker, 0.92 + 0.14 * Math.sin(timeSec * 8.2), fireFlicker);
+    }
+    for (let i = 0; i < garlandBulbs.length; i++) {
+      const gb = garlandBulbs[i];
+      gb.haloMat.uniforms.uIntensity.value = 0.44 + 0.14 * Math.sin(timeSec * 2.8 + gb.phase);
+    }
+
+    // 1. Cottage chimney rising warm starlight smoke (fades gently when roof is lifted open!)
     if (activeAnims.cottageHearts > 0) activeAnims.cottageHearts = Math.max(0, activeAnims.cottageHearts - dt);
     const smokeSpeed = activeAnims.cottageHearts > 0 ? 1.85 : 0.75;
+    const roofClosedVis = clamp(1.0 - villaRig.roofCurrent * 1.6, 0, 1);
     for (let i = 0; i < smokePuffs.length; i++) {
       const sp = smokePuffs[i];
       sp.age = (sp.age + dt * smokeSpeed) % 3.2;
@@ -1345,7 +1500,8 @@ export function createFairytaleWorldProps({
       );
       const scale = (0.7 + p * 1.7) * (activeAnims.cottageHearts > 0 ? 1.35 : 1.0);
       sp.mesh.scale.setScalar(scale);
-      sp.mat.uniforms.uIntensity.value = Math.sin(p * Math.PI) * (activeAnims.cottageHearts > 0 ? 0.85 : 0.46);
+      sp.mat.uniforms.uIntensity.value =
+        Math.sin(p * Math.PI) * (activeAnims.cottageHearts > 0 ? 0.85 : 0.46) * roofClosedVis;
     }
 
     // 2. Mushroom ring gentle breathing + musical bounce wave
@@ -1431,6 +1587,9 @@ export function createFairytaleWorldProps({
     lampPositions,
     archPos,
     onWishBottleReady,
+    setVillaRoofOpen,
+    getVillaRoofOpen: () => villaRig.roofCurrent,
+    toggleVillaRoof,
     getLoadedPacks: () => [...loadedPropPacks],
     triggerWonderEffect,
     update

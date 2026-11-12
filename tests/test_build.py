@@ -92,7 +92,14 @@ class TestStarryMeadowBuild(unittest.TestCase):
     def test_sculpted_blender_glb_models_have_valid_binary_headers(self) -> None:
         expected_models = {
             "fairy_sprite.glb": ("FairyRoot", "BodyPivot", "HeadNode", "HatNode", "LanternSwingNode"),
-            "storybook_cottage.glb": ("CottageRoot", "CottageMergedMesh"),
+            "storybook_cottage.glb": (
+                "CottageRoot",
+                "CottageBaseNode",
+                "CottageRoofNode",
+                "CottageFrontUpperNode",
+                "VillaShellBaked",
+                "VillaFurnitureBaked",
+            ),
             "mushroom_cluster.glb": ("MushroomA", "MushroomB", "MushroomC", "MushroomD"),
             "fairytale_landmarks.glb": (
                 "SignpostProp",
@@ -135,6 +142,7 @@ class TestStarryMeadowBuild(unittest.TestCase):
         html = (ROOT / "site" / "index.html").read_text(encoding="utf-8")
         self.assertIn('id="sw-track"', html)
         self.assertIn('id="btn-mode-toggle"', html)
+        self.assertIn('id="btn-roof-toggle"', html)
 
         sw_js = (ROOT / "site" / "scroll-world-engine.js").read_text(encoding="utf-8")
         self.assertIn("FAIRYTALE_SCROLL_SECTIONS", sw_js)
