@@ -1,5 +1,5 @@
-// Web Audio API synthesizer for the Van Gogh Starry Night & Flower Meadow
-// Provides delicate celesta / music-box notes, chime arpeggios, and ambient night pad.
+// Self-hosted Web Audio API celesta music-box synthesizer for "予你花开 · Bloom for You"
+// Zero external audio dependencies; generates soft pentatonic chimes on user gesture.
 
 const PENTATONIC_FREQ = [
   261.63, // C4
@@ -30,7 +30,7 @@ const MELODY_SEQUENCE = [
   { note: 6, beats: 2.5 },
 ];
 
-export function createNightAudio() {
+export function createMusicBoxAudio() {
   let ctx = null;
   let masterGain = null;
   let enabled = false;
@@ -38,25 +38,19 @@ export function createNightAudio() {
   let stepIndex = 0;
 
   function ensureContext() {
-    if (ctx) {
-      return ctx;
-    }
+    if (ctx) return ctx;
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) {
-      return null;
-    }
+    if (!AudioCtx) return null;
     ctx = new AudioCtx();
     masterGain = ctx.createGain();
-    masterGain.gain.value = 0.24;
+    masterGain.gain.value = 0.22;
     masterGain.connect(ctx.destination);
     return ctx;
   }
 
-  function playCelestaNote(freq, duration = 2.1, volume = 0.2, delaySec = 0) {
+  function playCelestaNote(freq, duration = 2.1, volume = 0.18, delaySec = 0) {
     const audioCtx = ensureContext();
-    if (!audioCtx || !enabled) {
-      return;
-    }
+    if (!audioCtx || !enabled) return;
     if (audioCtx.state === "suspended") {
       audioCtx.resume().catch(() => {});
     }
@@ -65,15 +59,14 @@ export function createNightAudio() {
     const osc1 = audioCtx.createOscillator();
     const osc2 = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
+    const overtoneGain = audioCtx.createGain();
 
     osc1.type = "sine";
     osc1.frequency.setValueAtTime(freq, now);
-
     osc2.type = "triangle";
     osc2.frequency.setValueAtTime(freq * 2.0, now);
 
-    const overtoneGain = audioCtx.createGain();
-    overtoneGain.gain.setValueAtTime(0.14, now);
+    overtoneGain.gain.setValueAtTime(0.12, now);
     overtoneGain.gain.exponentialRampToValueAtTime(0.001, now + duration * 0.45);
 
     gain.gain.setValueAtTime(0.0001, now);
@@ -92,18 +85,16 @@ export function createNightAudio() {
   }
 
   function scheduleNextMelodyNote() {
-    if (!enabled) {
-      return;
-    }
+    if (!enabled) return;
     const item = MELODY_SEQUENCE[stepIndex % MELODY_SEQUENCE.length];
     const freq = PENTATONIC_FREQ[item.note] || 523.25;
-    playCelestaNote(freq, 2.5, 0.14, 0);
+    playCelestaNote(freq, 2.5, 0.13, 0);
     if (stepIndex % 3 === 0) {
       const bassFreq = (PENTATONIC_FREQ[item.note % 5] || 261.63) * 0.5;
-      playCelestaNote(bassFreq, 3.6, 0.09, 0.04);
+      playCelestaNote(bassFreq, 3.5, 0.08, 0.04);
     }
     stepIndex += 1;
-    melodyTimer = window.setTimeout(scheduleNextMelodyNote, item.beats * 780);
+    melodyTimer = window.setTimeout(scheduleNextMelodyNote, item.beats * 800);
   }
 
   function setEnabled(nextState) {
@@ -113,9 +104,7 @@ export function createNightAudio() {
       if (audioCtx && audioCtx.state === "suspended") {
         audioCtx.resume().catch(() => {});
       }
-      if (!melodyTimer) {
-        scheduleNextMelodyNote();
-      }
+      if (!melodyTimer) scheduleNextMelodyNote();
     } else if (melodyTimer) {
       clearTimeout(melodyTimer);
       melodyTimer = null;
@@ -123,59 +112,18 @@ export function createNightAudio() {
     return enabled;
   }
 
-  function toggle() {
-    return setEnabled(!enabled);
-  }
-
-  function playDiscoveryChime(accentIndex = 0) {
-    if (!enabled) {
-      return;
-    }
+  function playChime(accentIndex = 0) {
+    if (!enabled) return;
     const base = (accentIndex * 2) % 5;
-    const chord = [base + 4, base + 6, base + 7, base + 9];
-    chord.forEach((idx, i) => {
-      const freq = PENTATONIC_FREQ[idx % PENTATONIC_FREQ.length];
-      playCelestaNote(freq, 2.4, 0.18, i * 0.11);
-    });
-  }
-
-  function playRippleSparkle() {
-    if (!enabled) {
-      return;
-    }
-    const pick = 6 + Math.floor(Math.random() * 5);
-    playCelestaNote(PENTATONIC_FREQ[pick], 1.2, 0.08, 0);
-  }
-
-  function playWonderTwinkle(seed = 0) {
-    if (!enabled) {
-      return;
-    }
-    const base = 5 + (Math.abs(seed) % 4);
-    const notes = [base, base + 2, base + 4];
-    notes.forEach((idx, i) => {
-      const freq = PENTATONIC_FREQ[idx % PENTATONIC_FREQ.length];
-      playCelestaNote(freq, 1.5, 0.14, i * 0.075);
-    });
-  }
-
-  function playFinaleFanfare() {
-    if (!enabled) {
-      return;
-    }
-    const notes = [0, 2, 3, 4, 5, 7, 8, 9, 10];
-    notes.forEach((idx, i) => {
-      playCelestaNote(PENTATONIC_FREQ[idx], 3.0, 0.2, i * 0.12);
+    [base + 4, base + 6, base + 8].forEach((idx, i) => {
+      playCelestaNote(PENTATONIC_FREQ[idx % PENTATONIC_FREQ.length], 2.0, 0.14, i * 0.09);
     });
   }
 
   return {
     isEnabled: () => enabled,
     setEnabled,
-    toggle,
-    playDiscoveryChime,
-    playWonderTwinkle,
-    playRippleSparkle,
-    playFinaleFanfare,
+    toggle: () => setEnabled(!enabled),
+    playChime,
   };
 }

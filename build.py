@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Van Gogh Starry Night & Multi-Species Flower Meadow static Pages artifact."""
+"""Build the '予你花开 · Bloom for You' 3D Clay Diorama Scroll World static Pages artifact."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import struct
 
 ROOT = Path(__file__).resolve().parent
 
@@ -16,35 +17,47 @@ REQUIRED_SITE_FILES = (
     "index.html",
     "style.css",
     "app.js",
-    "scroll-world-engine.js",
-    "vangogh-sky.js",
-    "flower-meadow.js",
-    "botanical-assets.js",
-    "fairytale-props.js",
+    "diorama-stage.js",
+    "scrub-world.js",
     "audio.js",
     "gift.json",
-    "assets/confessions.json",
     "assets/flower-song.woff2",
     "assets/FONT-LICENSE.txt",
     "assets/flower.svg",
-    "assets/models/fairy_sprite.glb",
-    "assets/models/storybook_cottage.glb",
-    "assets/models/mushroom_cluster.glb",
-    "assets/models/fairytale_landmarks.glb",
-    "assets/models/botanical_blooms.glb",
+    "assets/models/bloom_scroll_world.glb",
     "vendor/three-0.186.1/three.module.js",
     "vendor/three-0.186.1/three.core.js",
     "vendor/three-0.186.1/addons/loaders/GLTFLoader.js",
     "vendor/three-0.186.1/addons/utils/BufferGeometryUtils.js",
     "vendor/three-0.186.1/addons/utils/SkeletonUtils.js",
     "vendor/three-0.186.1/LICENSE",
-    "vendor/p5-1.9.4/p5.min.js",
-    "vendor/p5-1.9.4/LICENSE",
+)
+
+REQUIRED_GLB_NODES = (
+    "ScrollWorldRoot",
+    "VillaBaseNode",
+    "VillaRoofNode",
+    "VillaFrontUpperNode",
+    "HeroBouquetNode",
+    "BouquetOrbitNode",
 )
 
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _parse_glb_json(glb_path: Path) -> dict:
+    data = glb_path.read_bytes()
+    if len(data) < 20 or data[:4] != b"glTF":
+        raise ValueError(f"Invalid glTF binary header in {glb_path.name}")
+    version, total_len = struct.unpack_from("<II", data, 4)
+    if version != 2 or total_len != len(data):
+        raise ValueError(f"Malformed glTF 2.0 container in {glb_path.name}")
+    chunk_len, chunk_type = struct.unpack_from("<II", data, 12)
+    if chunk_type != 0x4E4F534A:  # JSON
+        raise ValueError(f"Missing glTF JSON chunk in {glb_path.name}")
+    return json.loads(data[20 : 20 + chunk_len].decode("utf-8"))
 
 
 def verify_source(source: Path) -> dict:
@@ -53,7 +66,7 @@ def verify_source(source: Path) -> dict:
         if not target.is_file():
             raise FileNotFoundError(f"Missing required site asset: {rel}")
 
-    # Validate gift.json
+    # Validate preserved gift.json love letter
     gift = json.loads((source / "gift.json").read_text(encoding="utf-8"))
     for key in ("recipient", "salutation", "signature"):
         if not isinstance(gift.get(key), str) or not gift[key].strip():
@@ -64,28 +77,6 @@ def verify_source(source: Path) -> dict:
         or not all(isinstance(p, str) and p.strip() for p in gift["letter"])
     ):
         raise ValueError("gift.json: letter must contain non-empty text paragraphs")
-
-    # Validate confessions.json
-    confessions = json.loads((source / "assets" / "confessions.json").read_text(encoding="utf-8"))
-    eggs = confessions.get("eggs")
-    if not isinstance(eggs, list) or len(eggs) < 5:
-        raise ValueError("confessions.json: must define at least 5 interactive Easter eggs")
-    seen_ids = set()
-    for egg in eggs:
-        egg_id = egg.get("id")
-        if not isinstance(egg_id, str) or not egg_id or egg_id in seen_ids:
-            raise ValueError(f"confessions.json: invalid or duplicate egg id {egg_id!r}")
-        seen_ids.add(egg_id)
-        for field in ("title", "subtitle", "badge", "hint", "quote", "signature"):
-            if not isinstance(egg.get(field), str) or not egg[field].strip():
-                raise ValueError(f"confessions.json ({egg_id}): {field} must be non-empty string")
-        paragraphs = egg.get("paragraphs")
-        if not isinstance(paragraphs, list) or not paragraphs:
-            raise ValueError(f"confessions.json ({egg_id}): paragraphs must be non-empty list")
-
-    finale = confessions.get("finale")
-    if not isinstance(finale, dict) or not isinstance(finale.get("title"), str):
-        raise ValueError("confessions.json: finale object is required")
 
     # Validate Three.js 0.186.1 vendor bundle + GLTFLoader addons
     three_dir = source / "vendor" / "three-0.186.1"
@@ -105,30 +96,14 @@ def verify_source(source: Path) -> dict:
         if not path.is_file() or _sha256(path) != record.get("sha256"):
             raise ValueError(f"Three.js vendor integrity failed: {name}")
 
-    # Validate Blender 4.0 binary .glb 3D model packs
-    for glb_rel in (
-        "assets/models/fairy_sprite.glb",
-        "assets/models/storybook_cottage.glb",
-        "assets/models/mushroom_cluster.glb",
-        "assets/models/fairytale_landmarks.glb",
-        "assets/models/botanical_blooms.glb",
-    ):
-        glb_path = source / glb_rel
-        header = glb_path.read_bytes()[:8]
-        if len(header) < 8 or header[:4] != b"glTF":
-            raise ValueError(f"Invalid glTF binary header in {glb_rel}")
+    # Validate Cycles-baked 3D diorama world GLB & required hierarchy nodes
+    glb_doc = _parse_glb_json(source / "assets" / "models" / "bloom_scroll_world.glb")
+    node_names = {n.get("name") for n in glb_doc.get("nodes", [])}
+    for req_node in REQUIRED_GLB_NODES:
+        if req_node not in node_names:
+            raise ValueError(f"bloom_scroll_world.glb missing required node: {req_node}")
 
-    # Validate p5.js 1.9.4 vendor bundle
-    p5_dir = source / "vendor" / "p5-1.9.4"
-    p5_meta = json.loads((p5_dir / "metadata.json").read_text(encoding="utf-8"))
-    if p5_meta.get("name") != "p5" or p5_meta.get("version") != "1.9.4":
-        raise ValueError("Unexpected p5.js vendor version")
-    p5_record = p5_meta.get("files", {}).get("p5.min.js", {})
-    p5_path = p5_dir / "p5.min.js"
-    if not p5_path.is_file() or _sha256(p5_path) != p5_record.get("sha256"):
-        raise ValueError("p5.js vendor integrity failed: p5.min.js")
-
-    return {"eggs": len(eggs)}
+    return {"glbNodes": len(glb_doc.get("nodes", [])), "glbMeshes": len(glb_doc.get("meshes", []))}
 
 
 def build(output: Path) -> Path:
@@ -136,6 +111,9 @@ def build(output: Path) -> Path:
     source = ROOT / "site"
     if output == ROOT or output == source or output in source.parents or source in output.parents:
         raise ValueError("Output must be separate from source and project directories")
+
+    if output.exists():
+        shutil.rmtree(output)
 
     summary = verify_source(source)
     shutil.copytree(source, output, dirs_exist_ok=True)
@@ -149,21 +127,19 @@ def build(output: Path) -> Path:
             file_hashes[rel] = _sha256(file_path)
 
     release = {
-        "schema": 2,
-        "style": "vangogh-starry-meadow-v1",
-        "renderers": {
-            "sky": "p5-1.9.4",
-            "meadow": "three-0.186.1",
-        },
-        "species": [
-            "hydrangea",
-            "sunflower",
-            "iris",
-            "rose",
-            "tulip",
-            "gypsophila",
+        "schema": 3,
+        "style": "clay-diorama-scroll-world-v1",
+        "renderer": "three-0.186.1",
+        "sections": [
+            "brook",
+            "plaza",
+            "villa",
+            "living",
+            "bedrooms",
+            "bouquet",
         ],
-        "eggCount": summary["eggs"],
+        "glbNodes": summary["glbNodes"],
+        "glbMeshes": summary["glbMeshes"],
         "revision": os.environ.get("BLOOM_BUILD_REVISION", "local"),
         "files": file_hashes,
     }
@@ -171,7 +147,7 @@ def build(output: Path) -> Path:
         json.dumps(release, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    print(f"Built Van Gogh Starry Night & Flower Meadow: {output}")
+    print(f"Built Bloom for You 3D Scroll World: {output}")
     return output
 
 

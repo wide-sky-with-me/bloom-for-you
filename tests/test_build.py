@@ -1,9 +1,9 @@
-"""Release and architecture contract tests for Van Gogh Starry Night & Flower Meadow."""
-
 from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -11,145 +11,98 @@ import unittest
 import build
 
 ROOT = Path(__file__).resolve().parent.parent
+SITE = ROOT / "site"
 
 
-class TestStarryMeadowBuild(unittest.TestCase):
-    def test_build_creates_complete_self_hosted_distribution(self) -> None:
+class ScrollWorldBuildTests(unittest.TestCase):
+    def test_build_produces_verified_release_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            out_dir = Path(tmp) / "dist"
-            result = build.build(out_dir)
-            self.assertEqual(result, out_dir.resolve())
-            self.assertTrue((out_dir / ".nojekyll").is_file())
-            self.assertTrue((out_dir / "THIRD_PARTY_NOTICES.md").is_file())
-            self.assertTrue((out_dir / "release.json").is_file())
+            out = Path(tmp) / "dist"
+            built = build.build(out)
+            self.assertTrue((built / "index.html").is_file())
+            self.assertTrue((built / ".nojekyll").is_file())
+            self.assertTrue((built / "THIRD_PARTY_NOTICES.md").is_file())
 
-            for rel in build.REQUIRED_SITE_FILES:
-                self.assertTrue((out_dir / rel).is_file(), f"Missing built file: {rel}")
-
-            release = json.loads((out_dir / "release.json").read_text(encoding="utf-8"))
-            self.assertEqual(release["style"], "vangogh-starry-meadow-v1")
-            self.assertEqual(release["renderers"]["sky"], "p5-1.9.4")
-            self.assertEqual(release["renderers"]["meadow"], "three-0.186.1")
+            manifest = json.loads((built / "release.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["schema"], 3)
+            self.assertEqual(manifest["style"], "clay-diorama-scroll-world-v1")
+            self.assertEqual(manifest["renderer"], "three-0.186.1")
             self.assertEqual(
-                release["species"],
-                ["hydrangea", "sunflower", "iris", "rose", "tulip", "gypsophila"],
+                manifest["sections"],
+                ["brook", "plaza", "villa", "living", "bedrooms", "bouquet"],
             )
-            self.assertEqual(release["eggCount"], 5)
+            self.assertIn("assets/models/bloom_scroll_world.glb", manifest["files"])
 
-    def test_index_html_has_zero_external_runtime_requests(self) -> None:
-        html = (ROOT / "site" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("./vendor/p5-1.9.4/p5.min.js", html)
-        self.assertIn("./vendor/three-0.186.1/three.module.js", html)
-        self.assertNotIn("https://", html)
-        self.assertNotIn("http://", html)
+    def test_zero_external_runtime_urls_in_first_party_site(self) -> None:
+        url_re = re.compile(r"https?://", re.IGNORECASE)
+        checked = 0
+        for path in sorted(SITE.rglob("*")):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(SITE).as_posix()
+            if rel.startswith("vendor/") or rel.endswith("FONT-LICENSE.txt"):
+                continue
+            if path.suffix.lower() in {".html", ".css", ".js", ".json", ".svg"}:
+                text = path.read_text(encoding="utf-8")
+                if path.suffix.lower() == ".svg":
+                    text = text.replace('xmlns="http://www.w3.org/2000/svg"', "")
+                self.assertIsNone(
+                    url_re.search(text),
+                    f"External runtime URL forbidden in first-party file {rel}",
+                )
+                checked += 1
+        self.assertGreaterEqual(checked, 7)
 
-    def test_confessions_and_gift_preserve_love_messages(self) -> None:
-        gift = json.loads((ROOT / "site" / "gift.json").read_text(encoding="utf-8"))
-        self.assertIn("老婆", gift["recipient"])
-        self.assertTrue(len(gift["letter"]) >= 3)
-
-        confessions = json.loads(
-            (ROOT / "site" / "assets" / "confessions.json").read_text(encoding="utf-8")
+    def test_legacy_files_removed(self) -> None:
+        legacy_paths = (
+            SITE / "vangogh-sky.js",
+            SITE / "flower-meadow.js",
+            SITE / "botanical-assets.js",
+            SITE / "fairytale-props.js",
+            SITE / "scroll-world-engine.js",
+            SITE / "assets" / "confessions.json",
+            SITE / "vendor" / "p5-1.9.4",
+            SITE / "assets" / "models" / "storybook_cottage.glb",
         )
-        egg_ids = [egg["id"] for egg in confessions["eggs"]]
-        self.assertEqual(
-            egg_ids,
-            [
-                "egg-hydrangea",
-                "egg-sunflower",
-                "egg-rose-bottle",
-                "egg-iris-tulip",
-                "egg-starry-sky",
-            ],
-        )
-        self.assertEqual(confessions["finale"]["id"], "finale-starry-bloom")
-        wonders = confessions.get("wonders", [])
-        self.assertEqual(len(wonders), 8)
+        for p in legacy_paths:
+            self.assertFalse(p.exists(), f"Legacy file should be removed: {p}")
+
+    def test_gift_letter_preserved_verbatim(self) -> None:
+        gift = json.loads((SITE / "gift.json").read_text(encoding="utf-8"))
+        self.assertEqual(gift["recipient"], "我最爱的老婆")
+        self.assertEqual(gift["salutation"], "亲爱的老婆：")
+        self.assertEqual(gift["signature"], "永远偏爱你的，老公")
+        self.assertEqual(len(gift["letter"]), 4)
+        self.assertIn("想送你一束花，又贪心地想让它永远盛开。", gift["letter"][0])
 
     def test_javascript_modules_pass_node_syntax_check(self) -> None:
-        for js_name in (
-            "app.js",
-            "scroll-world-engine.js",
-            "vangogh-sky.js",
-            "flower-meadow.js",
-            "botanical-assets.js",
-            "fairytale-props.js",
-            "audio.js",
-        ):
-            js_path = ROOT / "site" / js_name
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not installed")
+        for js_name in ("app.js", "diorama-stage.js", "scrub-world.js", "audio.js"):
             proc = subprocess.run(
-                ["node", "--check", str(js_path)],
+                [node, "--check", str(SITE / js_name)],
                 capture_output=True,
                 text=True,
                 check=False,
             )
-            self.assertEqual(
-                proc.returncode,
-                0,
-                f"Syntax check failed for {js_name}: {proc.stderr}",
-            )
+            self.assertEqual(proc.returncode, 0, f"Syntax error in {js_name}: {proc.stderr}")
 
-    def test_sculpted_blender_glb_models_have_valid_binary_headers(self) -> None:
-        expected_models = {
-            "fairy_sprite.glb": ("FairyRoot", "BodyPivot", "HeadNode", "HatNode", "LanternSwingNode"),
-            "storybook_cottage.glb": (
-                "CottageRoot",
-                "CottageBaseNode",
-                "CottageRoofNode",
-                "CottageFrontUpperNode",
-                "VillaShellBaked",
-                "VillaFurnitureBaked",
-            ),
-            "mushroom_cluster.glb": ("MushroomA", "MushroomB", "MushroomC", "MushroomD"),
-            "fairytale_landmarks.glb": (
-                "SignpostProp",
-                "BluebirdNode",
-                "StreetlampProp",
-                "HollowStumpProp",
-                "WishBottleProp",
-                "DandelionClusterProp",
-                "DandelionSeedMesh",
-                "DewPondProp",
-                "FrogPrinceNode",
-                "RoseArchProp",
-                "CobbleStoneMesh",
-            ),
-            "botanical_blooms.glb": (
-                "RoseBloom",
-                "RoseCalyx",
-                "SunflowerRays",
-                "SunflowerCalyx",
-                "TulipBloom",
-                "IrisBloom",
-                "HydrangeaFloret",
-                "GypsophilaCluster",
-            ),
-        }
-        models_dir = ROOT / "site" / "assets" / "models"
-        for name, required_nodes in expected_models.items():
-            path = models_dir / name
-            self.assertTrue(path.is_file(), f"Missing .glb model pack: {name}")
-            raw = path.read_bytes()
-            self.assertGreater(len(raw), 1024)
-            self.assertEqual(raw[:4], b"glTF")
-            json_len = int.from_bytes(raw[12:16], "little")
-            gltf_json = json.loads(raw[20 : 20 + json_len].decode("utf-8"))
-            node_names = {n.get("name") for n in gltf_json.get("nodes", [])}
-            for node_name in required_nodes:
-                self.assertIn(node_name, node_names, f"{name} missing sculpted node {node_name}")
-
-    def test_scroll_world_engine_and_html_track_contract(self) -> None:
-        html = (ROOT / "site" / "index.html").read_text(encoding="utf-8")
-        self.assertIn('id="sw-track"', html)
-        self.assertIn('id="btn-mode-toggle"', html)
-        self.assertIn('id="btn-roof-toggle"', html)
-
-        sw_js = (ROOT / "site" / "scroll-world-engine.js").read_text(encoding="utf-8")
-        self.assertIn("FAIRYTALE_SCROLL_SECTIONS", sw_js)
-        self.assertIn("lingerEase", sw_js)
-        self.assertIn("mountFairytaleScrollWorld", sw_js)
-        self.assertNotIn("http://", sw_js)
-        self.assertNotIn("https://", sw_js)
+    def test_glb_contains_villa_cutaway_and_bouquet_hierarchy(self) -> None:
+        glb_doc = build._parse_glb_json(SITE / "assets" / "models" / "bloom_scroll_world.glb")
+        node_names = {n.get("name") for n in glb_doc.get("nodes", [])}
+        for req in (
+            "ScrollWorldRoot",
+            "OutdoorIslandsBaked",
+            "VillaBaseNode",
+            "VillaRoofNode",
+            "VillaFrontUpperNode",
+            "VillaInteriorShellBaked",
+            "VillaFurnitureBaked",
+            "HeroBouquetNode",
+            "BouquetOrbitNode",
+        ):
+            self.assertIn(req, node_names)
 
 
 if __name__ == "__main__":

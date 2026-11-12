@@ -1,1013 +1,197 @@
-import { createVanGoghSky } from "./vangogh-sky.js";
-import { createMeadowScene, villaLocalToWorld } from "./flower-meadow.js";
-import { createNightAudio } from "./audio.js";
-import { mountFairytaleScrollWorld } from "./scroll-world-engine.js";
+import { createMusicBoxAudio } from "./audio.js";
+import { createDioramaStage } from "./diorama-stage.js";
+import { mountScrubWorld, SCROLL_SECTIONS } from "./scrub-world.js";
 
-const STORAGE_KEY_EGGS = "bloom_for_you_vangogh_unlocked_v2";
-const STORAGE_KEY_WONDERS = "bloom_for_you_fairytale_wonders_v1";
-
-const ACCENT_HEX = {
-  rose: "#fda4af",
-  gold: "#fde047",
-  cyan: "#7dd3fc",
-  violet: "#c4b5fd",
-};
-
-const ROMAN_NUMERALS = ["Ⅰ", "Ⅱ", "Ⅲ", "Ⅳ", "Ⅴ", "Ⅵ", "Ⅶ"];
-
-const COMPACT_BEACON_LABELS = {
-  "egg-hydrangea": "Ⅰ · 无尽夏",
-  "egg-sunflower": "Ⅱ · 向日葵",
-  "egg-rose-bottle": "Ⅲ · 玫瑰星瓶",
-  "egg-iris-tulip": "Ⅳ · 鸢尾郁金香",
-  "egg-starry-sky": "Ⅴ · 星夜流星",
-};
-
-async function fetchJson(url, fallback) {
+async function loadGiftLetter() {
   try {
-    const res = await fetch(url, { cache: "no-cache" });
-    if (!res.ok) {
-      return fallback;
-    }
+    const res = await fetch("./gift.json", { cache: "no-cache" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
-  } catch {
-    return fallback;
-  }
-}
-
-function loadSavedSet(key) {
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) {
-      return new Set();
-    }
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? new Set(parsed) : new Set();
-  } catch {
-    return new Set();
-  }
-}
-
-function saveSet(key, set) {
-  try {
-    window.localStorage.setItem(key, JSON.stringify([...set]));
-  } catch {
-    // Ignore storage quota errors
-  }
-}
-
-function normalizeProjectedEntries(projected) {
-  if (!projected) return [];
-  if (Array.isArray(projected)) return projected;
-  return Object.entries(projected).map(([id, val]) => ({ id, ...val }));
-}
-
-async function initApp() {
-  const appShell = document.getElementById("app-shell");
-  const swTrackEl = document.getElementById("sw-track");
-  const skyContainer = document.getElementById("sky-container");
-  const meadowCanvas = document.getElementById("meadow-canvas");
-  const wonderMarkersRoot = document.getElementById("wonder-markers");
-  const eggMarkersRoot = document.getElementById("egg-markers");
-  const quickNavRoot = document.getElementById("egg-quick-nav");
-  const counterValueEl = document.getElementById("counter-value");
-  const hintTextEl = document.getElementById("hint-text");
-
-  const spriteBubbleEl = document.getElementById("sprite-bubble");
-  const spriteBubbleTextEl = document.getElementById("sprite-bubble-text");
-
-  const wonderToastEl = document.getElementById("wonder-toast");
-  const wonderToastBadgeEl = document.getElementById("wonder-toast-badge");
-  const wonderToastTitleEl = document.getElementById("wonder-toast-title");
-  const wonderToastTextEl = document.getElementById("wonder-toast-text");
-  const btnCloseToast = document.getElementById("btn-close-toast");
-
-  const btnModeToggle = document.getElementById("btn-mode-toggle");
-  const modeToggleIcon = document.getElementById("mode-toggle-icon");
-  const modeToggleLabel = document.getElementById("mode-toggle-label");
-  const btnRoofToggle = document.getElementById("btn-roof-toggle");
-  const roofToggleLabel = document.getElementById("roof-toggle-label");
-  const btnFollowSprite = document.getElementById("btn-follow-sprite");
-  const followLabel = document.getElementById("follow-label");
-  const btnAudio = document.getElementById("btn-audio");
-  const audioLabel = document.getElementById("audio-label");
-  const btnMeteor = document.getElementById("btn-meteor");
-  const btnLetter = document.getElementById("btn-letter");
-  const btnCollection = document.getElementById("btn-collection");
-
-  const modalEl = document.getElementById("confession-modal");
-  const modalBackdrop = document.getElementById("modal-backdrop");
-  const cardEl = modalEl.querySelector(".confession-card");
-  const btnCloseCard = document.getElementById("btn-close-card");
-  const cardBadge = document.getElementById("card-badge");
-  const cardSubtitle = document.getElementById("card-subtitle");
-  const cardTitle = document.getElementById("card-title");
-  const cardBody = document.getElementById("card-body");
-  const cardQuote = document.getElementById("card-quote");
-  const cardSignature = document.getElementById("card-signature");
-  const btnNextEgg = document.getElementById("btn-next-egg");
-
-  const drawerEl = document.getElementById("collection-drawer");
-  const btnCloseDrawer = document.getElementById("btn-close-drawer");
-  const drawerEggsHeading = document.getElementById("drawer-eggs-heading");
-  const drawerWondersHeading = document.getElementById("drawer-wonders-heading");
-  const drawerList = document.getElementById("drawer-list");
-  const drawerWonderList = document.getElementById("drawer-wonder-list");
-  const btnFinalePreview = document.getElementById("btn-finale-preview");
-
-  const [confessionsData, giftData] = await Promise.all([
-    fetchJson("./assets/confessions.json", { eggs: [], wonders: [], finale: null }),
-    fetchJson("./gift.json", null),
-  ]);
-
-  const eggs = Array.isArray(confessionsData.eggs) ? confessionsData.eggs : [];
-  const wonders = Array.isArray(confessionsData.wonders) ? confessionsData.wonders : [];
-  const finaleData = confessionsData.finale || {
-    id: "finale-starry-bloom",
-    badge: "终章 · 梵高星月夜与童话繁花共绽",
-    title: "漫天星河与整座童话花园，皆为你盛开",
-    subtitle: "你寻获了花丛与星河里的全部五处心意",
-    paragraphs: giftData?.letter || giftData?.message || [
-      "老婆，当你把藏在无尽夏、向日葵、玫瑰、鸢尾郁金香和梵高星河里的心意一一唤醒，整座星夜童话花园都已经知道了我的秘密。",
-    ],
-    quote: "“星月夜永不落幕，我对你的爱也是。”",
-    signature: giftData?.signature || "永远爱你的老公",
-    accent: "gold",
-  };
-
-  const unlockedIds = loadSavedSet(STORAGE_KEY_EGGS);
-  const unlockedWonders = loadSavedSet(STORAGE_KEY_WONDERS);
-  const audio = createNightAudio();
-
-  let activeCardId = null;
-  let activeWonderId = null;
-  let skyReady = false;
-  let meadowStatus = "initializing";
-  let spriteWhisperUntil = performance.now() + 4600;
-  let toastHideTimer = null;
-
-  function showSpriteWhisper(text, durationMs = 12000) {
-    if (!text) return;
-    spriteBubbleTextEl.textContent = text;
-    spriteWhisperUntil = performance.now() + durationMs;
-  }
-
-  // 1. Initialize Upper Realm: p5.js Van Gogh Starry Night Sky
-  const sky = createVanGoghSky(skyContainer, {
-    onReady: () => {
-      skyReady = true;
-    },
-  });
-
-  // 2. Initialize Lower Realm: Three.js Lifelike Botanical Meadow, Slopes, Path & Sprite
-  const meadow = createMeadowScene(meadowCanvas, {
-    eggs,
-    wonders,
-    onEggTrigger: (eggId) => {
-      openEggConfession(eggId);
-    },
-    onWonderTrigger: (wonderId) => {
-      handleWonderDiscovered(wonderId);
-    },
-    onSpriteWhisper: (msg) => {
-      showSpriteWhisper(msg, 4200);
-    },
-    onSkyTap: ({ nx, ny }) => {
-      if (ny < 0.48) {
-        sky.triggerMeteor({
-          startX: Math.max(0.08, Math.min(0.84, nx - 0.06)),
-          startY: Math.max(0.05, Math.min(0.34, ny)),
-        });
-      }
-    },
-    onRipple: () => {
-      audio.playRippleSparkle();
-    },
-    onStatus: (status) => {
-      meadowStatus = status;
-    },
-  });
-
-  // Sync previously unlocked state
-  unlockedIds.forEach((id) => {
-    meadow.markEggUnlocked(id);
-    if (id === "egg-sunflower") {
-      sky.setConstellationActive(true);
-    }
-  });
-  if (unlockedIds.size >= eggs.length && eggs.length > 0) {
-    sky.setConstellationActive(true);
-    meadow.triggerFinaleState();
-  }
-
-  function syncModeButtonUI(isScrollMode) {
-    if (!btnModeToggle) return;
-    btnModeToggle.setAttribute("aria-pressed", isScrollMode ? "true" : "false");
-    if (modeToggleIcon) {
-      modeToggleIcon.textContent = isScrollMode ? "📜" : "✧";
-    }
-    if (modeToggleLabel) {
-      modeToggleLabel.innerHTML = isScrollMode
-        ? `漫游<span class="hide-xs">飞越</span>`
-        : `自由<span class="hide-xs">探索</span>`;
-    }
-  }
-
-  let lastRoofOpenState = null;
-  function syncRoofButtonUI() {
-    if (!btnRoofToggle) return;
-    const isOpen = meadow.getVillaRoofOpen() > 0.45;
-    if (isOpen === lastRoofOpenState) return;
-    lastRoofOpenState = isOpen;
-    btnRoofToggle.setAttribute("aria-pressed", isOpen ? "true" : "false");
-    if (roofToggleLabel) {
-      roofToggleLabel.innerHTML = isOpen
-        ? `<span class="hide-xs">合拢</span>屋顶`
-        : `<span class="hide-xs">两室</span>一厅`;
-    }
-  }
-
-  function handleRoofToggleAction() {
-    if (scrollWorld.isEnabled()) {
-      const idx = scrollWorld.getActiveIndex();
-      if (idx < 4 || idx > 6) {
-        scrollWorld.jumpTo(4);
-        return;
-      }
-      scrollWorld.setEnabled(false);
-    }
-    const nextOpen = meadow.toggleVillaRoof();
-    const camArr = nextOpen > 0.5
-      ? villaLocalToWorld(0.65, 3.48, 3.95)
-      : villaLocalToWorld(0.32, 1.82, 4.65);
-    const lookArr = nextOpen > 0.5
-      ? villaLocalToWorld(-0.08, 0.48, -0.05)
-      : villaLocalToWorld(-0.02, 0.90, 0.12);
-    meadow.focusCamera(camArr, lookArr, 14000, false);
-    hintTextEl.textContent = nextOpen > 0.5
-      ? "🏠 已掀开石板屋顶进入自由看房视角：拖拽旋转、滚轮缩放，细看两室一厅每一件微缩家具"
-      : "🏠 已合拢石板屋顶回到庭院外观视角：点击顶部「漫游飞越」可继续一镜到底旅程";
-    syncRoofButtonUI();
-  }
-
-  // 2B. Mount Scroll-World Continuous 3D Camera-Flight Engine (adapted from oso95/scroll-world)
-  const scrollWorld = mountFairytaleScrollWorld({
-    shellEl: appShell,
-    trackEl: swTrackEl,
-    meadow,
-    sky,
-    skyContainer,
-    onEggAction: (eggId) => {
-      openEggConfession(eggId);
-    },
-    onWonderAction: (wonderId) => {
-      meadow.triggerWonder(wonderId);
-    },
-    onSpecialAction: (actionName) => {
-      if (actionName === "toggle-audio") {
-        btnAudio.click();
-      } else if (actionName === "trigger-finale") {
-        triggerFinale();
-      } else if (actionName === "open-letter") {
-        openOriginalLoveLetter();
-      } else if (actionName === "enter-explore") {
-        scrollWorld.setEnabled(false);
-      } else if (actionName === "jump-villa") {
-        if (!scrollWorld.isEnabled()) scrollWorld.setEnabled(true);
-        scrollWorld.jumpTo(4);
-      } else if (actionName === "toggle-roof") {
-        handleRoofToggleAction();
-      } else if (actionName === "explore-villa") {
-        scrollWorld.setEnabled(false);
-        meadow.setVillaRoofOpen(1.0, false);
-        meadow.focusCamera(
-          villaLocalToWorld(0.65, 3.48, 3.95),
-          villaLocalToWorld(-0.08, 0.48, -0.05),
-          15000,
-          false
-        );
-        hintTextEl.textContent = "🏠 已进入 360° 自由看房模式：拖拽旋转、滚轮缩放，细看两室一厅壁炉、餐厨、画室与主卧";
-      }
-    },
-    onModeChange: (isScrollMode) => {
-      syncModeButtonUI(isScrollMode);
-      syncFollowButtonUI();
-      syncRoofButtonUI();
-    },
-  });
-  syncModeButtonUI(scrollWorld.isEnabled());
-
-  // 3. Create Floating 3D-Projected Starlight Beacons, Wonder Sparkle Pins & Quick Nav Chips
-  const beaconElements = new Map();
-  const wonderPinElements = new Map();
-  const quickChipElements = new Map();
-
-  function buildMarkersAndNav() {
-    eggMarkersRoot.innerHTML = "";
-    wonderMarkersRoot.innerHTML = "";
-    quickNavRoot.innerHTML = "";
-
-    eggs.forEach((egg, index) => {
-      const colorHex = ACCENT_HEX[egg.accent] || ACCENT_HEX.gold;
-      const numeral = ROMAN_NUMERALS[index] || String(index + 1);
-      const compactTitle = COMPACT_BEACON_LABELS[egg.id] || `${numeral} · ${egg.shortLabel || egg.title}`;
-
-      const beacon = document.createElement("button");
-      beacon.type = "button";
-      beacon.className = "egg-beacon";
-      beacon.dataset.eggId = egg.id;
-      beacon.dataset.unlocked = unlockedIds.has(egg.id) ? "true" : "false";
-      beacon.style.setProperty("--beacon-color", colorHex);
-      beacon.title = egg.hintLabel || egg.shortLabel || egg.title;
-      beacon.innerHTML = `
-        <span class="egg-beacon__orb" aria-hidden="true"></span>
-        <span class="egg-beacon__label">${compactTitle}</span>
-        <span class="egg-beacon__status">${unlockedIds.has(egg.id) ? "已点亮" : "✦"}</span>
-      `;
-      beacon.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        openEggConfession(egg.id);
-      });
-      eggMarkersRoot.appendChild(beacon);
-      beaconElements.set(egg.id, beacon);
-
-      const chip = document.createElement("button");
-      chip.type = "button";
-      chip.className = "quick-chip";
-      chip.dataset.eggId = egg.id;
-      chip.dataset.unlocked = unlockedIds.has(egg.id) ? "true" : "false";
-      chip.style.setProperty("--chip-color", colorHex);
-      chip.innerHTML = `
-        <span class="quick-chip__dot" aria-hidden="true"></span>
-        <span>${index + 1}. ${egg.shortLabel || egg.title}</span>
-      `;
-      chip.addEventListener("click", () => {
-        openEggConfession(egg.id);
-      });
-      quickNavRoot.appendChild(chip);
-      quickChipElements.set(egg.id, chip);
-    });
-
-    wonders.forEach((wonder) => {
-      const colorHex = ACCENT_HEX[wonder.accent] || ACCENT_HEX.gold;
-      const pin = document.createElement("button");
-      pin.type = "button";
-      pin.className = "wonder-pin";
-      pin.dataset.wonderId = wonder.id;
-      pin.dataset.label = `童话彩蛋 · ${wonder.shortLabel || wonder.title}`;
-      pin.dataset.unlocked = unlockedWonders.has(wonder.id) ? "true" : "false";
-      pin.style.setProperty("--wonder-color", colorHex);
-      pin.setAttribute("aria-label", wonder.shortLabel || wonder.title);
-      pin.innerHTML = `<span aria-hidden="true">✦</span>`;
-      pin.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        meadow.triggerWonder(wonder.id);
-      });
-      wonderMarkersRoot.appendChild(pin);
-      wonderPinElements.set(wonder.id, pin);
-    });
-  }
-
-  function syncFollowButtonUI() {
-    const following = meadow.isFollowingSprite();
-    btnFollowSprite.setAttribute("aria-pressed", following ? "true" : "false");
-    followLabel.innerHTML = following
-      ? `<span class="hide-xs">视角</span>跟随中`
-      : `<span class="hide-xs">跟随</span>精灵`;
-  }
-
-  function updateCollectionUI() {
-    const eggCount = unlockedIds.size;
-    const wonderCount = unlockedWonders.size;
-    counterValueEl.textContent = `${eggCount}/${eggs.length} · ✧${wonderCount}/${wonders.length}`;
-    scrollWorld.syncUnlockedState(unlockedIds, unlockedWonders);
-
-    if (drawerEggsHeading) {
-      drawerEggsHeading.textContent = `✦ 爱的告白信笺 (${eggCount} / ${eggs.length})`;
-    }
-    if (drawerWondersHeading) {
-      drawerWondersHeading.textContent = `✧ 童话秘境奇遇彩蛋 (${wonderCount} / ${wonders.length})`;
-    }
-
-    eggs.forEach((egg) => {
-      const isUnlocked = unlockedIds.has(egg.id);
-      const beacon = beaconElements.get(egg.id);
-      if (beacon) {
-        beacon.dataset.unlocked = isUnlocked ? "true" : "false";
-        const statusSpan = beacon.querySelector(".egg-beacon__status");
-        if (statusSpan) {
-          statusSpan.textContent = isUnlocked ? "已点亮" : "✦";
-        }
-      }
-      const chip = quickChipElements.get(egg.id);
-      if (chip) {
-        chip.dataset.unlocked = isUnlocked ? "true" : "false";
-      }
-    });
-
-    wonders.forEach((wonder) => {
-      const pin = wonderPinElements.get(wonder.id);
-      if (pin) {
-        pin.dataset.unlocked = unlockedWonders.has(wonder.id) ? "true" : "false";
-      }
-    });
-
-    // Rebuild 5 Core Love Confessions list
-    drawerList.innerHTML = "";
-    eggs.forEach((egg, idx) => {
-      const isUnlocked = unlockedIds.has(egg.id);
-      const li = document.createElement("li");
-      li.className = "drawer-item";
-      li.dataset.unlocked = isUnlocked ? "true" : "false";
-      li.innerHTML = `
-        <div class="drawer-item__top">
-          <span>${egg.badge || `心意信笺 ${idx + 1}`}</span>
-          <span>${isUnlocked ? "✦ 已点亮" : "待寻觅"}</span>
-        </div>
-        <h3 class="drawer-item__title">${egg.title}</h3>
-        <p class="drawer-item__sub">${egg.subtitle || egg.hint || ""}</p>
-      `;
-      li.addEventListener("click", () => {
-        closeDrawer();
-        openEggConfession(egg.id);
-      });
-      drawerList.appendChild(li);
-    });
-
-    // Rebuild 8 Fairytale World Wonders list
-    if (drawerWonderList) {
-      drawerWonderList.innerHTML = "";
-      wonders.forEach((wonder, idx) => {
-        const isUnlocked = unlockedWonders.has(wonder.id);
-        const li = document.createElement("li");
-        li.className = "drawer-item";
-        li.dataset.unlocked = isUnlocked ? "true" : "false";
-        li.innerHTML = `
-          <div class="drawer-item__top">
-            <span>${wonder.badge || `童话奇遇 ${idx + 1}`}</span>
-            <span>${isUnlocked ? "✧ 已发现" : "待偶遇"}</span>
-          </div>
-          <h3 class="drawer-item__title">${wonder.shortLabel || wonder.title}</h3>
-          <p class="drawer-item__sub">${isUnlocked ? wonder.whisper : `位置提示：${wonder.location || "童话草坡与小路旁"}`}</p>
-        `;
-        li.addEventListener("click", () => {
-          closeDrawer();
-          closeConfessionCard();
-          meadow.triggerWonder(wonder.id);
-        });
-        drawerWonderList.appendChild(li);
-      });
-    }
-
-    if (eggCount >= eggs.length && eggs.length > 0) {
-      if (wonderCount >= wonders.length && wonders.length > 0) {
-        hintTextEl.textContent = "✦ 已集齐全部 5 封心意信笺与 8 处童话奇遇！整座梵高星夜花园正为你全盛绽放";
-      } else {
-        hintTextEl.textContent = `✦ 5 封心意信笺已全盛点亮！还可沿小路与草坡偶遇童话彩蛋 (${wonderCount}/${wonders.length})`;
-      }
-    } else {
-      const nextEgg = eggs.find((e) => !unlockedIds.has(e.id));
-      if (nextEgg) {
-        hintTextEl.textContent = `寻宝提示：${nextEgg.hint}（点击小路或草坡可唤精灵同行）`;
-      }
-    }
-  }
-
-  function closeWonderToast() {
-    wonderToastEl.setAttribute("aria-hidden", "true");
-    activeWonderId = null;
-    if (toastHideTimer) {
-      clearTimeout(toastHideTimer);
-      toastHideTimer = null;
-    }
-  }
-
-  let keepWonderToastPinned = false;
-
-  function handleWonderDiscovered(wonderId) {
-    const idx = wonders.findIndex((w) => w.id === wonderId);
-    const wonder = idx >= 0 ? wonders[idx] : {
-      id: wonderId,
-      badge: "童话奇遇",
-      title: "星夜草坡的小秘密",
-      whisper: "提灯小精灵洒下一串金色星尘，把今晚的温柔悄悄收进花海里。",
+  } catch (_) {
+    return {
+      recipient: "我最爱的老婆",
+      salutation: "亲爱的老婆：",
+      signature: "永远偏爱你的，老公",
+      letter: [
+        "想送你一束花，又贪心地想让它永远盛开。",
+        "于是把一颗颗微小的光，写成了花瓣的模样。你指尖掠过的风，你随手点亮的星光，都是我想给你的浪漫。",
+        "谢谢你，把平凡的日子，变成我最喜欢的人间。",
+        "往后的每一个春天，都想和你一起看花。\n而每一个没有花的日子，也一样爱你。",
+      ],
     };
-
-    unlockedWonders.add(wonder.id);
-    saveSet(STORAGE_KEY_WONDERS, unlockedWonders);
-    audio.playWonderTwinkle(idx >= 0 ? idx : 0);
-    syncFollowButtonUI();
-    updateCollectionUI();
-
-    activeWonderId = wonder.id;
-    wonderToastBadgeEl.textContent = `${wonder.badge || "童话奇遇"} (${unlockedWonders.size}/${wonders.length})`;
-    wonderToastTitleEl.textContent = wonder.title || wonder.shortLabel || "";
-    wonderToastTextEl.textContent = wonder.whisper || "";
-    wonderToastEl.setAttribute("aria-hidden", "false");
-
-    if (wonder.id === "wonder-dandelions" || wonder.id === "wonder-cottage") {
-      sky.triggerMeteor({ startX: 0.34, startY: 0.12 });
-    }
-
-    if (toastHideTimer) clearTimeout(toastHideTimer);
-    if (!keepWonderToastPinned) {
-      toastHideTimer = window.setTimeout(() => {
-        closeWonderToast();
-      }, 9500);
-    }
   }
+}
 
-  function showConfessionCard(item, { isFinale = false } = {}) {
-    closeWonderToast();
-    activeCardId = item.id;
-    cardEl.dataset.accent = item.accent || "gold";
-    cardBadge.textContent = item.badge || "星夜告白";
-    cardSubtitle.textContent = item.subtitle || "";
-    cardTitle.textContent = item.title || "";
+function renderLetterModal(gift) {
+  const recipientEl = document.getElementById("letter-recipient");
+  const salutationEl = document.getElementById("letter-salutation");
+  const bodyEl = document.getElementById("letter-body");
+  const sigEl = document.getElementById("letter-signature");
 
-    cardBody.innerHTML = "";
-    const paragraphs =
-      item.useGiftLetter && Array.isArray(giftData?.letter) && giftData.letter.length > 0
-        ? giftData.letter
-        : Array.isArray(item.paragraphs)
-          ? item.paragraphs
-          : [];
-    paragraphs.forEach((text) => {
+  if (recipientEl && gift.recipient) {
+    recipientEl.textContent = `致 · ${gift.recipient}`;
+  }
+  if (salutationEl && gift.salutation) {
+    salutationEl.textContent = gift.salutation;
+  }
+  if (bodyEl && Array.isArray(gift.letter)) {
+    bodyEl.innerHTML = "";
+    gift.letter.forEach((para) => {
       const p = document.createElement("p");
-      p.textContent = text;
-      cardBody.appendChild(p);
-    });
-
-    cardQuote.textContent = item.quote || "";
-    cardSignature.textContent = item.signature || "永远爱你的老公";
-
-    const nextUndiscovered = eggs.find((e) => !unlockedIds.has(e.id));
-    if (isFinale) {
-      btnNextEgg.querySelector("span").textContent = "回到童话草坡与提灯精灵继续漫游";
-    } else if (nextUndiscovered) {
-      btnNextEgg.querySelector("span").textContent = `继续寻觅：${nextUndiscovered.shortLabel}`;
-    } else {
-      btnNextEgg.querySelector("span").textContent = "✦ 开启星夜童话终章盛典";
-    }
-
-    modalEl.setAttribute("aria-hidden", "false");
-  }
-
-  function closeConfessionCard() {
-    modalEl.setAttribute("aria-hidden", "true");
-    activeCardId = null;
-  }
-
-  function openEggConfession(eggId) {
-    const index = eggs.findIndex((e) => e.id === eggId);
-    if (index === -1) {
-      return false;
-    }
-    const egg = eggs[index];
-    const wasNew = !unlockedIds.has(egg.id);
-    unlockedIds.add(egg.id);
-    saveSet(STORAGE_KEY_EGGS, unlockedIds);
-
-    meadow.markEggUnlocked(egg.id);
-    meadow.focusEgg(egg.id);
-    syncFollowButtonUI();
-    audio.playDiscoveryChime(index);
-
-    if (egg.id === "egg-sunflower") {
-      sky.setConstellationActive(true);
-    }
-    if (egg.id === "egg-starry-sky") {
-      sky.triggerMeteor({ startX: 0.22, startY: 0.11 });
-      sky.triggerMeteor({ startX: 0.54, startY: 0.08 });
-    }
-
-    if (unlockedIds.size >= eggs.length) {
-      sky.setConstellationActive(true);
-      meadow.triggerFinaleState();
-    }
-
-    updateCollectionUI();
-    showConfessionCard(egg, { isFinale: false });
-    return wasNew;
-  }
-
-  function triggerFinale() {
-    eggs.forEach((egg) => {
-      unlockedIds.add(egg.id);
-      meadow.markEggUnlocked(egg.id);
-    });
-    saveSet(STORAGE_KEY_EGGS, unlockedIds);
-    sky.setConstellationActive(true);
-    sky.triggerFinaleBurst();
-    meadow.triggerFinaleState();
-    audio.playFinaleFanfare();
-    updateCollectionUI();
-    showConfessionCard(finaleData, { isFinale: true });
-  }
-
-  function openOriginalLoveLetter() {
-    const letterParagraphs = Array.isArray(giftData?.letter)
-      ? giftData.letter
-      : Array.isArray(giftData?.message)
-        ? giftData.message
-        : finaleData.paragraphs;
-    const letterCard = {
-      id: "original-love-letter",
-      badge: "珍藏信笺 · 致我最爱的老婆",
-      title: giftData?.salutation || "亲爱的老婆：",
-      subtitle: `${giftData?.recipient || "我最爱的老婆"} · 漫天繁星与童话花海皆为你盛开`,
-      paragraphs: letterParagraphs,
-      quote: "“我见过万千星河与人间繁花，却只为你一人驻足。”",
-      signature: giftData?.signature || "永远偏爱你的，老公",
-      accent: "rose",
-    };
-    sky.setConstellationActive(true);
-    sky.triggerMeteor({ startX: 0.28, startY: 0.10 });
-    audio.playDiscoveryChime(2);
-    showConfessionCard(letterCard, { isFinale: false });
-  }
-
-  function openDrawer() {
-    drawerEl.setAttribute("aria-hidden", "false");
-    btnCollection.setAttribute("aria-expanded", "true");
-  }
-
-  function closeDrawer() {
-    drawerEl.setAttribute("aria-hidden", "true");
-    btnCollection.setAttribute("aria-expanded", "false");
-  }
-
-  // 4. Synchronize 3D Projected Beacons, Wonder Sparkle Glints & Sprite Speech Bubble!
-  let rafId = 0;
-  function updateOverlayLoop(nowMs = performance.now()) {
-    rafId = window.requestAnimationFrame(updateOverlayLoop);
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    const isCompact = width < 768;
-    const isScrollLayoutMobile = width <= 860;
-    const modalOpen = modalEl.getAttribute("aria-hidden") === "false";
-    const scrollActive = scrollWorld.isEnabled();
-    appShell.dataset.modalOpen = modalOpen ? "true" : "false";
-    syncRoofButtonUI();
-
-    const minX = isCompact ? 56 : 86;
-    const maxX = Math.max(minX, width - (scrollActive ? 74 : minX));
-    const meadowMinY = isCompact ? height * 0.44 : height * 0.40;
-    const meadowMaxY = isCompact ? height - 102 : height - 106;
-    const desktopCopyGuardX = Math.min(width * 0.39, 472);
-    const mobileCopyGuardY = height * 0.52;
-
-    // A. 5 Core Confession Beacons with 2D Pairwise Elliptical Repulsion
-    const projectedEggs = normalizeProjectedEntries(meadow.getEggScreenPositions());
-    const placedEggs = [];
-
-    projectedEggs.forEach((pos) => {
-      const beacon = beaconElements.get(pos.id);
-      if (!beacon) return;
-
-      // On mobile in Scroll-World mode, sw-copy provides dedicated chapter buttons without badge clutter
-      if (!pos.visible || (scrollActive && isScrollLayoutMobile)) {
-        beacon.style.opacity = "0";
-        beacon.style.pointerEvents = "none";
-        return;
-      }
-
-      let x = pos.x;
-      let y = pos.y;
-      const isSkyEgg = pos.id === "egg-starry-sky";
-
-      if (isSkyEgg) {
-        x = Math.min(Math.max(x, scrollActive ? Math.max(width * 0.42, desktopCopyGuardX) : width * 0.30), width * 0.74);
-        y = isCompact
-          ? Math.min(Math.max(y, 106), height * 0.28)
-          : Math.min(Math.max(y, height * 0.13), height * 0.28);
-      } else {
-        x = Math.min(Math.max(x, minX), maxX);
-        y = Math.min(Math.max(y, meadowMinY), meadowMaxY);
-      }
-
-      if (scrollActive && !isScrollLayoutMobile && x < desktopCopyGuardX) {
-        beacon.style.opacity = "0";
-        beacon.style.pointerEvents = "none";
-        return;
-      }
-
-      placedEggs.push({ id: pos.id, beacon, x, y, isSkyEgg });
-    });
-
-    const sepX = isCompact ? 104 : 136;
-    const sepY = isCompact ? 34 : 38;
-    for (let iter = 0; iter < 5; iter++) {
-      for (let i = 0; i < placedEggs.length; i++) {
-        for (let j = i + 1; j < placedEggs.length; j++) {
-          const a = placedEggs[i];
-          const b = placedEggs[j];
-          if (a.isSkyEgg !== b.isSkyEgg) continue;
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
-          const nx = dx / sepX;
-          const ny = dy / sepY;
-          const distSq = nx * nx + ny * ny;
-          if (distSq < 1.0) {
-            const dist = Math.sqrt(distSq) || 0.01;
-            const overlap = (1.0 - dist) * 0.52;
-            const ux = Math.abs(nx) < 0.02 ? (i % 2 === 0 ? -1 : 1) : nx / dist;
-            const uy = ny / dist;
-            const leftMin = scrollActive && !isScrollLayoutMobile ? desktopCopyGuardX : minX;
-            a.x = Math.min(Math.max(a.x - ux * overlap * sepX, leftMin), maxX);
-            b.x = Math.min(Math.max(b.x + ux * overlap * sepX, leftMin), maxX);
-            a.y = Math.min(Math.max(a.y - uy * overlap * sepY, meadowMinY), meadowMaxY);
-            b.y = Math.min(Math.max(b.y + uy * overlap * sepY, meadowMinY), meadowMaxY);
-          }
-        }
-      }
-    }
-
-    for (const item of placedEggs) {
-      item.beacon.style.opacity = modalOpen ? "0.25" : "1";
-      item.beacon.style.pointerEvents = modalOpen ? "none" : "auto";
-      item.beacon.style.transform = `translate3d(${Math.round(item.x)}px, ${Math.round(item.y)}px, 0) translate(-50%, -50%)`;
-    }
-
-    // B. 8 Fairytale World Wonder Sparkle Glints (Subtle Jewel Orbs)
-    const projectedWonders = normalizeProjectedEntries(meadow.getWonderScreenPositions());
-    projectedWonders.forEach((pos) => {
-      const pin = wonderPinElements.get(pos.id);
-      if (!pin) return;
-
-      const hideSpritePin = pos.id === "wonder-sprite" && (meadow.isFollowingSprite() || nowMs < spriteWhisperUntil);
-      if (!pos.visible || modalOpen || hideSpritePin) {
-        pin.style.opacity = "0";
-        pin.style.pointerEvents = "none";
-        return;
-      }
-
-      let wx = Math.min(Math.max(pos.x, 26), width - (scrollActive ? 52 : 26));
-      let wy = Math.min(Math.max(pos.y, isCompact ? 96 : 74), height - 98);
-
-      if (scrollActive) {
-        if (!isScrollLayoutMobile && wx < desktopCopyGuardX) {
-          pin.style.opacity = "0";
-          pin.style.pointerEvents = "none";
-          return;
-        }
-        if (isScrollLayoutMobile && wy > mobileCopyGuardY) {
-          pin.style.opacity = "0";
-          pin.style.pointerEvents = "none";
-          return;
-        }
-      }
-
-      // Push any wonder pin away from nearby larger egg-beacons so they never overlap!
-      for (const eb of placedEggs) {
-        const dx = wx - eb.x;
-        const dy = wy - eb.y;
-        if (Math.abs(dx) < 64 && Math.abs(dy) < 26) {
-          wy = eb.y > height * 0.62 ? eb.y - 28 : eb.y + 28;
-        }
-      }
-
-      pin.style.opacity = "0.92";
-      pin.style.pointerEvents = "auto";
-      pin.style.transform = `translate3d(${Math.round(wx)}px, ${Math.round(wy)}px, 0) translate(-50%, -50%)`;
-    });
-
-    // C. Floating Speech Bubble Above the Free-Roaming Sprite
-    const spritePos = meadow.getSpriteScreenPosition();
-    const showBubble = !modalOpen && spritePos && spritePos.visible && nowMs < spriteWhisperUntil;
-    if (showBubble) {
-      const leftGuard = scrollActive && !isScrollLayoutMobile ? desktopCopyGuardX + 86 : 126;
-      const bottomGuard = scrollActive && isScrollLayoutMobile ? mobileCopyGuardY - 12 : height - 116;
-      if (scrollActive && isScrollLayoutMobile && spritePos.y - 24 > mobileCopyGuardY + 18) {
-        spriteBubbleEl.setAttribute("aria-hidden", "true");
-      } else {
-        const bx = Math.min(Math.max(spritePos.x, leftGuard), Math.max(leftGuard, width - 126));
-        const by = Math.min(Math.max(spritePos.y - 24, isCompact ? 96 : 76), bottomGuard);
-        spriteBubbleEl.setAttribute("aria-hidden", "false");
-        spriteBubbleEl.style.transform = `translate3d(${Math.round(bx)}px, ${Math.round(by)}px, 0) translate(-50%, -100%)`;
-      }
-    } else {
-      spriteBubbleEl.setAttribute("aria-hidden", "true");
-    }
-  }
-
-  // 5. Wire Pointer, Keyboard Steering, Resize & UI Events
-  window.addEventListener("resize", () => {
-    sky.resize();
-    meadow.resize();
-  });
-
-  window.addEventListener("pointermove", (ev) => {
-    const nx = ev.clientX / Math.max(1, window.innerWidth);
-    const ny = ev.clientY / Math.max(1, window.innerHeight);
-    sky.handlePointerMove(nx, ny);
-  });
-
-  if (btnModeToggle) {
-    btnModeToggle.addEventListener("click", () => {
-      const nextScrollMode = scrollWorld.toggleEnabled();
-      if (!nextScrollMode) {
-        hintTextEl.textContent = "✧ 已进入 360° 自由探索模式：拖拽旋转、滚轮缩放镜头，点击任意花丛、小路或两室一厅小屋互动";
-      }
+      p.textContent = para;
+      bodyEl.appendChild(p);
     });
   }
+  if (sigEl && gift.signature) {
+    sigEl.textContent = gift.signature;
+  }
+}
 
-  if (btnRoofToggle) {
-    btnRoofToggle.addEventListener("click", () => {
-      handleRoofToggleAction();
-    });
+async function init() {
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const audio = createMusicBoxAudio();
+
+  const root = document.getElementById("world");
+  const canvas = document.getElementById("diorama-canvas");
+  const loaderEl = document.getElementById("sw-loader");
+  const loaderText = document.getElementById("sw-loader-text");
+  const audioBtn = document.getElementById("sw-audio-btn");
+  const topCta = document.getElementById("sw-topcta");
+  const brandLink = document.getElementById("sw-brand-link");
+
+  const exploreBar = document.getElementById("sw-explore-bar");
+  const btnToggleRoof = document.getElementById("btn-toggle-roof");
+  const btnExploreLetter = document.getElementById("btn-explore-letter");
+  const btnExitExplore = document.getElementById("btn-exit-explore");
+
+  const letterModal = document.getElementById("letter-modal");
+  const letterClose = document.getElementById("letter-close");
+
+  const giftData = await loadGiftLetter();
+  renderLetterModal(giftData);
+
+  let stage = null;
+  let scrub = null;
+
+  function openLetter() {
+    letterModal.hidden = false;
+    document.body.classList.add("is-modal-open");
+    audio.playChime(5);
   }
 
-  btnFollowSprite.addEventListener("click", () => {
-    const willFollow = !meadow.isFollowingSprite();
-    if (willFollow && scrollWorld.isEnabled()) {
-      scrollWorld.setEnabled(false);
+  function closeLetter() {
+    letterModal.hidden = true;
+    document.body.classList.remove("is-modal-open");
+  }
+
+  function enterExploreMode() {
+    if (!stage) return;
+    document.body.classList.add("is-exploring");
+    exploreBar.hidden = false;
+    stage.setExploreMode(true, true);
+    btnToggleRoof.textContent = "合拢屋顶看外观";
+    audio.playChime(3);
+  }
+
+  function exitExploreMode() {
+    if (!stage) return;
+    document.body.classList.remove("is-exploring");
+    exploreBar.hidden = true;
+    stage.setExploreMode(false);
+    if (scrub) {
+      stage.setScrollPose(scrub.evaluatePoseAtScrollY(window.scrollY || 0), true);
     }
-    const following = meadow.toggleFollowSprite(willFollow);
-    syncFollowButtonUI();
-    if (following) {
-      showSpriteWhisper("跟紧我的星光小灯笼，带你逛遍花坡和小路 ✨", 4500);
-      hintTextEl.textContent = "✧ 正在跟随提灯精灵漫步！点击小路或按方向键 / WASD 可自由指引方向";
-    } else {
-      hintTextEl.textContent = "✧ 已切回星月夜自由全景视角，点击顶部「漫游飞越」可回到滚动长卷";
-    }
-  });
+  }
 
-  btnAudio.addEventListener("click", () => {
-    const active = audio.toggle();
-    btnAudio.setAttribute("aria-pressed", active ? "true" : "false");
-    audioLabel.innerHTML = active
-      ? `<span class="hide-xs">八音盒</span>演奏中`
-      : `<span class="hide-xs">星夜</span>八音盒`;
-    if (active) {
-      audio.playDiscoveryChime(0);
-    }
-  });
-
-  btnMeteor.addEventListener("click", () => {
-    sky.triggerMeteor();
-    meadow.spawnRipple();
-    audio.playRippleSparkle();
-    hintTextEl.textContent = "彡 一颗梵高油彩流星划破夜空，将你的心愿洒向童话小屋与满坡繁花";
-  });
-
-  btnLetter.addEventListener("click", () => {
-    openOriginalLoveLetter();
-  });
-
-  btnCollection.addEventListener("click", () => {
-    const isHidden = drawerEl.getAttribute("aria-hidden") !== "false";
-    if (isHidden) {
-      openDrawer();
-    } else {
-      closeDrawer();
-    }
-  });
-
-  btnCloseDrawer.addEventListener("click", closeDrawer);
-  btnCloseToast.addEventListener("click", closeWonderToast);
-
-  btnFinalePreview.addEventListener("click", () => {
-    closeDrawer();
-    triggerFinale();
-  });
-
-  btnCloseCard.addEventListener("click", closeConfessionCard);
-  modalBackdrop.addEventListener("click", closeConfessionCard);
-
-  btnNextEgg.addEventListener("click", () => {
-    const nextUndiscovered = eggs.find((e) => !unlockedIds.has(e.id));
-    if (activeCardId === finaleData.id) {
-      closeConfessionCard();
-      return;
-    }
-    if (nextUndiscovered) {
-      openEggConfession(nextUndiscovered.id);
-    } else {
-      triggerFinale();
-    }
+  topCta.addEventListener("click", openLetter);
+  btnExploreLetter.addEventListener("click", openLetter);
+  letterClose.addEventListener("click", closeLetter);
+  letterModal.addEventListener("click", (ev) => {
+    if (ev.target === letterModal) closeLetter();
   });
 
   window.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") {
-      closeConfessionCard();
-      closeDrawer();
-      closeWonderToast();
-      return;
-    }
-
-    // WASD / Arrow keys steer the Exploring Fairy Sprite freely across grass & path!
-    if (modalEl.getAttribute("aria-hidden") === "false") return;
-    const step = 0.72;
-    if (ev.key === "ArrowUp" || ev.key === "w" || ev.key === "W") {
-      meadow.nudgeSprite(0, -step);
-    } else if (ev.key === "ArrowDown" || ev.key === "s" || ev.key === "S") {
-      meadow.nudgeSprite(0, step);
-    } else if (ev.key === "ArrowLeft" || ev.key === "a" || ev.key === "A") {
-      meadow.nudgeSprite(-step, 0);
-    } else if (ev.key === "ArrowRight" || ev.key === "d" || ev.key === "D") {
-      meadow.nudgeSprite(step, 0);
+      if (!letterModal.hidden) closeLetter();
+      else if (document.body.classList.contains("is-exploring")) exitExploreMode();
     }
   });
 
-  buildMarkersAndNav();
-  syncFollowButtonUI();
-  updateCollectionUI();
-  updateOverlayLoop();
-  appShell.dataset.ready = "true";
+  audioBtn.addEventListener("click", () => {
+    const on = audio.toggle();
+    audioBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    if (on) audio.playChime(0);
+  });
 
-  // 6. Expose deterministic controller for automated evaluation & inspection
-  const controller = {
-    getDiagnostics() {
-      return {
-        ready: appShell.dataset.ready === "true" && skyReady,
-        meadowStatus,
-        unlockedCount: unlockedIds.size,
-        totalEggs: eggs.length,
-        unlockedIds: [...unlockedIds],
-        unlockedWonderCount: unlockedWonders.size,
-        totalWonders: wonders.length,
-        unlockedWonders: [...unlockedWonders],
-        activeCardId,
-        activeWonderId,
-        followingSprite: meadow.isFollowingSprite(),
-        scrollWorld: scrollWorld.getDiagnostics(),
-        sky: sky.getDiagnostics(),
-        meadow: meadow.getDiagnostics(),
-      };
-    },
-    jumpToChapter(index, instant = false) {
-      if (!scrollWorld.isEnabled()) scrollWorld.setEnabled(true);
-      scrollWorld.jumpTo(index, instant);
-      return this.getDiagnostics();
-    },
-    setScrollProgress(p, snap = true) {
-      scrollWorld.setProgressNormalized(p, snap);
-      return this.getDiagnostics();
-    },
-    setScrollWorldMode(enabled) {
-      scrollWorld.setEnabled(enabled);
-      return this.getDiagnostics();
-    },
-    setVillaRoofOpen(openVal, snap = true) {
-      meadow.setVillaRoofOpen(openVal, snap);
-      syncRoofButtonUI();
-      return this.getDiagnostics();
-    },
-    getScrollSegments() {
-      return scrollWorld.getSegments();
-    },
-    getCameraState() {
-      return meadow.getCameraState();
-    },
-    unlockEgg(eggId) {
-      return openEggConfession(eggId);
-    },
-    triggerWonder(wonderId, opts = {}) {
-      keepWonderToastPinned = Boolean(opts && opts.keepOpen);
-      meadow.triggerWonder(wonderId);
-      return this.getDiagnostics();
-    },
-    toggleFollowSprite(state) {
-      const next = meadow.toggleFollowSprite(state);
-      syncFollowButtonUI();
-      return next;
-    },
-    walkSpriteTo(x, z, msg) {
-      meadow.walkSpriteTo(x, z, msg);
-      return this.getDiagnostics();
-    },
-    focusCamera(camArr, lookArr, durationMs = 12000, snap = false) {
-      meadow.focusCamera(camArr, lookArr, durationMs, snap);
-      return this.getDiagnostics();
-    },
-    triggerFinale() {
-      triggerFinale();
-      return this.getDiagnostics();
-    },
-    triggerMeteor() {
-      sky.triggerMeteor();
-      meadow.spawnRipple();
-      return this.getDiagnostics();
-    },
-    openLoveLetter() {
-      openOriginalLoveLetter();
-      return this.getDiagnostics();
-    },
-    closeModal() {
-      closeConfessionCard();
-      closeWonderToast();
-    },
-    dispose() {
-      window.cancelAnimationFrame(rafId);
-      scrollWorld.dispose();
-      sky.dispose();
-      meadow.dispose();
-    },
-  };
+  btnToggleRoof.addEventListener("click", () => {
+    if (!stage) return;
+    const isOpen = stage.toggleExploreRoof();
+    btnToggleRoof.textContent = isOpen ? "合拢屋顶看外观" : "掀开屋顶看两室一厅";
+  });
 
-  window.__starryMeadow = controller;
-  window.__summerNight = controller;
+  btnExitExplore.addEventListener("click", exitExploreMode);
+
+  brandLink.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    exitExploreMode();
+    if (scrub) scrub.jumpToSection(0);
+  });
+
+  try {
+    stage = await createDioramaStage(canvas, { reduceMotion });
+    scrub = mountScrubWorld(
+      {
+        root,
+        particles: document.getElementById("sw-particles"),
+        scrollbarFill: document.getElementById("sw-scrollbar-fill"),
+        nav: document.getElementById("sw-nav"),
+        copylayer: document.getElementById("sw-copylayer"),
+        route: document.getElementById("sw-route"),
+        hint: document.getElementById("sw-hint"),
+        track: document.getElementById("sw-track"),
+      },
+      stage,
+      {
+        onBeforeJump: () => {
+          if (document.body.classList.contains("is-exploring")) exitExploreMode();
+        },
+        onSectionChange: (idx) => {
+          audio.playChime(idx);
+        },
+        onAction: (action) => {
+          if (action === "letter") openLetter();
+          else if (action === "explore") enterExploreMode();
+        },
+      }
+    );
+
+    loaderEl.classList.add("is-done");
+
+    // Deterministic automation & QA hook
+    window.__scrollWorldApp = {
+      sections: SCROLL_SECTIONS,
+      getDiagnostics: () => ({
+        ...stage.getDiagnostics(),
+        activeSection: scrub.getActiveIndex(),
+        totalScrollPx: scrub.getTotalScrollPx(),
+        letterOpen: !letterModal.hidden,
+        recipient: giftData.recipient,
+      }),
+      getSegments: () => scrub.getSegments(),
+      evaluatePoseAtScrollY: (y, m) => scrub.evaluatePoseAtScrollY(y, m),
+      setScrollProgress: (p, snap = true) => scrub.setScrollProgress(p, snap),
+      jumpToSection: (i, instant = true) => scrub.jumpToSection(i, instant),
+      setExploreMode: (on) => (on ? enterExploreMode() : exitExploreMode()),
+      setRoofOpen: (v, snap = true) => stage.setRoofOpen(v, snap),
+      openLetter,
+      closeLetter,
+    };
+  } catch (err) {
+    console.error("Failed to initialize 3D Scroll World:", err);
+    if (loaderText) {
+      loaderText.textContent = "微缩花境加载遇到问题，请刷新重试。";
+    }
+  }
 }
 
-initApp();
+init();

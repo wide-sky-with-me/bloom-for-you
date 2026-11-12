@@ -1,4 +1,4 @@
-name: Publish Van Gogh Starry Night & Flower Meadow
+name: Publish Bloom for You Scroll World
 
 on:
   push:
@@ -39,6 +39,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Deploy garden
+      - name: Deploy Scroll World
         id: deployment
         uses: actions/deploy-pages@v4

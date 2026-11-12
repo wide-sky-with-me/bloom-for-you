@@ -1,15 +1,13 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#040b1f">
-  <meta name="description" content="梵高星月夜与童话花坡秘境 — Three.js + p5.js 逼真花瓣纹理、起伏草坡土坡、蜿蜒小路、自由探索的提灯小精灵与 13 处隐藏童话彩蛋。">
-  <title>梵高星月夜 · 童话花坡与提灯精灵秘境</title>
-  <link rel="icon" href="./assets/flower.svg" type="image/svg+xml">
-  <link rel="preload" href="./assets/flower-song.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="./style.css">
-  <script src="./vendor/p5-1.9.4/p5.min.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>予你花开 — 致我最爱的老婆</title>
+  <meta name="description" content="穿过花溪拱桥、星灯花廊与两室一厅的南法花墅，把永不凋谢的花束捧到你面前。" />
+  <link rel="icon" href="./assets/flower.svg" type="image/svg+xml" />
+  <link rel="preload" href="./assets/flower-song.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="./style.css" />
   <script type="importmap">
     {
       "imports": {
@@ -20,159 +18,85 @@
   </script>
 </head>
 <body>
-  <div id="app-shell" class="app-shell" data-ready="false">
-    <!-- Upper Realm: p5.js Van Gogh Starry Night, Cypress & Saint-Rémy Hills -->
-    <div id="sky-container" class="sky-container" aria-hidden="true"></div>
-
-    <!-- Lower Realm: Three.js Lifelike Botanical Meadow, Earthen Slopes, Winding Path & Exploring Sprite -->
-    <canvas id="meadow-canvas" class="meadow-canvas" aria-label="梵高星夜童话草坡、蜿蜒小路与提灯小精灵交互场景"></canvas>
-
-    <!-- Subtle Twinkling Starlight Glints for the 8 Fairytale World Wonders -->
-    <div id="wonder-markers" class="wonder-markers" aria-label="散落草坡与小路各处的童话奇遇彩蛋"></div>
-
-    <!-- 3D-Projected Interactive Easter Egg Starlight Beacons (5 Core Love Chapters) -->
-    <div id="egg-markers" class="egg-markers" aria-label="花丛与星河中的隐藏告白信笺"></div>
-
-    <!-- Floating Translucent Speech Pill Above the Free-Roaming Lantern Sprite -->
-    <div id="sprite-bubble" class="sprite-bubble" aria-hidden="true">
-      <span class="sprite-bubble__spark" aria-hidden="true">✧</span>
-      <span id="sprite-bubble-text">提着小灯笼，陪你在梵高星空小路散步啦</span>
+  <div id="top"></div>
+  <div id="world" class="sw-root">
+    <!-- Atmospheric cream studio backdrop & drifting bokeh particles -->
+    <div class="sw-sky" aria-hidden="true">
+      <div class="sw-sky__grad"></div>
+      <div class="sw-sky__glow"></div>
+      <div class="sw-particles" id="sw-particles"></div>
     </div>
 
-    <!-- Non-Blocking Storybook Discovery Toast for Fairytale World Wonders -->
-    <aside id="wonder-toast" class="wonder-toast" aria-hidden="true" role="status" aria-live="polite">
-      <div class="wonder-toast__head">
-        <span id="wonder-toast-badge" class="wonder-toast__badge">童话奇遇</span>
-        <button id="btn-close-toast" class="wonder-toast__close" type="button" aria-label="收起提示">×</button>
-      </div>
-      <h3 id="wonder-toast-title" class="wonder-toast__title">冒着金色星尘烟圈的童话小屋</h3>
-      <p id="wonder-toast-text" class="wonder-toast__text"></p>
-    </aside>
+    <!-- 3px top scroll progress bar -->
+    <div class="sw-scrollbar" aria-hidden="true">
+      <span id="sw-scrollbar-fill"></span>
+    </div>
 
-    <!-- Top Floating Gallery HUD -->
-    <header class="hud-top">
-      <div class="brand-badge">
-        <span class="brand-dot" aria-hidden="true"></span>
-        <div class="brand-copy">
-          <p class="brand-kicker" id="brand-kicker">VAN GOGH STARRY FAIRYTALE WORLD</p>
-          <h1 class="brand-title" id="brand-title">梵高星月夜 · 童话花坡与精灵秘境</h1>
-        </div>
-      </div>
+    <!-- Minimalist 3-part scroll-world topbar -->
+    <header class="sw-topbar">
+      <a class="sw-brand" href="#top" id="sw-brand-link">
+        <span class="sw-brand__mark" aria-hidden="true"></span>
+        <span class="sw-brand__name">予你花开</span>
+      </a>
 
-      <div class="hud-actions">
-        <button id="btn-mode-toggle" class="hud-pill hud-btn hud-btn--scroll" type="button" aria-pressed="true" title="切换一镜到底滚动飞越长卷与 360° 自由探索模式">
-          <span class="pill-icon" id="mode-toggle-icon" aria-hidden="true">📜</span>
-          <span id="mode-toggle-label">漫游<span class="hide-xs">飞越</span></span>
+      <nav class="sw-nav" id="sw-nav" aria-label="漫游章节"></nav>
+
+      <div class="sw-topactions">
+        <button type="button" class="sw-audio-btn" id="sw-audio-btn" aria-pressed="false" aria-label="开启八音盒旋律" title="八音盒旋律">
+          <span aria-hidden="true">♪</span>
         </button>
-
-        <button id="btn-roof-toggle" class="hud-pill hud-btn hud-btn--villa" type="button" aria-pressed="false" title="掀开或合拢山丘小屋石板屋顶，俯瞰两室一厅微缩内部">
-          <span class="pill-icon" aria-hidden="true">🏠</span>
-          <span id="roof-toggle-label"><span class="hide-xs">两室</span>一厅</span>
-        </button>
-
-        <button id="btn-follow-sprite" class="hud-pill hud-btn hud-btn--fairy" type="button" aria-pressed="false" title="切换第三人称视角，跟随提灯小精灵漫步小路与花坡">
-          <span class="pill-icon" aria-hidden="true">✧</span>
-          <span id="follow-label"><span class="hide-xs">跟随</span>精灵</span>
-        </button>
-
-        <button id="btn-audio" class="hud-pill hud-btn" type="button" aria-pressed="false" title="开启或关闭星夜八音盒">
-          <span class="pill-icon" aria-hidden="true">♪</span>
-          <span id="audio-label"><span class="hide-xs">星夜</span>八音盒</span>
-        </button>
-
-        <button id="btn-meteor" class="hud-pill hud-btn" type="button" title="划破梵高星夜，召唤许愿流星">
-          <span class="pill-icon" aria-hidden="true">彡</span>
-          <span><span class="hide-xs">召唤</span>流星</span>
-        </button>
-
-        <button id="btn-letter" class="hud-pill hud-btn hud-btn--rose" type="button" title="展读完整告白信笺">
-          <span class="pill-icon" aria-hidden="true">✉</span>
-          <span><span class="hide-xs">爱的</span>信笺</span>
-        </button>
-
-        <button id="btn-collection" class="hud-pill hud-counter" type="button" aria-expanded="false" title="查看已寻获的 5 封心意信笺与 8 处童话奇遇彩蛋">
-          <span class="counter-star" aria-hidden="true">✦</span>
-          <span class="counter-label"><span class="hide-xs">童话</span>手账</span>
-          <strong id="counter-value" class="counter-value">0/5 · ✧0/8</strong>
-        </button>
+        <button type="button" class="sw-topcta" id="sw-topcta">展读情书</button>
       </div>
     </header>
 
-    <!-- Bottom Guidance & Flower Species Quick-Discover Dock -->
-    <div class="hud-bottom">
-      <div id="hint-banner" class="hint-banner" role="status" aria-live="polite">
-        <span class="hint-sparkle" aria-hidden="true">✧</span>
-        <span id="hint-text">轻点草坡或蜿蜒小路唤提灯精灵探索，在逼真花丛、土坡、小屋与蘑菇圈间寻觅 13 处童话彩蛋</span>
-      </div>
-
-      <nav id="egg-quick-nav" class="egg-quick-nav" aria-label="繁花与星河心意寻宝快捷导航"></nav>
+    <!-- Full-bleed 3D Clay Diorama Stage -->
+    <div class="sw-stage" id="sw-stage">
+      <canvas id="diorama-canvas" aria-label="3D 微缩花境与两室一厅花墅"></canvas>
     </div>
 
-    <!-- Confession Reading Modal (Starlit Sapphire & Gold-Leaf Frame) -->
-    <aside id="confession-modal" class="confession-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="card-title">
-      <div id="modal-backdrop" class="modal-backdrop"></div>
-      <article class="confession-card" data-accent="gold">
-        <button id="btn-close-card" class="card-close" type="button" aria-label="关闭告白卡片">×</button>
+    <!-- Left borderless editorial copy layer -->
+    <main class="sw-copylayer" id="sw-copylayer"></main>
 
-        <div class="card-header">
-          <span id="card-badge" class="card-badge">心意信笺壹 · 草坡蓝色无尽夏</span>
-          <p id="card-subtitle" class="card-subtitle">无尽夏的蓝与满天星的白，是我第一眼望见你时的心跳</p>
-          <h2 id="card-title" class="card-title">初遇时的那抹星夜蓝</h2>
-        </div>
+    <!-- Right route rail -->
+    <aside class="sw-route" id="sw-route" aria-label="章节进度导航"></aside>
 
-        <div id="card-Divider" class="card-divider" aria-hidden="true">
-          <span>✦</span>
-        </div>
+    <!-- Bottom scroll-wheel cue -->
+    <div class="sw-hint" id="sw-hint" aria-hidden="true">
+      <span>向下轻滚 · 飞入花境</span>
+      <i></i>
+    </div>
 
-        <div id="card-body" class="card-body"></div>
-
-        <footer class="card-footer">
-          <div class="card-quote-wrap">
-            <p id="card-quote" class="card-quote"></p>
-            <p id="card-signature" class="card-signature"></p>
-          </div>
-          <div class="card-actions">
-            <button id="btn-next-egg" class="card-action-btn card-action-btn--primary" type="button">
-              <span>继续寻觅下一处花间心意</span>
-            </button>
-          </div>
-        </footer>
-      </article>
-    </aside>
-
-    <!-- Collection Drawer (Both 5 Core Love Letters + 8 Fairytale World Wonders) -->
-    <aside id="collection-drawer" class="collection-drawer" aria-hidden="true" aria-label="已收集的童话彩蛋与爱的告白列表">
-      <div class="drawer-header">
-        <div>
-          <p class="drawer-kicker">STARRY FAIRYTALE TREASURE BOOK</p>
-          <h2 class="drawer-title">童话花坡与星河寻宝手账</h2>
-        </div>
-        <button id="btn-close-drawer" class="drawer-close" type="button" aria-label="关闭手账">×</button>
+    <!-- Interactive 360° House Inspection Dock (only shown when 360° mode is active) -->
+    <div class="sw-explore-bar" id="sw-explore-bar" hidden>
+      <span class="sw-explore-bar__tip">拖拽旋转 · 滚轮缩放两室一厅</span>
+      <div class="sw-explore-bar__btns">
+        <button type="button" class="sw-pill-btn" id="btn-toggle-roof">合拢屋顶看外观</button>
+        <button type="button" class="sw-pill-btn" id="btn-explore-letter">展读情书</button>
+        <button type="button" class="sw-pill-btn sw-pill-btn--dark" id="btn-exit-explore">返回漫游</button>
       </div>
-      <p class="drawer-desc">点击任意条目即可让镜头与提灯小精灵前往探访；集齐 5 封核心心意信笺即可唤醒星夜终章盛放。</p>
+    </div>
 
-      <div class="drawer-scroll">
-        <div class="drawer-section">
-          <h3 id="drawer-eggs-heading" class="drawer-section__title">✦ 爱的告白信笺 (0 / 5)</h3>
-          <ul id="drawer-list" class="drawer-list"></ul>
-        </div>
+    <!-- Scroll track spacer -->
+    <div class="sw-track" id="sw-track" aria-hidden="true"></div>
 
-        <div class="drawer-section">
-          <h3 id="drawer-wonders-heading" class="drawer-section__title">✧ 童话秘境奇遇彩蛋 (0 / 8)</h3>
-          <ul id="drawer-wonder-list" class="drawer-list"></ul>
-        </div>
-      </div>
-
-      <div class="drawer-footer">
-        <button id="btn-finale-preview" class="drawer-finale-btn" type="button">
-          <span>✦ 绽放终章 · 漫天星河与童话花坡皆为你盛开</span>
-        </button>
-      </div>
-    </aside>
+    <!-- Soft studio loading veil -->
+    <div class="sw-loader" id="sw-loader" role="status" aria-live="polite">
+      <div class="sw-loader__mark" aria-hidden="true"></div>
+      <p class="sw-loader__text" id="sw-loader-text">正在点亮微缩花境与两室一厅…</p>
+    </div>
   </div>
 
-  <!-- Scroll-World Document Height Track (drives continuous 3D camera flight via native scroll) -->
-  <div id="sw-track" class="sw-track" aria-hidden="true"></div>
+  <!-- Tactile Cotton-Paper Love Letter Modal (populated from site/gift.json) -->
+  <div class="letter-backdrop" id="letter-modal" role="dialog" aria-modal="true" aria-labelledby="letter-salutation" hidden>
+    <article class="letter-sheet">
+      <button type="button" class="letter-close" id="letter-close" aria-label="收起情书">×</button>
+      <div class="letter-seal" aria-hidden="true"><span>✿</span></div>
+      <p class="letter-eyebrow" id="letter-recipient">致我最爱的老婆</p>
+      <h2 class="letter-salutation" id="letter-salutation">亲爱的老婆：</h2>
+      <div class="letter-body" id="letter-body"></div>
+      <p class="letter-signature" id="letter-signature">永远偏爱你的，老公</p>
+    </article>
+  </div>
 
   <script type="module" src="./app.js"></script>
 </body>
