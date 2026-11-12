@@ -23,6 +23,7 @@ REQUIRED_SITE_FILES = (
     "modules/harbor-base.js",
     "modules/fairytale-villa.js",
     "modules/harbor-craft-and-props.js",
+    "modules/flower-sea-world.js",
     "modules/sunshower-atmosphere.js",
     "assets/flower-song.woff2",
     "assets/FONT-LICENSE.txt",
@@ -101,8 +102,9 @@ def build(output: Path) -> Path:
             file_hashes[rel] = _sha256(file_path)
 
     release = {
-        "schema": 4,
-        "style": "sunshower-fairytale-harbor-diorama-v1",
+        "schema": 5,
+        "style": "japanese-flower-sea-harbor-diorama-v2",
+        "worldSizeMeters": 44,
         "renderer": "three-0.186.1",
         "uiChrome": "zero-hud-tabletop-diorama",
         "modules": summary["modules"],

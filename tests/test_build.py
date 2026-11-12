@@ -24,8 +24,9 @@ class SunshowerHarborDioramaTests(unittest.TestCase):
             self.assertTrue((built / "THIRD_PARTY_NOTICES.md").is_file())
 
             manifest = json.loads((built / "release.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["schema"], 4)
-            self.assertEqual(manifest["style"], "sunshower-fairytale-harbor-diorama-v1")
+            self.assertEqual(manifest["schema"], 5)
+            self.assertEqual(manifest["style"], "japanese-flower-sea-harbor-diorama-v2")
+            self.assertEqual(manifest["worldSizeMeters"], 44)
             self.assertEqual(manifest["renderer"], "three-0.186.1")
             self.assertEqual(manifest["uiChrome"], "zero-hud-tabletop-diorama")
             for mod in (
@@ -34,6 +35,7 @@ class SunshowerHarborDioramaTests(unittest.TestCase):
                 "modules/harbor-base.js",
                 "modules/fairytale-villa.js",
                 "modules/harbor-craft-and-props.js",
+                "modules/flower-sea-world.js",
                 "modules/sunshower-atmosphere.js",
             ):
                 self.assertIn(mod, manifest["files"])
@@ -93,7 +95,7 @@ class SunshowerHarborDioramaTests(unittest.TestCase):
             SITE / "audio.js",
             *sorted((SITE / "modules").glob("*.js")),
         ]
-        self.assertGreaterEqual(len(js_files), 8)
+        self.assertGreaterEqual(len(js_files), 9)
         for js_path in js_files:
             proc = subprocess.run(
                 [node, "--check", str(js_path)],

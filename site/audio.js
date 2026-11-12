@@ -109,6 +109,17 @@ export function createHarborAudio() {
     });
   }
 
+  function playPetalGlissando() {
+    [4, 5, 6, 7, 8, 9, 10].forEach((n, i) => {
+      playTone(PENTATONIC_FREQ[n], 2.0, 0.12, i * 0.065);
+    });
+  }
+
+  function playTramBell() {
+    playTone(1046.50, 0.55, 0.15, 0.0, "triangle");
+    playTone(1046.50, 0.75, 0.15, 0.16, "triangle");
+  }
+
   return {
     playRoofChime,
     playLetterUnfold,
@@ -117,5 +128,7 @@ export function createHarborAudio() {
     playDuetArpeggio,
     playVendingClink,
     playFishRipple,
+    playPetalGlissando,
+    playTramBell,
   };
 }

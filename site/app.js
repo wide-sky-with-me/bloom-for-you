@@ -7,6 +7,7 @@ import { buildHarborBase } from "./modules/harbor-base.js";
 import { buildFairytaleVilla } from "./modules/fairytale-villa.js";
 import { buildHarborCraftAndProps } from "./modules/harbor-craft-and-props.js";
 import { buildSunshowerAtmosphere } from "./modules/sunshower-atmosphere.js";
+import { buildFlowerSeaWorld } from "./modules/flower-sea-world.js";
 import { createHarborAudio } from "./audio.js";
 
 function createSkyEnvironment(renderer) {
@@ -107,10 +108,10 @@ async function init() {
   const scene = new THREE.Scene();
   scene.environment = createSkyEnvironment(renderer);
   scene.environmentIntensity = 0.58;
-  scene.fog = new THREE.FogExp2(0xebf6f5, 0.0065);
+  scene.fog = new THREE.FogExp2(0xebf6f5, 0.0042);
 
   // Seamless 3D Sunshower Watercolor Sky Dome (keeps alpha=1 for pure additive golden sunbeams)
-  const skyDomeGeo = new THREE.SphereGeometry(120, 32, 20);
+  const skyDomeGeo = new THREE.SphereGeometry(165, 32, 20);
   const skyPos = skyDomeGeo.attributes.position;
   const skyColors = new Float32Array(skyPos.count * 3);
   const cZenith = new THREE.Color(0xd2edf2);
@@ -118,7 +119,7 @@ async function init() {
   const cLower = new THREE.Color(0xe6f2f1);
   const cTmp = new THREE.Color();
   for (let i = 0; i < skyPos.count; i += 1) {
-    const ny = skyPos.getY(i) / 120;
+    const ny = skyPos.getY(i) / 165;
     if (ny >= 0) {
       cTmp.copy(cHorizon).lerp(cZenith, Math.pow(ny, 0.58));
     } else {
@@ -141,33 +142,34 @@ async function init() {
     isPortrait ? 48 : 36,
     window.innerWidth / Math.max(1, window.innerHeight),
     0.25,
-    240
+    320
   );
 
-  const initialTarget = new THREE.Vector3(-0.35, 1.05, 0.35);
+  const initialTarget = new THREE.Vector3(0.0, 1.25, 0.4);
   const initialPosition = isPortrait
-    ? new THREE.Vector3(30.5, 22.0, 32.0)
-    : new THREE.Vector3(21.2, 15.2, 22.4);
+    ? new THREE.Vector3(53.5, 39.5, 55.8)
+    : new THREE.Vector3(39.2, 28.2, 41.4);
 
   const controls = createDioramaControls(camera, canvas, {
     initialTarget,
     initialPosition,
-    minRadius: 6.2,
-    maxRadius: 56.0,
+    minRadius: 5.8,
+    maxRadius: 96.0,
+    panBound: 21.0,
   });
 
-  // High-key sunlit watercolor anime lighting rig
+  // High-key sunlit watercolor anime lighting rig (covering 44m x 44m grand diorama)
   const hemiLight = new THREE.HemisphereLight(0xf5fdff, 0x6ab4bc, 1.42);
-  hemiLight.position.set(0, 28, 0);
+  hemiLight.position.set(0, 36, 0);
   scene.add(hemiLight);
 
   const sunLight = new THREE.DirectionalLight(0xfff5db, 1.68);
-  sunLight.position.set(17.5, 27.5, 13.5);
+  sunLight.position.set(24.5, 38.5, 19.5);
   sunLight.castShadow = true;
   sunLight.shadow.mapSize.set(2048, 2048);
-  sunLight.shadow.camera.near = 4;
-  sunLight.shadow.camera.far = 64;
-  const shadowExtent = 16.8;
+  sunLight.shadow.camera.near = 6;
+  sunLight.shadow.camera.far = 98;
+  const shadowExtent = 29.5;
   sunLight.shadow.camera.left = -shadowExtent;
   sunLight.shadow.camera.right = shadowExtent;
   sunLight.shadow.camera.top = shadowExtent;
@@ -197,6 +199,9 @@ async function init() {
 
   const craftProps = buildHarborCraftAndProps(harborBase.anchors || {});
   worldRoot.add(craftProps.group);
+
+  const flowerSea = buildFlowerSeaWorld();
+  worldRoot.add(flowerSea.group);
 
   const allDripPoints = [
     ...((craftProps && craftProps.dripPoints) || []),
@@ -352,6 +357,23 @@ async function init() {
         audio.playFishRipple();
         return { id, fishBurst: true };
       }
+      case "flower-gazebo":
+      case "bicycle": {
+        flowerSea.burstPetals?.();
+        audio.playPetalGlissando();
+        return { id, petalsBurst: true };
+      }
+      case "windmill": {
+        flowerSea.boostWindmill?.();
+        flowerSea.burstPetals?.();
+        audio.playPetalGlissando();
+        return { id, windmillBoosted: true };
+      }
+      case "tram": {
+        flowerSea.ringTram?.();
+        audio.playTramBell();
+        return { id, tramRung: true };
+      }
       default:
         return { id };
     }
@@ -395,12 +417,14 @@ async function init() {
 
   // Camera presets for multi-angle inspection & automated visual verification
   const CAMERA_PRESETS = {
-    overview: { target: [-0.35, 1.05, 0.35], radius: 31.8, phi: 1.09, theta: 0.76 },
-    mobileOverview: { target: [-0.2, 1.0, 0.5], radius: 44.5, phi: 1.08, theta: 0.76 },
-    cutaway: { target: [3.2, -0.55, 7.2], radius: 15.6, phi: 1.32, theta: 0.56 },
+    overview: { target: [0.0, 1.25, 0.4], radius: 64.2, phi: 1.06, theta: 0.75 },
+    mobileOverview: { target: [0.0, 1.25, 0.6], radius: 81.5, phi: 1.06, theta: 0.75 },
+    flowerSeaPromontory: { target: [-13.2, 2.2, 10.6], radius: 19.6, phi: 1.10, theta: 0.86 },
+    sakuraTramHills: { target: [-5.8, 2.55, -14.2], radius: 24.5, phi: 1.12, theta: 0.24 },
+    cutaway: { target: [8.5, -0.45, 15.5], radius: 22.5, phi: 1.30, theta: 0.58 },
     harborInteriors: { target: [2.8, 1.65, -2.2], radius: 14.2, phi: 1.16, theta: 0.34 },
     villaRooms: { target: [-7.4, 2.15, 3.8], radius: 11.4, phi: 0.72, theta: 1.18 },
-    rainbowArch: { target: [2.2, 1.6, -1.2], radius: 27.5, phi: 1.18, theta: 0.62 },
+    rainbowArch: { target: [0.4, 2.1, -2.2], radius: 56.5, phi: 1.16, theta: 0.65 },
     justLeftSteps: { target: [-1.8, 1.05, 6.2], radius: 9.2, phi: 1.14, theta: 0.88 },
   };
 
@@ -419,16 +443,15 @@ async function init() {
   // Animation loop
   const clock = new THREE.Clock();
   let elapsed = 0;
+  let paused = false;
 
-  function animate() {
-    requestAnimationFrame(animate);
-    const dt = Math.min(clock.getDelta(), 0.05);
+  function tickScene(dt) {
     elapsed += dt;
-
     controls.update();
     harborBase.update?.(elapsed, dt);
     villa.update?.(elapsed, dt);
     craftProps.update?.(elapsed, dt);
+    flowerSea.update?.(elapsed, dt);
     atmosphere.update?.(elapsed, dt);
 
     const cloudFactor = atmosphere.getCloudFactor ? atmosphere.getCloudFactor() : 1.0;
@@ -436,6 +459,16 @@ async function init() {
     hemiLight.intensity = 1.34 + 0.12 * cloudFactor;
 
     renderer.render(scene, camera);
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    if (paused) {
+      clock.getDelta();
+      return;
+    }
+    const dt = Math.min(clock.getDelta(), 0.05);
+    tickScene(dt);
   }
 
   animate();
@@ -449,23 +482,52 @@ async function init() {
     harborBase,
     villa,
     craftProps,
+    flowerSea,
     atmosphere,
     openLetterModal,
     closeLetterModal,
     triggerInteraction,
     setCameraPreset,
+    setPaused(nextPaused) {
+      paused = Boolean(nextPaused);
+    },
+    advanceAndRender(totalSeconds = 0.25, stepDt = 0.05) {
+      const steps = Math.max(1, Math.round(totalSeconds / stepDt));
+      for (let i = 0; i < steps; i += 1) {
+        elapsed += stepDt;
+        controls.update();
+        harborBase.update?.(elapsed, stepDt);
+        villa.update?.(elapsed, stepDt);
+        craftProps.update?.(elapsed, stepDt);
+        flowerSea.update?.(elapsed, stepDt);
+        atmosphere.update?.(elapsed, stepDt);
+      }
+      const cloudFactor = atmosphere.getCloudFactor ? atmosphere.getCloudFactor() : 1.0;
+      sunLight.intensity = 1.48 + 0.26 * cloudFactor;
+      hemiLight.intensity = 1.34 + 0.12 * cloudFactor;
+      return new Promise((resolve) => {
+        requestAnimationFrame(() => {
+          renderer.render(scene, camera);
+          requestAnimationFrame(() => resolve(true));
+        });
+      });
+    },
     getStats() {
       let meshes = 0;
+      let instancedCount = 0;
       let triangles = 0;
       const interactiveIds = new Set();
       worldRoot.traverse((obj) => {
         if (obj.isMesh) {
           meshes += 1;
+          const instances = obj.isInstancedMesh ? obj.count : 1;
+          if (obj.isInstancedMesh) instancedCount += obj.count;
           const geom = obj.geometry;
           if (geom) {
-            triangles += geom.index
+            const baseTri = geom.index
               ? geom.index.count / 3
               : (geom.attributes.position?.count || 0) / 3;
+            triangles += baseTri * instances;
           }
         }
         if (obj.userData && obj.userData.interactive) {
@@ -474,6 +536,7 @@ async function init() {
       });
       return {
         meshes,
+        instancedFlowersAndPetals: instancedCount,
         triangles: Math.round(triangles),
         interactiveIds: Array.from(interactiveIds).sort(),
         roofOpen: villa.isRoofOpen(),

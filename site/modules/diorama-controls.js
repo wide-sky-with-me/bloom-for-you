@@ -13,11 +13,11 @@ export function createDioramaControls(camera, domElement, opts = {}) {
   const desiredSpherical = spherical.clone();
 
   const limits = {
-    minRadius: opts.minRadius || 6.5,
-    maxRadius: opts.maxRadius || 44.0,
+    minRadius: opts.minRadius || 5.8,
+    maxRadius: opts.maxRadius || 92.0,
     minPhi: opts.minPhi || 0.20,
     maxPhi: opts.maxPhi || 1.47,
-    panBound: opts.panBound || 11.5,
+    panBound: opts.panBound || 21.0,
     damping: opts.damping || 0.11,
   };
 

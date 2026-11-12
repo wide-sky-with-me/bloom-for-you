@@ -624,30 +624,30 @@ export function buildHarborBase() {
   const stoneTrimMat = toonMat(0xc4cfd2);
   const darkSubMat = toonMat(0x526970);
 
-  // 1. Collectible 24m x 24m Museum Plinth Base (Y in [-3.55, -3.15])
+  // 1. Collectible 44m x 44m Grand Museum Plinth Base (Y in [-3.58, -3.15])
   const plinthMat = toonMat(0x37474f);
-  const plinth = new THREE.Mesh(new THREE.BoxGeometry(24.16, 0.4, 24.16), plinthMat);
-  plinth.position.set(0, -3.35, 0);
+  const plinth = new THREE.Mesh(new THREE.BoxGeometry(44.24, 0.43, 44.24), plinthMat);
+  plinth.position.set(0, -3.365, 0);
   addEdgeInk(plinth, 24, 0x1d2b33, 0.65);
   group.add(plinth);
 
-  // Brass corner accent brackets on the collector base
+  // Brass corner accent brackets on the 44m x 44m collector base
   const brassMat = toonMat(PALETTE.brassGold);
   [
-    [-12.02, -12.02],
-    [12.02, -12.02],
-    [-12.02, 12.02],
-    [12.02, 12.02],
+    [-22.04, -22.04],
+    [22.04, -22.04],
+    [-22.04, 22.04],
+    [22.04, 22.04],
   ].forEach(([cx, cz]) => {
-    const corner = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.42), brassMat);
-    corner.position.set(cx * 0.99, -3.35, cz * 0.99);
+    const corner = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.46, 0.56), brassMat);
+    corner.position.set(cx * 0.992, -3.36, cz * 0.992);
     addEdgeInk(corner, 24);
     group.add(corner);
   });
 
-  // Soft tabletop drop-shadow receiver beneath the diorama
+  // Soft tabletop drop-shadow receiver beneath the 44m x 44m diorama
   const shadowPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(26.8, 26.8),
+    new THREE.PlaneGeometry(49.0, 49.0),
     new THREE.MeshBasicMaterial({
       color: 0x5c7c85,
       transparent: true,
@@ -656,7 +656,7 @@ export function buildHarborBase() {
     })
   );
   shadowPlane.rotation.x = -Math.PI * 0.5;
-  shadowPlane.position.y = -3.57;
+  shadowPlane.position.y = -3.6;
   group.add(shadowPlane);
 
   // 2. L-Shaped Concrete Pier Volume (Y in [-3.15, +1.15], total height = 4.30m)
@@ -735,17 +735,16 @@ export function buildHarborBase() {
   northMainTop.position.set(5.5, 1.13, -6.75);
   group.add(northMainTop);
 
-  // 3D Protruding Cutaway Masonry Relief Blocks along Z=+12 (front-left) and inner quay walls
+  // 3D Protruding Cutaway Masonry Relief Blocks along inner harbor walls
   const reliefBlockMats = [toonMat(0xc3ced1), toonMat(0xaebbc0), toonMat(0x6e858b)];
-  for (let i = 0; i < 34; i += 1) {
-    const bx = -11.6 + rand() * 8.0;
-    const by = -2.6 + rand() * 3.4;
-    const bw = 0.55 + rand() * 0.65;
-    const bh = 0.28 + rand() * 0.24;
+  for (let i = 0; i < 28; i += 1) {
+    const by = -2.4 + rand() * 3.1;
+    const bw = 0.5 + rand() * 0.55;
+    const bh = 0.26 + rand() * 0.22;
     const matIdx = by < -0.2 ? 2 : rand() > 0.5 ? 0 : 1;
-    const blk = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.09), reliefBlockMats[matIdx]);
-    blk.position.set(bx, by, 12.01);
-    addEdgeInk(blk, 28, PALETTE.inkOutline, 0.38);
+    const blk = new THREE.Mesh(new THREE.BoxGeometry(0.08, bh, bw), reliefBlockMats[matIdx]);
+    blk.position.set(-0.98, by, -1.0 + rand() * 9.2);
+    addEdgeInk(blk, 28, PALETTE.inkOutline, 0.36);
     group.add(blk);
   }
 
@@ -807,9 +806,9 @@ export function buildHarborBase() {
     bollardAnchors.push({ x: bc.x, y: bc.y + 0.36, z: bc.z });
   });
 
-  // Rusty Iron Ladders & Mooring Rings on Quay Cutaway & Inner Quay Wall
-  const frontLadder = buildIronLadder(3.2, 10);
-  frontLadder.position.set(-5.6, 1.15, 12.06);
+  // Rusty Iron Ladders & Mooring Rings on Outer Cutaway Seawall & Inner Quay Wall
+  const frontLadder = buildIronLadder(3.25, 10);
+  frontLadder.position.set(-1.65, 1.32, 22.06);
   group.add(frontLadder);
 
   const harborLadder = buildIronLadder(2.65, 8);
@@ -818,10 +817,11 @@ export function buildHarborBase() {
   group.add(harborLadder);
 
   [
-    [-9.6, 0.25, 12.04, 0],
-    [-7.2, 0.18, 12.04, 0],
+    [-3.2, 0.28, 22.05, 0],
+    [-5.8, 0.22, 22.05, 0],
     [-0.97, 0.35, 1.15, Math.PI * 0.5],
     [-0.97, 0.35, 3.45, Math.PI * 0.5],
+    [-0.97, 0.32, 16.5, Math.PI * 0.5],
     [1.65, 0.35, -1.47, 0],
     [4.15, 0.35, -1.47, 0],
   ].forEach(([rx, ry, rz, rotY]) => {
@@ -835,8 +835,8 @@ export function buildHarborBase() {
   const barnacleMat = toonMat(0xd7ded8);
   const oysterMat = toonMat(0x9aa9a6);
   const shellWallGroup = new THREE.Group();
-  for (let i = 0; i < 88; i += 1) {
-    const onFront = i < 42;
+  for (let i = 0; i < 96; i += 1) {
+    const onFront = i < 38;
     const isOyster = i % 3 === 0;
     const m = new THREE.Mesh(
       isOyster
@@ -847,13 +847,13 @@ export function buildHarborBase() {
     if (isOyster) m.scale.set(1.3, 0.7, 0.45);
     const sy = -1.85 + rand() * 1.95;
     if (onFront) {
-      m.position.set(-11.5 + rand() * 7.8, sy, 12.04);
+      m.position.set(-11.4 + rand() * 10.1, sy, 22.05);
       m.rotation.x = Math.PI * 0.5;
-    } else if (i < 66) {
-      m.position.set(-0.96, sy, -1.2 + rand() * 6.2);
+    } else if (i < 72) {
+      m.position.set(-0.95, sy, -1.2 + rand() * 22.4);
       m.rotation.z = -Math.PI * 0.5;
     } else {
-      m.position.set(-0.6 + rand() * 8.2, sy, -1.46);
+      m.position.set(-0.6 + rand() * 21.8, sy, -1.46);
       m.rotation.x = Math.PI * 0.5;
     }
     shellWallGroup.add(m);
@@ -862,7 +862,7 @@ export function buildHarborBase() {
 
   const kelpFronds = [];
   const kelpMat = toonMat(0x3f7b65, { side: THREE.DoubleSide });
-  for (let i = 0; i < 24; i += 1) {
+  for (let i = 0; i < 28; i += 1) {
     const h = 0.48 + rand() * 0.55;
     const frond = new THREE.Mesh(new THREE.PlaneGeometry(0.11, h, 1, 5), kelpMat);
     const posAttr = frond.geometry.attributes.position;
@@ -875,43 +875,42 @@ export function buildHarborBase() {
     frond.position.y = h * 0.5;
     pivot.add(frond);
     if (i < 10) {
-      pivot.position.set(-11.2 + i * 0.75, -2.15 + rand() * 0.55, 12.06);
-    } else if (i < 17) {
-      pivot.position.set(-0.92, -1.95 + rand() * 0.65, -0.8 + (i - 10) * 1.15);
+      pivot.position.set(-10.5 + i * 0.92, -2.15 + rand() * 0.55, 22.06);
+    } else if (i < 20) {
+      pivot.position.set(-0.92, -1.95 + rand() * 0.65, -0.8 + (i - 10) * 2.15);
       pivot.rotation.y = Math.PI * 0.5;
     } else {
-      pivot.position.set(0.4 + (i - 17) * 1.1, -1.95 + rand() * 0.65, -1.42);
+      pivot.position.set(0.6 + (i - 20) * 2.4, -1.95 + rand() * 0.65, -1.42);
     }
     group.add(pivot);
     kelpFronds.push({ pivot, phase: rand() * Math.PI * 2, speed: 1.4 + rand() * 0.8 });
   }
 
-  // 3. Underwater Sloping Pebble Seabed, Tire, Anchor/Chain, Seagrass, Fish & Sea-Glass Cutaway
-  // Seabed surface (X in [-1.0, +12.0], Z in [-1.5, +12.0])
-  const seabedGeo = new THREE.PlaneGeometry(13.0, 13.5, 26, 26);
+  // 3. Expanded 23m x 23.5m Underwater Sloping Pebble Seabed & Sea-Glass Cutaway (X in [-1..22], Z in [-1.5..22])
+  const seabedGeo = new THREE.PlaneGeometry(23.0, 23.5, 42, 42);
   seabedGeo.rotateX(-Math.PI * 0.5);
   const sbPos = seabedGeo.attributes.position;
   const sbColors = new Float32Array(sbPos.count * 3);
   const cShallow = new THREE.Color(0x9ec4ba);
-  const cDeep = new THREE.Color(0x567f84);
+  const cDeep = new THREE.Color(0x4d7780);
   const cTmp = new THREE.Color();
 
   const getSeabedY = (wx, wz) => {
-    const u = THREE.MathUtils.clamp((wx + 1.0) / 13.0, 0, 1);
-    const v = THREE.MathUtils.clamp((wz + 1.5) / 13.5, 0, 1);
-    const base = -2.22 - (u * 0.42 + v * 0.36);
-    const ripple = Math.sin(wx * 0.85 + wz * 0.6) * 0.055;
+    const u = THREE.MathUtils.clamp((wx + 1.0) / 23.0, 0, 1);
+    const v = THREE.MathUtils.clamp((wz + 1.5) / 23.5, 0, 1);
+    const base = -2.18 - (u * 0.46 + v * 0.42);
+    const ripple = Math.sin(wx * 0.65 + wz * 0.5) * 0.065;
     return base + ripple;
   };
 
   for (let i = 0; i < sbPos.count; i += 1) {
     const lx = sbPos.getX(i);
     const lz = sbPos.getZ(i);
-    const wx = lx + 5.5;
-    const wz = lz + 5.25;
+    const wx = lx + 10.5;
+    const wz = lz + 10.25;
     const wy = getSeabedY(wx, wz);
     sbPos.setY(i, wy);
-    const t = THREE.MathUtils.clamp((-wy - 2.2) / 0.85, 0, 1);
+    const t = THREE.MathUtils.clamp((-wy - 2.15) / 0.95, 0, 1);
     cTmp.copy(cShallow).lerp(cDeep, t);
     sbColors[i * 3 + 0] = cTmp.r;
     sbColors[i * 3 + 1] = cTmp.g;
@@ -926,34 +925,39 @@ export function buildHarborBase() {
       gradientMap: masonryMat.gradientMap,
     })
   );
-  seabedMesh.position.set(5.5, 0, 5.25);
+  seabedMesh.position.set(10.5, 0, 10.25);
   group.add(seabedMesh);
 
-  // Seabed cross-section earth skirts on Z=+12 and X=+12 between Y=-3.15 and seabed contour
+  // Slipway cove floor at X in [-3.5, -1.0], Z in [12.0, 14.0]
+  const coveBed = new THREE.Mesh(new THREE.BoxGeometry(2.55, 0.95, 2.05), darkSubMat);
+  coveBed.position.set(-2.25, -2.68, 13.0);
+  group.add(coveBed);
+
+  // Seabed cross-section earth skirts on outer Z=+22 and X=+22 between Y=-3.15 and seabed contour
   const buildSeabedSkirt = (alongX) => {
-    const segs = 26;
+    const segs = 40;
     const geom = new THREE.BufferGeometry();
     const positions = [];
     for (let i = 0; i < segs; i += 1) {
       const t0 = i / segs;
       const t1 = (i + 1) / segs;
       if (alongX) {
-        const x0 = -1.0 + t0 * 13.0;
-        const x1 = -1.0 + t1 * 13.0;
-        const y0 = getSeabedY(x0, 12.0);
-        const y1 = getSeabedY(x1, 12.0);
+        const x0 = -1.0 + t0 * 23.0;
+        const x1 = -1.0 + t1 * 23.0;
+        const y0 = getSeabedY(x0, 22.0);
+        const y1 = getSeabedY(x1, 22.0);
         positions.push(
-          x0, -3.15, 12.0, x1, -3.15, 12.0, x1, y1, 12.0,
-          x0, -3.15, 12.0, x1, y1, 12.0, x0, y0, 12.0
+          x0, -3.15, 22.0, x1, -3.15, 22.0, x1, y1, 22.0,
+          x0, -3.15, 22.0, x1, y1, 22.0, x0, y0, 22.0
         );
       } else {
-        const z0 = -1.5 + t0 * 13.5;
-        const z1 = -1.5 + t1 * 13.5;
-        const y0 = getSeabedY(12.0, z0);
-        const y1 = getSeabedY(12.0, z1);
+        const z0 = -1.5 + t0 * 23.5;
+        const z1 = -1.5 + t1 * 23.5;
+        const y0 = getSeabedY(22.0, z0);
+        const y1 = getSeabedY(22.0, z1);
         positions.push(
-          12.0, -3.15, z1, 12.0, -3.15, z0, 12.0, y0, z0,
-          12.0, -3.15, z1, 12.0, y0, z0, 12.0, y1, z1
+          22.0, -3.15, z1, 22.0, -3.15, z0, 22.0, y0, z0,
+          22.0, -3.15, z1, 22.0, y0, z0, 22.0, y1, z1
         );
       }
     }
@@ -963,13 +967,13 @@ export function buildHarborBase() {
   };
   group.add(buildSeabedSkirt(true), buildSeabedSkirt(false));
 
-  // Scattered 3D Seabed Pebbles ("碎石海床")
+  // Scattered 3D Seabed Pebbles ("碎石海床") across the expanded 23m x 23.5m bay
   const pebbleMats = [toonMat(0x7c979a), toonMat(0x9ab0ad), toonMat(0x637d84)];
-  for (let i = 0; i < 120; i += 1) {
-    const px = -0.4 + rand() * 11.9;
-    const pz = -0.9 + rand() * 12.4;
+  for (let i = 0; i < 240; i += 1) {
+    const px = -0.3 + rand() * 21.8;
+    const pz = -0.8 + rand() * 22.3;
     const py = getSeabedY(px, pz) + 0.02;
-    const r = 0.06 + rand() * 0.16;
+    const r = 0.07 + rand() * 0.19;
     const peb = new THREE.Mesh(
       new THREE.DodecahedronGeometry(r, 0),
       pebbleMats[i % pebbleMats.length]
@@ -980,11 +984,13 @@ export function buildHarborBase() {
     group.add(peb);
   }
 
-  // Sunken Old Tires ("沉底的旧轮胎") + Anchor & Chain ("锚链") + Fairytale Pearl Clam
+  // Sunken Old Tires + Dual Anchor & Chains (both inner bay & outer cutaway!) + Glowing Pearl Clams
   const tireMat = toonMat(0x2a3236);
   [
     [4.65, 9.75, 0.42, 0.32],
     [9.35, 7.85, 0.35, -0.45],
+    [7.4, 19.8, 0.48, 0.28],
+    [18.8, 16.4, 0.42, -0.36],
   ].forEach(([tx, tz, tr, tilt]) => {
     const tire = new THREE.Mesh(new THREE.TorusGeometry(tr, tr * 0.36, 10, 20), tireMat);
     tire.position.set(tx, getSeabedY(tx, tz) + 0.08, tz);
@@ -994,18 +1000,27 @@ export function buildHarborBase() {
   });
 
   group.add(buildSunkenAnchorAndChain());
+  const outerAnchor = buildSunkenAnchorAndChain();
+  outerAnchor.position.set(5.6, -0.26, 9.8);
+  group.add(outerAnchor);
 
   const pearlClam = buildPearlClam();
   pearlClam.position.set(2.35, getSeabedY(2.35, 10.15) + 0.05, 10.15);
   pearlClam.rotation.y = 0.65;
-  group.add(pearlClam);
+  const outerClam = buildPearlClam();
+  outerClam.scale.setScalar(1.25);
+  outerClam.position.set(4.2, getSeabedY(4.2, 20.1) + 0.06, 20.1);
+  outerClam.rotation.y = 0.48;
+  group.add(pearlClam, outerClam);
 
-  // Swaying Underwater Seagrass Tufts ("几丛海草")
+  // Swaying Underwater Seagrass Tufts ("几丛海草") across the expanded bay
   const seagrassBlades = [];
   const grassCols = [0x2f8f7b, 0x3ea88b, 0x2a7a6e];
   const grassCenters = [
     [1.1, 8.9], [3.6, 10.8], [5.8, 8.4], [7.2, 10.9], [9.8, 9.8],
     [10.6, 6.9], [8.6, 6.2], [2.4, 6.4], [6.4, 4.8], [10.4, 3.4], [4.2, 11.2],
+    [2.2, 19.6], [6.2, 20.4], [10.8, 20.2], [14.8, 19.8], [18.5, 20.4],
+    [20.4, 15.2], [20.2, 10.8], [19.8, 5.8], [14.2, 8.6], [12.4, 15.6], [17.4, 10.2],
   ];
   grassCenters.forEach(([gx, gz], ci) => {
     const baseY = getSeabedY(gx, gz);
@@ -1013,15 +1028,15 @@ export function buildHarborBase() {
     tuft.position.set(gx, baseY, gz);
     const bladeCount = 6 + (ci % 3);
     for (let b = 0; b < bladeCount; b += 1) {
-      const bh = 0.55 + rand() * 0.62;
+      const bh = 0.6 + rand() * 0.72;
       const blade = new THREE.Mesh(
-        new THREE.ConeGeometry(0.048, bh, 4),
+        new THREE.ConeGeometry(0.052, bh, 4),
         toonMat(grassCols[(ci + b) % grassCols.length])
       );
       blade.scale.set(1.0, 1.0, 0.35);
       const bp = new THREE.Group();
       const ang = (b / bladeCount) * Math.PI * 2;
-      bp.position.set(Math.cos(ang) * 0.12, 0, Math.sin(ang) * 0.12);
+      bp.position.set(Math.cos(ang) * 0.14, 0, Math.sin(ang) * 0.14);
       blade.position.y = bh * 0.48;
       bp.add(blade);
       tuft.add(bp);
@@ -1030,38 +1045,38 @@ export function buildHarborBase() {
     group.add(tuft);
   });
 
-  // 22 Animated Underwater Little Fish ("水下小鱼") + Interactive Hitbox
+  // 46 Animated Underwater Little Fish ("水下小鱼") across the 23m x 23.5m bay
   const fishGroup = new THREE.Group();
   const fishColors = [0xff8b6a, 0xf7d060, 0x8be8f0, 0xf4a8c0, 0xdff6f8];
   const fishAgents = [];
-  for (let i = 0; i < 22; i += 1) {
+  for (let i = 0; i < 46; i += 1) {
     const f = buildLittleFish(fishColors[i % fishColors.length]);
-    const cx = 1.6 + rand() * 8.6;
-    const cz = 1.6 + rand() * 8.8;
-    const cy = -0.68 - rand() * 1.35;
+    if (i >= 22) f.scale.setScalar(1.18);
+    const cx = 1.6 + rand() * 18.2;
+    const cz = 1.6 + rand() * 18.4;
+    const cy = -0.68 - rand() * 1.45;
     fishGroup.add(f);
     fishAgents.push({
       mesh: f,
       cx,
       cy,
       cz,
-      rx: 0.65 + rand() * 1.35,
-      rz: 0.65 + rand() * 1.35,
-      speed: (0.55 + rand() * 0.55) * (i % 2 === 0 ? 1 : -1),
+      rx: 0.75 + rand() * 1.85,
+      rz: 0.75 + rand() * 1.85,
+      speed: (0.52 + rand() * 0.55) * (i % 2 === 0 ? 1 : -1),
       phase: rand() * Math.PI * 2,
     });
   }
-  // Invisible underwater click volume near front cutaway so clicking underwater triggers fish swirl
   const fishHitbox = new THREE.Mesh(
-    new THREE.BoxGeometry(11.5, 2.1, 11.5),
+    new THREE.BoxGeometry(21.5, 2.3, 21.5),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
   );
-  fishHitbox.position.set(5.6, -1.35, 5.6);
+  fishHitbox.position.set(10.5, -1.35, 10.5);
   fishGroup.add(fishHitbox);
   tagInteractive(fishGroup, "underwater-fish", "水下鱼群", { accentColor: 0x7be8e2 });
   group.add(fishGroup);
 
-  // Translucent Sea-Glass Water Cutaway Side Walls ("水域一侧半透明青绿色水体剖面")
+  // Translucent Sea-Glass Water Cutaway Side Walls on outer Z=+22 and X=+22
   const seaGlassCutawayMat = new THREE.MeshPhysicalMaterial({
     color: 0x45bab5,
     transparent: true,
@@ -1075,29 +1090,29 @@ export function buildHarborBase() {
   });
 
   const buildWaterCutawayPane = (alongX) => {
-    const segs = 26;
+    const segs = 40;
     const geom = new THREE.BufferGeometry();
     const positions = [];
     for (let i = 0; i < segs; i += 1) {
       const t0 = i / segs;
       const t1 = (i + 1) / segs;
       if (alongX) {
-        const x0 = -1.0 + t0 * 13.0;
-        const x1 = -1.0 + t1 * 13.0;
-        const y0 = getSeabedY(x0, 12.0);
-        const y1 = getSeabedY(x1, 12.0);
+        const x0 = -1.0 + t0 * 23.0;
+        const x1 = -1.0 + t1 * 23.0;
+        const y0 = getSeabedY(x0, 22.0);
+        const y1 = getSeabedY(x1, 22.0);
         positions.push(
-          x0, y0, 12.0, x1, y1, 12.0, x1, 0.0, 12.0,
-          x0, y0, 12.0, x1, 0.0, 12.0, x0, 0.0, 12.0
+          x0, y0, 22.0, x1, y1, 22.0, x1, 0.0, 22.0,
+          x0, y0, 22.0, x1, 0.0, 22.0, x0, 0.0, 22.0
         );
       } else {
-        const z0 = -1.5 + t0 * 13.5;
-        const z1 = -1.5 + t1 * 13.5;
-        const y0 = getSeabedY(12.0, z0);
-        const y1 = getSeabedY(12.0, z1);
+        const z0 = -1.5 + t0 * 23.5;
+        const z1 = -1.5 + t1 * 23.5;
+        const y0 = getSeabedY(22.0, z0);
+        const y1 = getSeabedY(22.0, z1);
         positions.push(
-          12.0, y1, z1, 12.0, y0, z0, 12.0, 0.0, z0,
-          12.0, y1, z1, 12.0, 0.0, z0, 12.0, 0.0, z1
+          22.0, y1, z1, 22.0, y0, z0, 22.0, 0.0, z0,
+          22.0, y1, z1, 22.0, 0.0, z0, 22.0, 0.0, z1
         );
       }
     }
@@ -1110,14 +1125,53 @@ export function buildHarborBase() {
   };
   group.add(buildWaterCutawayPane(true), buildWaterCutawayPane(false));
 
-  // Also small slipway front sea-glass triangle at Z=12, X in [-2.6, -1.0]
-  const slipWaterFace = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.6, 0.38),
-    seaGlassCutawayMat
+  // Romantic Floral Sea-Stack Islet ("海中樱花花礁小岛") at (15.8, 0.0, 14.2)
+  const isletGroup = new THREE.Group();
+  isletGroup.position.set(15.8, 0, 14.2);
+  const isletRock = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.38, 1.85, 4.1, 11),
+    toonMat(0x839296)
   );
-  slipWaterFace.position.set(-1.8, -0.19, 12.01);
-  slipWaterFace.raycast = () => {};
-  group.add(slipWaterFace);
+  isletRock.position.y = -0.82;
+  addEdgeInk(isletRock, 26);
+  isletGroup.add(isletRock);
+
+  const isletTurf = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.32, 1.42, 0.28, 11),
+    toonMat(0x72bb7b)
+  );
+  isletTurf.position.y = 1.28;
+  addEdgeInk(isletTurf, 26);
+  isletGroup.add(isletTurf);
+
+  // Blooming Pink Sakura Tree on the Sea-Stack Islet
+  const isletSakura = buildAnimeTree(0xf9aec6, 1.55);
+  isletSakura.position.set(-0.18, 1.38, -0.12);
+  isletGroup.add(isletSakura);
+
+  // Traditional Japanese Stone Lantern ("石灯笼") glowing warmly on the islet
+  const lanternBase = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.2, 0.45, 6), stoneTrimMat);
+  lanternBase.position.set(0.62, 1.62, 0.35);
+  const lanternBox = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), emissiveMat(0xffe194, 1.25));
+  lanternBox.position.set(0.62, 1.94, 0.35);
+  const lanternCap = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.18, 6), toonMat(0x6c7c82));
+  lanternCap.position.set(0.62, 2.14, 0.35);
+  addEdgeInk(lanternCap, 25);
+  isletGroup.add(lanternBase, lanternBox, lanternCap);
+
+  // Lush Hydrangea & Rose blooms crowning the sea-stack islet
+  [
+    [-0.75, 1.48, 0.55, 0x89c8f5],
+    [0.15, 1.48, 0.85, 0xf79cb6],
+    [0.82, 1.46, -0.45, 0xc7b4f0],
+    [-0.55, 1.48, -0.78, 0xff9a8a],
+    [0.35, 1.48, -0.82, 0xf8db68],
+  ].forEach(([hx, hy, hz, hcol]) => {
+    const hb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.24, 1), toonMat(hcol));
+    hb.position.set(hx, hy, hz);
+    isletGroup.add(hb);
+  });
+  group.add(isletGroup);
 
   // 4. Short Breakwater ("短防波堤"), Tetrapods ("消波块") & Red-White Lighthouse ("红白灯塔")
   const bwArm = new THREE.Mesh(new THREE.BoxGeometry(1.55, 3.65, 5.5), masonryMat);
@@ -1141,13 +1195,14 @@ export function buildHarborBase() {
   const lighthouse = buildRedWhiteLighthouse();
   group.add(lighthouse);
 
-  // 14 Grey-White Tetrapods ("灰白消波块 テトラポッド") + Surging Foam Rings
+  // 20 Grey-White Tetrapods ("灰白消波块 テトラポッド") around Breakwater, Sea-Stack Islet & Outer (+22,+22) Corner
   const podSpots = [
     [9.95, 0.05, 1.85, 0.95], [10.65, -0.08, 2.45, 1.0], [9.85, 0.12, 3.15, 0.92],
     [10.85, -0.12, 3.75, 1.02], [9.75, 0.08, 4.55, 0.96], [10.55, -0.05, 4.95, 0.94],
     [9.35, -0.06, 5.15, 0.9], [11.25, -0.18, 2.95, 0.95], [11.15, -0.15, 4.45, 0.9],
-    [10.35, -0.1, 10.25, 0.98], [11.15, -0.04, 10.65, 1.04], [10.45, -0.14, 11.2, 0.92],
-    [11.28, 0.06, 9.75, 0.94], [9.75, -0.16, 10.85, 0.88],
+    [17.45, -0.08, 13.85, 0.95], [17.35, -0.12, 15.05, 0.98], [16.55, -0.06, 15.85, 0.92],
+    [19.85, -0.08, 19.95, 1.04], [20.75, -0.04, 20.35, 1.08], [20.15, -0.12, 21.05, 0.96],
+    [21.05, 0.06, 19.55, 0.98], [19.45, -0.14, 20.85, 0.92], [20.95, -0.1, 21.15, 1.0],
   ];
   const podMats = [toonMat(0xdce2e3), toonMat(0xcbd4d6)];
   const foamRings = [];
@@ -1173,91 +1228,101 @@ export function buildHarborBase() {
     foamRings.push({ mesh: ring, phase: idx * 0.7 });
   });
 
-  // 5. Far NW Wooded Green Hillside & Miniature Tile-Roofed Cottages + Distant Outer Breakwater
+  // 5. Seaside Rose-Parterre Courtyard & Kamakura Tram-Crossing Plaza (keeps Z = -12.85 tram 100% unobstructed!)
   const hillGroup = new THREE.Group();
-  const grassTerraceMats = [toonMat(0x78b97c), toonMat(0x66a870), toonMat(0x88c584)];
-  const cliffEarthMat = toonMat(0x8e8679);
+  const gardenTurfMat = toonMat(0x88cf7e);
+  const gardenCurbMat = toonMat(0xe8e2d5);
 
-  // 3 Clean Stepped Diorama Hill Terraces strictly inside X in [-11.96, -2.6], Z in [-11.96, -4.8]
-  const terraces = [
-    { x: -7.28, z: -8.38, w: 9.36, d: 7.16, h: 1.15, yBase: 1.15, mat: 0 },
-    { x: -7.95, z: -9.05, w: 8.0, d: 5.8, h: 1.1, yBase: 2.3, mat: 1 },
-    { x: -9.15, z: -9.85, w: 5.6, d: 4.2, h: 1.15, yBase: 3.4, mat: 2 },
-  ];
-  terraces.forEach((tr) => {
-    const rock = new THREE.Mesh(new THREE.BoxGeometry(tr.w, tr.h, tr.d), cliffEarthMat);
-    rock.position.set(tr.x, tr.yBase + tr.h * 0.5, tr.z);
-    addEdgeInk(rock, 25);
-    hillGroup.add(rock);
-
-    const turf = new THREE.Mesh(
-      new THREE.BoxGeometry(tr.w + 0.06, 0.14, tr.d + 0.06),
-      grassTerraceMats[tr.mat]
-    );
-    turf.position.set(tr.x, tr.yBase + tr.h + 0.04, tr.z);
-    addEdgeInk(turf, 25);
-    hillGroup.add(turf);
+  // Lush lawn & flower-bed parterres flanking the stepping-stone path to 星語花湾駅 (X = -6.5)
+  [
+    { x: -9.35, z: -8.45, w: 4.3, d: 5.9 },
+    { x: -4.45, z: -8.45, w: 3.1, d: 5.9 },
+  ].forEach((bed) => {
+    const curb = new THREE.Mesh(new THREE.BoxGeometry(bed.w + 0.18, 0.12, bed.d + 0.18), gardenCurbMat);
+    curb.position.set(bed.x, 1.21, bed.z);
+    addEdgeInk(curb, 26);
+    const turf = new THREE.Mesh(new THREE.BoxGeometry(bed.w, 0.15, bed.d), gardenTurfMat);
+    turf.position.set(bed.x, 1.23, bed.z);
+    hillGroup.add(curb, turf);
   });
 
-  // Winding miniature stone stairway up the hillside
-  for (let s = 0; s < 10; s += 1) {
-    const st = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.14, 0.34), stoneTrimMat);
-    st.position.set(-5.2 - s * 0.16, 1.25 + s * 0.22, -4.95 - s * 0.32);
-    addEdgeInk(st, 25);
+  // Stepping-stone footpath leading north from Villa courtyard (Z = -5.4) to Tram Station (X = -6.5, Z = -11.8)
+  for (let s = 0; s < 11; s += 1) {
+    const st = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.36, 0.05, 10), gardenCurbMat);
+    st.scale.set(1.25, 1, 0.82);
+    st.position.set(-6.5 + Math.sin(s * 0.6) * 0.08, 1.18, -5.6 - s * 0.6);
     hillGroup.add(st);
   }
 
-  // 3 Miniature Tile-Roofed Fairytale Houses ("坡上点缀几户瓦顶民家")
-  const h1 = buildMiniatureHillHouse(0xfaf3e6, 0xdc7a6b, 1.05);
-  h1.position.set(-9.5, 4.6, -9.6);
-  h1.rotation.y = 0.42;
-  const h2 = buildMiniatureHillHouse(0xf5f6ec, 0x5c899e, 0.96);
-  h2.position.set(-6.3, 3.45, -8.8);
-  h2.rotation.y = 0.28;
-  const h3 = buildMiniatureHillHouse(0xfcf0e8, 0xe29578, 0.9);
-  h3.position.set(-3.9, 2.35, -7.4);
-  h3.rotation.y = 0.58;
-  hillGroup.add(h1, h2, h3);
+  // Romantic circular Cream-Stone Rose Fountain Parterre at (-9.3, 1.16, -8.4)
+  const parterreRing = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.34, 0.28, 20), gardenCurbMat);
+  parterreRing.position.set(-9.3, 1.32, -8.4);
+  addEdgeInk(parterreRing, 26);
+  const parterreSoil = new THREE.Mesh(new THREE.CylinderGeometry(1.08, 1.08, 0.31, 20), toonMat(0x6db96c));
+  parterreSoil.position.set(-9.3, 1.33, -8.4);
+  const birdbathPedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.24, 0.68, 12), gardenCurbMat);
+  birdbathPedestal.position.set(-9.3, 1.66, -8.4);
+  const birdbathBowl = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.22, 0.16, 16), gardenCurbMat);
+  birdbathBowl.position.set(-9.3, 2.02, -8.4);
+  const birdbathWater = new THREE.Mesh(new THREE.CylinderGeometry(0.39, 0.39, 0.04, 16), toonMat(0x7fd8de));
+  birdbathWater.position.set(-9.3, 2.09, -8.4);
+  hillGroup.add(parterreRing, parterreSoil, birdbathPedestal, birdbathBowl, birdbathWater);
 
-  // 26 Cel-Shaded Anime Trees & Hydrangea Bushes across the hillside
-  const treePalette = [0x58a86b, 0x6ec07a, 0x4b9364, 0x86cc7e];
-  const treeCoords = [
-    [-11.1, 4.6, -11.1], [-10.8, 4.6, -8.6], [-8.1, 4.6, -10.9], [-7.2, 4.6, -10.4],
-    [-11.2, 3.45, -7.0], [-8.2, 3.45, -7.5], [-5.0, 3.45, -10.6], [-4.6, 3.45, -9.2],
-    [-10.9, 2.35, -5.6], [-9.2, 2.35, -5.5], [-7.4, 2.35, -5.4], [-3.4, 2.35, -5.8],
-    [-3.2, 2.35, -9.6], [-5.8, 2.35, -5.6], [-11.3, 4.6, -9.8], [-8.8, 3.45, -8.2],
-    [-6.6, 4.6, -9.8], [-4.8, 2.35, -6.4], [-10.1, 3.45, -6.8], [-3.3, 2.35, -11.0],
-  ];
-  treeCoords.forEach(([tx, ty, tz], idx) => {
-    const tr = buildAnimeTree(treePalette[idx % treePalette.length], 0.85 + (idx % 4) * 0.14);
+  // Classic Japanese Yellow-Black Tram Crossing Sign ("踏切警标") at (-5.85, 1.16, -11.65) + Garden Bench
+  const xingGroup = new THREE.Group();
+  xingGroup.position.set(-5.85, 1.16, -11.65);
+  const xingPole = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 1.95, 8), toonMat(0xf4c430));
+  xingPole.position.y = 0.975;
+  for (let b = 0; b < 4; b += 1) {
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.18, 8), toonMat(0x252b30));
+    band.position.y = 0.32 + b * 0.38;
+    xingGroup.add(band);
+  }
+  [-0.58, 0.58].forEach((rot) => {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.09, 0.03), toonMat(0xfafaf6));
+    bar.position.set(0, 1.76, 0.04);
+    bar.rotation.z = rot;
+    xingGroup.add(bar);
+  });
+  [-0.16, 0.16].forEach((lx) => {
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.058, 8, 8), emissiveMat(0xff5e52, 1.35));
+    lamp.position.set(lx, 1.42, 0.06);
+    xingGroup.add(lamp);
+  });
+  xingGroup.add(xingPole);
+  hillGroup.add(xingGroup);
+
+  const gBench = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.1, 0.38), toonMat(0xc78f5c));
+  gBench.position.set(-4.45, 1.54, -9.8);
+  addEdgeInk(gBench, 26);
+  hillGroup.add(gBench);
+
+  // Two framing pastel Sakura/Emerald trees on the outer sides (leaving tram view crystal clear)
+  [
+    [-11.15, 1.28, -6.3, 0xf7acc4, 0.96],
+    [-3.15, 1.28, -6.2, 0x6ec07a, 0.92],
+  ].forEach(([tx, ty, tz, hex, sc]) => {
+    const tr = buildAnimeTree(hex, sc);
     tr.position.set(tx, ty, tz);
-    tr.rotation.y = idx * 1.1;
     hillGroup.add(tr);
   });
 
-  // Pastel Hydrangea Flower Clusters along hillside steps
-  const hydraCols = [0x92c8ec, 0xc7b6ea, 0xf4aec0];
-  for (let i = 0; i < 16; i += 1) {
+  // Plump Pastel Hydrangea & Rose Clusters around the fountain parterre & path
+  const hydraCols = [0x82c6f5, 0xc7b6ea, 0xf6a2bc, 0xfad65a];
+  for (let i = 0; i < 18; i += 1) {
+    const a = (i / 18) * Math.PI * 2;
     const bush = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.18 + (i % 3) * 0.05, 1),
-      toonMat(hydraCols[i % 3])
+      new THREE.IcosahedronGeometry(0.19 + (i % 3) * 0.04, 1),
+      toonMat(hydraCols[i % 4])
     );
-    bush.position.set(-10.8 + (i % 8) * 0.95, 2.42 + Math.floor(i / 8) * 1.12, -5.05 - (i % 3) * 0.65);
+    if (i < 10) {
+      bush.position.set(-9.3 + Math.cos(a * 1.8) * 0.82, 1.54, -8.4 + Math.sin(a * 1.8) * 0.82);
+    } else {
+      bush.position.set(-4.45 + ((i % 2) - 0.5) * 1.4, 1.38, -6.2 - (i - 10) * 0.62);
+    }
     hillGroup.add(bush);
   }
   group.add(hillGroup);
-
-  // Distant Outer Breakwater Silhouette ("远处海面隐约可见更长的防波堤")
-  const outerBW = new THREE.Group();
-  const mistySlate = toonMat(0xa8c3c8);
-  const longJetty = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.36, 0.38), mistySlate);
-  longJetty.position.set(8.2, 1.32, -11.68);
-  addEdgeInk(longJetty, 25, 0x5c7c88, 0.35);
-  outerBW.add(longJetty);
-  const distantBeacon = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 0.55, 10), toonMat(0xf4f8f8));
-  distantBeacon.position.set(4.75, 1.72, -11.68);
-  outerBW.add(distantBeacon);
-  group.add(outerBW);
 
   enableShadows(group);
 

@@ -13,21 +13,22 @@ const WATER_VERTEX_SHADER = /* glsl */ `
   varying vec2 vSlope;
 
   float quayWallDamp(vec2 xz) {
-    // North quay wall at Z = -1.5
+    // North Quay & East Cape seawall at Z = -1.5 (X < 22)
     float dampNorth = smoothstep(-1.50, -0.82, xz.y);
 
-    // West quay wall at X = -1.0 (steps back to X = -2.70 at slipway Z in [9.8, 12.0])
-    float slipBlend = smoothstep(9.65, 9.95, xz.y);
-    float westWallX = mix(-1.00, -2.70, slipBlend);
-    float dampWest = smoothstep(westWallX, westWallX + 0.62, xz.x);
+    // West Quay & South-West Flower Bluff seawall at X = -1.0 (Z < 22),
+    // stepping back to X = -3.50 inside the slipway cove Z in [9.8, 14.0]
+    float slipWindow = smoothstep(9.80, 10.16, xz.y) * (1.0 - smoothstep(13.64, 14.00, xz.y));
+    float westWallX = mix(-1.00, -3.50, slipWindow);
+    float dampWest = smoothstep(westWallX, westWallX + 0.65, xz.x);
 
-    // Inside the slipway pocket (X < -1.0), damp near side walls Z = 9.8 and Z = 12.0
+    // Inside the slipway cove (X < -1.0), damp near side walls Z = 9.8 and Z = 14.0
     float inSlipway = 1.0 - smoothstep(-1.16, -0.92, xz.x);
-    float slipSideDamp = smoothstep(9.80, 10.12, xz.y) * (1.0 - smoothstep(11.72, 12.00, xz.y));
+    float slipSideDamp = smoothstep(9.80, 10.18, xz.y) * (1.0 - smoothstep(13.62, 14.00, xz.y));
     float dampPocket = mix(1.0, slipSideDamp, inSlipway);
 
-    // Gentle softening near outer diorama cutaway (keeps lively silhouette without harsh tear)
-    float cutawayEdge = (1.0 - smoothstep(11.2, 12.0, xz.x)) * (1.0 - smoothstep(11.2, 12.0, xz.y));
+    // Gentle softening near outer 44m diorama sea-glass cutaway edges (X = 22, Z = 22)
+    float cutawayEdge = (1.0 - smoothstep(21.0, 22.0, xz.x)) * (1.0 - smoothstep(21.0, 22.0, xz.y));
     float cutawaySoft = mix(0.55, 1.0, cutawayEdge);
 
     return dampNorth * dampWest * dampPocket * cutawaySoft;
@@ -38,7 +39,7 @@ const WATER_VERTEX_SHADER = /* glsl */ `
     float p2 = dot(p, vec2(0.86, 1.38)) - t * 1.82 + 1.35;
     float p3 = dot(p, vec2(-1.92, -1.32)) + t * 2.30 + 2.60;
 
-    vec2 entranceDelta = p - vec2(11.2, -1.8);
+    vec2 entranceDelta = p - vec2(14.8, -3.2);
     float distEnt = length(entranceDelta) + 0.001;
     float p4 = distEnt * 1.55 - t * 1.58;
 
@@ -98,6 +99,13 @@ const WATER_FRAGMENT_SHADER = /* glsl */ `
     return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
   }
 
+  float sdSegment(vec2 p, vec2 a, vec2 b) {
+    vec2 pa = p - a;
+    vec2 ba = b - a;
+    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * h);
+  }
+
   float celMask(float sdfDist, float shardMod) {
     float val = 0.5 - (sdfDist - shardMod) * 1.45;
     return smoothstep(0.48, 0.51, val);
@@ -114,15 +122,24 @@ const WATER_FRAGMENT_SHADER = /* glsl */ `
     vec3 colSeaGlass  = vec3(0.353, 0.773, 0.749); // #5AC5BF
     vec3 colAquaMint  = vec3(0.541, 0.890, 0.855); // #8AE3DA
 
-    float quayShadowW = (p.y < 9.65) ? exp(-max(0.0, p.x + 1.0) * 0.82) : 0.0;
+    float slipMaskW = smoothstep(9.70, 10.05, p.y) * (1.0 - smoothstep(13.75, 14.10, p.y));
+    float wallWestX = mix(-1.0, -3.5, slipMaskW);
+    float quayShadowW = exp(-max(0.0, p.x - wallWestX) * 0.82);
     float quayShadowN = exp(-max(0.0, p.y + 1.5) * 0.82);
     float quayShadow = clamp(max(quayShadowW, quayShadowN * 0.92), 0.0, 1.0);
 
-    // Shallow uplift near slipway & tetrapod reefs
-    float shallowSlip = (1.0 - smoothstep(-2.5, 0.4, p.x)) * smoothstep(9.2, 10.2, p.y);
+    // Shallow uplift near slipway cove, tetrapod reefs & Floral Sea-Stack Islet
+    float shallowSlip = (1.0 - smoothstep(-3.2, 0.5, p.x))
+                      * smoothstep(9.3, 10.1, p.y)
+                      * (1.0 - smoothstep(13.7, 14.5, p.y));
     float shallowTetra1 = 1.0 - smoothstep(0.0, 1.4, sdRoundBox(p - vec2(10.6, 3.9), vec2(1.15, 2.55), 0.4));
-    float shallowTetra2 = 1.0 - smoothstep(0.0, 1.3, sdRoundBox(p - vec2(10.75, 10.65), vec2(1.0, 1.1), 0.35));
-    float shallowBoost = clamp(shallowSlip * 0.45 + (shallowTetra1 + shallowTetra2) * 0.28, 0.0, 0.52);
+    float shallowIslet = 1.0 - smoothstep(1.5, 3.4, length(p - vec2(15.8, 14.2)));
+    float shallowCornerReef = 1.0 - smoothstep(0.0, 1.6, sdRoundBox(p - vec2(20.4, 20.4), vec2(1.1, 1.1), 0.4));
+    float shallowBoost = clamp(
+      shallowSlip * 0.45 + shallowTetra1 * 0.28 + shallowIslet * 0.34 + shallowCornerReef * 0.26,
+      0.0,
+      0.54
+    );
 
     float waveFacet = dot(vSlope, vec2(-5.2, -4.4))
                     + (vNoise(p * 0.62 + vec2(uTime * 0.14, -uTime * 0.11)) - 0.5) * 0.34
@@ -238,19 +255,86 @@ const WATER_FRAGMENT_SHADER = /* glsl */ `
     baseCol = mix(baseCol, lhCol, mLighthouse * 0.94);
     reflBoostAlpha = max(reflBoostAlpha, mLighthouse);
 
-    // (d) Pier Lamp Posts warm brass-gold glints + dancing sunshower sparkles
+    // (d) Romantic Floral Sea-Stack Islet ("海中樱花花礁") at (15.8, 14.2) across Z in [14.6, 17.6]
+    vec3 colSakuraPink  = vec3(0.969, 0.659, 0.769); // #F7A8C4
+    vec3 colEmeraldLeaf = vec3(0.408, 0.729, 0.510); // #68BA82
+    vec3 colCreamStone  = vec3(0.918, 0.902, 0.863); // #EAE6DC
+
+    float dIsletShadow = sdRoundBox(rw - vec2(15.80, 14.95), vec2(1.62, 0.52), 0.24);
+    float mIsletShadow = celMask(dIsletShadow, shardMod * 0.85);
+    baseCol = mix(baseCol, colHullShadow, mIsletShadow * 0.82);
+    reflBoostAlpha = max(reflBoostAlpha, mIsletShadow * 0.45);
+
+    float dIsletStone = min(
+      sdRoundBox(rw - vec2(15.80, 15.18), vec2(1.42, 0.58), 0.24),
+      sdRoundBox(rw - vec2(16.42, 15.62), vec2(0.26, 0.34), 0.12)
+    );
+    float mIsletStone = celMask(dIsletStone, shardMod * 0.95);
+    baseCol = mix(baseCol, colCreamStone, mIsletStone * 0.92);
+    reflBoostAlpha = max(reflBoostAlpha, mIsletStone * 0.88);
+
+    float dIsletLeaf = min(
+      sdRoundBox(rw - vec2(15.78, 15.75), vec2(1.26, 0.48), 0.22),
+      sdRoundBox(rw - vec2(15.32, 16.16), vec2(0.74, 0.30), 0.16)
+    );
+    float mIsletLeaf = celMask(dIsletLeaf, shardMod);
+    baseCol = mix(baseCol, colEmeraldLeaf, mIsletLeaf * 0.92);
+    reflBoostAlpha = max(reflBoostAlpha, mIsletLeaf * 0.90);
+
+    float dIsletSakura = min(
+      sdRoundBox(rw - vec2(15.65, 16.48), vec2(1.12, 0.56), 0.26),
+      min(
+        sdRoundBox(rw - vec2(15.58, 17.18), vec2(0.74, 0.42), 0.20),
+        sdRoundBox(rw - vec2(16.25, 16.82), vec2(0.52, 0.32), 0.16)
+      )
+    );
+    float mIsletSakura = celMask(dIsletSakura, shardMod * 1.08);
+    baseCol = mix(baseCol, colSakuraPink, mIsletSakura * 0.94);
+    reflBoostAlpha = max(reflBoostAlpha, mIsletSakura * 0.94);
+
+    // (e) Extended Outer Harbor Breakwater & Mint Beacon at X in [14.5, 19.4], Z in [+4.3, +5.4]
+    //     with beacon at (14.8, +4.85): crisp mint (#88DBD0) & white (#F6FBFB) shards across Z in [+5.4, +7.8]
+    vec3 colOuterMint  = vec3(0.533, 0.859, 0.816); // #88DBD0
+    vec3 colOuterWhite = vec3(0.965, 0.984, 0.984); // #F6FBFB
+
+    float dOuterBwReflW = sdRoundBox(rw - vec2(16.95, 5.95), vec2(2.38, 0.52), 0.16);
+    float mOuterBwWhite = celMask(dOuterBwReflW, shardMod * 0.95);
+    baseCol = mix(baseCol, colOuterWhite, mOuterBwWhite * 0.92);
+    reflBoostAlpha = max(reflBoostAlpha, mOuterBwWhite * 0.88);
+
+    float dOuterBwReflM = sdRoundBox(rw - vec2(16.95, 6.42), vec2(2.22, 0.26), 0.11);
+    float mOuterBwMint = celMask(dOuterBwReflM, shardMod);
+    baseCol = mix(baseCol, colOuterMint, mOuterBwMint * 0.92);
+    reflBoostAlpha = max(reflBoostAlpha, mOuterBwMint * 0.86);
+
+    float bcT = clamp((rw.y - 5.45) / 2.40, 0.0, 1.0);
+    float bcCenterX = mix(14.80, 14.42, bcT);
+    float bcHalfW = mix(0.46, 0.22, bcT);
+    float dMintBeacon = max(abs(rw.x - bcCenterX) - bcHalfW, abs(rw.y - 6.65) - 1.20);
+    float mMintBeacon = celMask(dMintBeacon, shardMod * 1.10);
+    float bcStripe = smoothstep(-0.04, 0.04, sin((rw.y - 5.45) * 5.20));
+    vec3 bcCol = mix(colOuterMint, colOuterWhite, bcStripe);
+    bcCol = mix(bcCol, colBrassGlint, smoothstep(7.60, 7.75, rw.y));
+    baseCol = mix(baseCol, bcCol, mMintBeacon * 0.94);
+    reflBoostAlpha = max(reflBoostAlpha, mMintBeacon);
+
+    // (f) Pier Lamp Posts + Islet Stone Lantern warm brass-gold glints + sunshower sparkles
     float dLamp1 = sdRoundBox(rw - vec2(-0.34, 4.95), vec2(0.32, 0.56), 0.18);
     float dLamp2 = sdRoundBox(rw - vec2(-0.40, -0.82), vec2(0.26, 0.42), 0.15);
     float dLamp3 = sdRoundBox(rw - vec2(4.65, -0.68), vec2(0.32, 0.52), 0.18);
     float dLamp4 = sdRoundBox(rw - vec2(7.55, -0.72), vec2(0.28, 0.46), 0.16);
-    float dLamps = min(min(dLamp1, dLamp2), min(dLamp3, dLamp4));
+    float dLamp5 = sdRoundBox(rw - vec2(16.42, 15.88), vec2(0.22, 0.30), 0.14);
+    float dLamps = min(min(min(dLamp1, dLamp2), min(dLamp3, dLamp4)), dLamp5);
     float mLamp = celMask(dLamps, shardMod * 1.25);
 
-    // Delicate horizontal anime sun-glint dashes dancing along sunlit wave crests
+    // Delicate horizontal anime sun-glint dashes dancing across the expanded bay (X in [0.2, 19.5], Z in [-1.0, 19.5])
     float sp1 = sin(p.x * 6.4 + p.y * 14.5 - uTime * 3.4 + vSlope.x * 32.0);
     float sp2 = sin(p.x * 5.2 - p.y * 16.2 + uTime * 2.9 + vSlope.y * 32.0);
     float sp3 = vNoise(vec2(p.x * 2.6, p.y * 6.8) + vec2(-uTime * 0.55, uTime * 0.45));
-    float sunCorridor = smoothstep(0.2, 3.8, p.x) * (1.0 - smoothstep(9.2, 11.8, p.x)) * smoothstep(-0.6, 2.2, p.y);
+    float sunCorridor = smoothstep(0.2, 3.8, p.x)
+                      * (1.0 - smoothstep(16.2, 19.5, p.x))
+                      * smoothstep(-1.0, 2.2, p.y)
+                      * (1.0 - smoothstep(16.2, 19.5, p.y));
     float sparkleVal = (sp1 * 0.36 + sp2 * 0.36 + sp3 * 0.44) * sunCorridor * clamp(uCloudFactor, 0.75, 1.05);
     float mSparkle = smoothstep(0.895, 0.915, sparkleVal) * (1.0 - quayShadow * 0.85);
 
@@ -259,36 +343,56 @@ const WATER_FRAGMENT_SHADER = /* glsl */ `
     baseCol = mix(baseCol, glintCol, mGold * 0.95);
     reflBoostAlpha = max(reflBoostAlpha, mGold);
 
-    // Subtle pastel rainbow sheen on far harbor water when rare rainbow is active
+    // Subtle pastel rainbow sheen on harbor water when rare panoramic rainbow is active
     if (uRainbowStrength > 0.01) {
-      float rbBand = clamp((p.x - 1.2) / 8.5, 0.0, 1.0);
+      float rbBand = clamp((p.x - 0.8) / 16.5, 0.0, 1.0);
       vec3 rbTint = 0.5 + 0.5 * cos(6.28318 * (rbBand * 0.82 + vec3(0.0, 0.33, 0.67)));
-      float rbMask = (1.0 - smoothstep(-1.2, 2.0, p.y))
-                   * smoothstep(0.5, 3.0, p.x)
-                   * (1.0 - smoothstep(8.5, 11.0, p.x));
+      float rbMask = (1.0 - smoothstep(-1.2, 5.5, p.y))
+                   * smoothstep(0.5, 3.5, p.x)
+                   * (1.0 - smoothstep(15.5, 19.5, p.x));
       baseCol = mix(baseCol, mix(baseCol, rbTint * 0.95 + 0.15, 0.35), rbMask * uRainbowStrength * 0.45);
     }
 
     // -----------------------------------------------------------------------
-    // 3. Crisp Posterized Shoreline, Breakwater & Tetrapod Cel-Foam (#F8FFFF)
+    // 3. Crisp Posterized Shoreline, Breakwaters, Islet & Tetrapod Cel-Foam (#F8FFFF)
     // -----------------------------------------------------------------------
-    float dQuayNorth = abs(p.y - (-1.5));
-    float dQuayWest = (p.y < 9.72)
-      ? abs(p.x - (-1.0))
-      : min(abs(p.x - (-2.66)), min(
-          (p.x < -0.95) ? abs(p.y - 9.82) : 99.0,
-          (p.x < -0.95) ? abs(p.y - 11.96) : 99.0
-        ));
+    float dQuayNorth = sdSegment(p, vec2(-1.0, -1.5), vec2(22.0, -1.5));
+    float dQuayWest = min(
+      min(
+        sdSegment(p, vec2(-1.0, -1.5), vec2(-1.0, 9.8)),
+        sdSegment(p, vec2(-1.0, 14.0), vec2(-1.0, 22.0))
+      ),
+      min(
+        sdSegment(p, vec2(-3.5, 9.8), vec2(-3.5, 14.0)),
+        min(
+          sdSegment(p, vec2(-3.5, 9.8), vec2(-1.0, 9.8)),
+          sdSegment(p, vec2(-3.5, 14.0), vec2(-1.0, 14.0))
+        )
+      )
+    );
 
     float dBwRaw = sdRoundBox(p - vec2(8.80, 1.35), vec2(0.82, 2.90), 0.16);
     float dBwEdge = (dBwRaw > -0.08) ? abs(dBwRaw) : 99.0;
 
-    // Scalloped foam rings around Tetrapod Zones (9.5..11.7, 1.4..6.4) & (9.8..11.7, 9.6..11.7)
+    float dOuterBwRaw = min(
+      sdRoundBox(p - vec2(16.95, 4.85), vec2(2.45, 0.58), 0.14),
+      sdRoundBox(p - vec2(18.85, 1.95), vec2(0.58, 3.45), 0.14)
+    );
+    float dOuterBwEdge = (dOuterBwRaw > -0.08) ? abs(dOuterBwRaw) : 99.0;
+
+    // Scalloped foam rings around Tetrapods, Floral Sea-Stack Islet & Outer Corner Reef
     float scallop = (vNoise(p * 2.4 + vec2(uTime * 0.22, -uTime * 0.18)) - 0.5) * 0.32;
     float dTet1 = abs(sdRoundBox(p - vec2(10.60, 3.90), vec2(1.04, 2.44), 0.42) + scallop);
-    float dTet2 = abs(sdRoundBox(p - vec2(10.75, 10.65), vec2(0.92, 1.02), 0.38) + scallop);
+    float dIsletFoam = abs(length(p - vec2(15.8, 14.2)) - 1.72 + scallop);
+    float dCornerReef = abs(sdRoundBox(p - vec2(20.4, 20.4), vec2(1.1, 1.1), 0.4) + scallop);
 
-    float dShore = min(min(dQuayNorth, dQuayWest), min(dBwEdge, min(dTet1, dTet2)));
+    float dShore = min(
+      min(dQuayNorth, dQuayWest),
+      min(
+        min(dBwEdge, dOuterBwEdge),
+        min(dTet1, min(dIsletFoam, dCornerReef))
+      )
+    );
     float foamPulse = sin(uTime * 2.05 + p.x * 1.65 + p.y * 1.45) * 0.042
                     + (vNoise(p * 3.1 - uTime * 0.32) - 0.5) * 0.075;
 
@@ -302,10 +406,10 @@ const WATER_FRAGMENT_SHADER = /* glsl */ `
     baseCol = mix(baseCol, colFoam, foamMask);
 
     // -----------------------------------------------------------------------
-    // 4. Alpha Transparency (0.66 near foreground cutaway .. 0.84 in reflections)
+    // 4. Alpha Transparency (0.64 near outer sea-glass cutaway .. 0.84 in reflections)
     // -----------------------------------------------------------------------
-    float fgCutaway = max(smoothstep(8.3, 10.4, p.y), smoothstep(9.3, 10.9, p.x));
-    float alpha = mix(0.75, 0.66, fgCutaway);
+    float fgCutaway = max(smoothstep(18.2, 20.8, p.y), smoothstep(18.2, 20.8, p.x));
+    float alpha = mix(0.75, 0.64, fgCutaway);
     alpha = mix(alpha, 0.84, reflBoostAlpha);
     alpha = max(alpha, foamMask * 0.90);
 
@@ -338,30 +442,48 @@ const RAIN_VERTEX_SHADER = /* glsl */ `
     if (xz.x > 5.2 && xz.x < 8.8 && xz.y > -7.1 && xz.y < -3.6) return 3.60;
     // Fairytale Villa roof footprint
     if (xz.x > -10.6 && xz.x < -3.4 && xz.y > 0.6 && xz.y < 8.4) return 5.10;
-    // Open harbor bay + slipway pocket
+    // West Flower-Sea Gazebo roof footprint
+    if (length(xz - vec2(-16.2, 14.5)) < 2.2) return 4.65;
+    // Floral Sea-Stack Islet turf & sakura crown base
+    if (length(xz - vec2(15.8, 14.2)) < 1.65) return 1.55;
+    // Expanded open harbor bay + slipway cove
     bool inMainBay = (xz.x > -0.95 && xz.y > -1.45);
-    bool inSlipway = (xz.x > -2.70 && xz.y > 9.80);
+    bool inSlipway = (xz.x > -3.50 && xz.x <= -0.95 && xz.y > 9.80 && xz.y < 14.00);
     if (inMainBay || inSlipway) return 0.10;
+    // Inner NW stepped hillside terraces
+    if (xz.x > -12.0 && xz.x < -2.6 && xz.y > -12.0 && xz.y < -4.8) {
+      float nwT = clamp(min((-2.6 - xz.x) / 7.5, (-4.8 - xz.y) / 6.0), 0.0, 1.0);
+      return mix(2.25, 4.50, nwT);
+    }
+    // Surrounding 44m Flower Hills, Sakura Windmill Hill, SW Flower Bluff & East Cape (1.35 .. 4.50)
+    if (xz.x < -12.0 || xz.y < -12.0 || (xz.x < -1.0 && xz.y > 12.0) || (xz.x > 12.0 && xz.y < -1.5)) {
+      float distOuter = max(
+        max(-12.0 - xz.x, -12.0 - xz.y),
+        max((xz.y > 12.0) ? (xz.y - 12.0) * 0.70 : 0.0, (xz.x > 12.0) ? (xz.x - 12.0) * 0.60 : 0.0)
+      );
+      float nwPeak = (xz.x < -8.0 && xz.y < -8.0) ? 0.85 : 0.0;
+      return clamp(1.35 + distOuter * 0.24 + nwPeak, 1.35, 4.50);
+    }
     // Concrete pier level
     return 1.20;
   }
 
   void main() {
-    float spanY = 13.4; // Y wraps in [0.1, 13.5]
+    float spanY = 16.4; // Y wraps in [0.1, 16.5]
     float travel = uFallDist * aSpeed + aPhase * spanY;
-    float cy = 13.5 - mod(travel, spanY);
+    float cy = 16.5 - mod(travel, spanY);
 
-    // Compensate X/Z drift inside cycle so streaks stay inside [-12, +12]
-    float fallFromTop = 13.5 - cy;
+    // Compensate X/Z drift inside cycle so streaks stay inside [-21.5, +21.5]
+    float fallFromTop = 16.5 - cy;
     vec3 dir = vec3(-0.14, -1.0, 0.09);
-    float cx = mod(aAnchor.x + 12.0 + dir.x * fallFromTop, 24.0) - 12.0;
-    float cz = mod(aAnchor.z + 12.0 + dir.z * fallFromTop, 24.0) - 12.0;
+    float cx = mod(aAnchor.x + 21.5 + dir.x * fallFromTop, 43.0) - 21.5;
+    float cz = mod(aAnchor.z + 21.5 + dir.z * fallFromTop, 43.0) - 21.5;
 
     vec3 headPos = vec3(cx, cy, cz);
     vec3 vertPos = headPos - dir * (aLength * (1.0 - aEnd));
 
     float floorY = roofAndGroundFloor(headPos.xz);
-    vClipVis = smoothstep(floorY, floorY + 0.35, headPos.y) * (1.0 - smoothstep(12.6, 13.5, headPos.y));
+    vClipVis = smoothstep(floorY, floorY + 0.35, headPos.y) * (1.0 - smoothstep(15.5, 16.5, headPos.y));
     vEnd = aEnd;
     vTint = aTint;
 
@@ -607,8 +729,8 @@ const RAINBOW_FRAGMENT_SHADER = /* glsl */ `
 
     // Softly feathered radial edges + airy watercolor ends
     float radialBell = smoothstep(0.0, 0.24, radialT) * (1.0 - smoothstep(0.76, 1.0, radialT));
-    float endFeather = smoothstep(0.24, 0.92, angle) * (1.0 - smoothstep(2.22, 2.90, angle));
-    float heightFade = smoothstep(1.05, 2.85, vWorldPos.y);
+    float endFeather = smoothstep(0.20, 0.88, angle) * (1.0 - smoothstep(2.26, 2.94, angle));
+    float heightFade = smoothstep(1.25, 3.85, vWorldPos.y);
 
     float breath = 0.93 + 0.07 * sin(angle * 5.0 + uTime * 0.55);
     vec3 col = pastelRainbowSpectrum((radialT - 0.10) / 0.80);
@@ -649,9 +771,12 @@ function normalizePoint(raw, fallbackY = 1.162, fallbackR = 0.45) {
 }
 
 function isOpenHarborWater(x, z) {
-  // Avoid spawning surface ripples right inside moored boat hulls or solid breakwater
-  if (x < -0.85 || z < -1.35 || x > 11.75 || z > 11.75) return false;
-  if (x > 7.85 && x < 9.75 && z < 4.35) return false; // Breakwater
+  // Avoid spawning surface ripples inside boats, breakwaters, tetrapod reefs, or Floral Sea-Stack Islet
+  if (x < -0.45 || z < -0.95 || x > 21.25 || z > 21.25) return false;
+  if (x > 7.85 && x < 11.65 && z < 5.35) return false; // Short Breakwater, Lighthouse & Tetrapods
+  if ((x > 14.1 && x < 19.7 && z > 4.0 && z < 5.7) || (x > 18.0 && x < 19.7 && z < 5.7)) return false; // Extended Outer Breakwater
+  if (Math.hypot(x - 15.8, z - 14.2) < 2.15) return false; // Floral Sea-Stack Islet & Reef
+  if (x > 19.1 && z > 19.1) return false; // Outer corner tetrapod reef
   if (Math.abs(x - 2.1) < 1.95 && Math.abs(z - -0.35) < 0.85) return false; // Boat 0
   if (Math.abs(x - 6.0) < 1.75 && Math.abs(z - -0.40) < 0.80) return false; // Boat 1
   if (Math.abs(x - -0.1) < 0.80 && Math.abs(z - 2.25) < 1.45) return false; // Boat 2
@@ -890,10 +1015,10 @@ export function buildSunshowerAtmosphere(opts = {}) {
     side: THREE.DoubleSide,
   });
 
-  // Main Harbor Bay: X in [-1.0, +12.0], Z in [-1.5, +12.0], Y = 0.0 (96 x 96 subdivisions)
-  const bayGeo = new THREE.PlaneGeometry(13.0, 13.5, 96, 96);
+  // Main Harbor & Open Sea Bay: X in [-1.0, +22.0], Z in [-1.5, +22.0], Y = 0.0 (128 x 128 subdivisions)
+  const bayGeo = new THREE.PlaneGeometry(23.0, 23.5, 128, 128);
   bayGeo.rotateX(-Math.PI / 2);
-  bayGeo.translate(5.5, 0.0, 5.25);
+  bayGeo.translate(10.5, 0.0, 10.25);
 
   const bayWaterMesh = new THREE.Mesh(bayGeo, waterMat);
   bayWaterMesh.name = "HarborPosterizedWater";
@@ -901,10 +1026,10 @@ export function buildSunshowerAtmosphere(opts = {}) {
   bayWaterMesh.raycast = () => {};
   group.add(bayWaterMesh);
 
-  // Shallow Slipway Water Pocket: X in [-2.7, -1.0], Z in [+9.8, +12.0], Y = 0.0
-  const slipGeo = new THREE.PlaneGeometry(1.7, 2.2, 16, 22);
+  // Slipway Water Cove: X in [-3.5, -1.0], Z in [+9.8, +14.0], Y = 0.0
+  const slipGeo = new THREE.PlaneGeometry(2.5, 4.2, 24, 40);
   slipGeo.rotateX(-Math.PI / 2);
-  slipGeo.translate(-1.85, 0.0, 10.9);
+  slipGeo.translate(-2.25, 0.0, 11.9);
 
   const slipWaterMesh = new THREE.Mesh(slipGeo, waterMat);
   slipWaterMesh.name = "SlipwayWaterPocket";
@@ -913,9 +1038,9 @@ export function buildSunshowerAtmosphere(opts = {}) {
   group.add(slipWaterMesh);
 
   // =========================================================================
-  // 2. Slanted Golden Sunshower Rain Streaks (450 streaks) + Ripples + Drips
+  // 2. Slanted Golden Sunshower Rain Streaks (780 streaks) + Ripples + Drips
   // =========================================================================
-  const RAIN_COUNT = 450;
+  const RAIN_COUNT = 780;
   const rainGeo = new THREE.BufferGeometry();
   const rainPositions = new Float32Array(RAIN_COUNT * 2 * 3);
   const rainAnchors = new Float32Array(RAIN_COUNT * 2 * 3);
@@ -926,9 +1051,9 @@ export function buildSunshowerAtmosphere(opts = {}) {
   const rainTints = new Float32Array(RAIN_COUNT * 2);
 
   for (let i = 0; i < RAIN_COUNT; i += 1) {
-    const ax = (rng() - 0.5) * 24.0;
-    const ay = 0.1 + rng() * 13.4;
-    const az = (rng() - 0.5) * 24.0;
+    const ax = (rng() - 0.5) * 43.0;
+    const ay = 0.1 + rng() * 16.4;
+    const az = (rng() - 0.5) * 43.0;
     const phase = rng();
     const speed = 0.88 + rng() * 0.28;
     const len = 0.42 + rng() * 0.30;
@@ -961,7 +1086,7 @@ export function buildSunshowerAtmosphere(opts = {}) {
   rainGeo.setAttribute("aLength", new THREE.BufferAttribute(rainLengths, 1));
   rainGeo.setAttribute("aEnd", new THREE.BufferAttribute(rainEnds, 1));
   rainGeo.setAttribute("aTint", new THREE.BufferAttribute(rainTints, 1));
-  rainGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 6.8, 0), 20.0);
+  rainGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 8.3, 0), 36.0);
 
   const rainUniforms = {
     uFallDist: { value: 0.0 },
@@ -983,7 +1108,7 @@ export function buildSunshowerAtmosphere(opts = {}) {
   rainStreaks.raycast = () => {};
   group.add(rainStreaks);
 
-  // --- Concentric Raindrop Ripples (40 pool: 28 harbor water + 12 pier puddles) ---
+  // --- Concentric Raindrop Ripples (54 pool: 42 harbor/open sea water + 12 pier puddles) ---
   const defaultPuddles = [
     { x: -2.45, y: 1.162, z: 3.35, r: 0.65 },
     { x: -2.65, y: 1.162, z: 6.75, r: 0.72 },
@@ -1004,20 +1129,20 @@ export function buildSunshowerAtmosphere(opts = {}) {
   rippleRingGeo.rotateX(-Math.PI / 2);
 
   const ripples = [];
-  const WATER_RIPPLE_COUNT = 28;
+  const WATER_RIPPLE_COUNT = 42;
   const PUDDLE_RIPPLE_COUNT = 12;
   const TOTAL_RIPPLES = WATER_RIPPLE_COUNT + PUDDLE_RIPPLE_COUNT;
 
-  function placeRandomHarborRipple(rObj) {
-    for (let attempt = 0; attempt < 12; attempt += 1) {
-      const rx = -0.6 + rng() * 12.1;
-      const rz = -1.1 + rng() * 12.6;
+  function spawnWaterRipple(rObj) {
+    for (let attempt = 0; attempt < 14; attempt += 1) {
+      const rx = -0.4 + rng() * 21.6; // X in [-0.4, +21.2]
+      const rz = -0.9 + rng() * 22.1; // Z in [-0.9, +21.2]
       if (isOpenHarborWater(rx, rz)) {
         rObj.mesh.position.set(rx, 0.03, rz);
         return;
       }
     }
-    rObj.mesh.position.set(3.2 + rng() * 4.5, 0.03, 4.5 + rng() * 5.0);
+    rObj.mesh.position.set(4.5 + rng() * 8.0, 0.03, 5.5 + rng() * 8.0);
   }
 
   function placeRandomPuddleRipple(rObj) {
@@ -1058,7 +1183,7 @@ export function buildSunshowerAtmosphere(opts = {}) {
     if (isPuddle) {
       placeRandomPuddleRipple(rObj);
     } else {
-      placeRandomHarborRipple(rObj);
+      spawnWaterRipple(rObj);
     }
     ripples.push(rObj);
   }
@@ -1122,7 +1247,7 @@ export function buildSunshowerAtmosphere(opts = {}) {
   function inferGroundY(x, z, explicitGroundY) {
     if (typeof explicitGroundY === "number") return explicitGroundY;
     const overMainBay = x > -0.96 && z > -1.46;
-    const overSlipway = x > -2.70 && z > 9.80;
+    const overSlipway = x > -3.50 && z > 9.80 && z < 14.00;
     return overMainBay || overSlipway ? 0.03 : 1.162;
   }
 
@@ -1173,12 +1298,15 @@ export function buildSunshowerAtmosphere(opts = {}) {
   const beamQuat = new THREE.Quaternion().setFromUnitVectors(upAxis, sunDownVec.clone().negate());
 
   const beamSpecs = [
-    { target: [1.8, 3.6, -5.5], width: 1.95, length: 10.6, alpha: 0.068 },  // Co-op Shed clerestory
-    { target: [2.2, 2.2, -0.3], width: 1.65, length: 10.2, alpha: 0.064 },  // Boat 0 wheelhouse
-    { target: [5.9, 2.2, -0.3], width: 1.65, length: 10.2, alpha: 0.064 },  // Boat 1 wheelhouse
-    { target: [-4.2, 3.2, 3.6], width: 1.85, length: 9.8, alpha: 0.062 },   // Fairytale Villa bay windows
-    { target: [-2.1, 2.6, 5.9], width: 1.90, length: 10.4, alpha: 0.068 },  // Foreground instrument cases & umbrella
-    { target: [8.6, 3.8, 3.2], width: 2.15, length: 10.8, alpha: 0.066 },   // Lighthouse & breakwater
+    { target: [1.8, 3.6, -5.5], width: 1.95, length: 10.6, alpha: 0.068 },     // Co-op Shed clerestory
+    { target: [2.2, 2.2, -0.3], width: 1.65, length: 10.2, alpha: 0.064 },     // Boat 0 wheelhouse
+    { target: [5.9, 2.2, -0.3], width: 1.65, length: 10.2, alpha: 0.064 },     // Boat 1 wheelhouse
+    { target: [-4.2, 3.2, 3.6], width: 1.85, length: 9.8, alpha: 0.062 },      // Fairytale Villa bay windows
+    { target: [-2.1, 2.6, 5.9], width: 1.90, length: 10.4, alpha: 0.068 },     // Foreground instrument cases & umbrella
+    { target: [8.6, 3.8, 3.2], width: 2.15, length: 10.8, alpha: 0.066 },      // Lighthouse & breakwater
+    { target: [-16.2, 3.2, 14.5], width: 2.6, length: 12.5, alpha: 0.065 },    // West Flower-Sea Gazebo
+    { target: [-15.8, 5.6, -16.8], width: 2.8, length: 12.5, alpha: 0.062 },   // North Sakura Windmill Hill
+    { target: [15.8, 1.5, 14.2], width: 2.3, length: 11.8, alpha: 0.060 },     // Bay Floral Sea-Stack Islet
   ];
 
   const beamMaterials = [];
@@ -1264,13 +1392,16 @@ export function buildSunshowerAtmosphere(opts = {}) {
   });
 
   // =========================================================================
-  // 4. 3D Seagulls (4 Wheeling + 1 Low-Skimming + 2 Perched), Sea Mist & Rainbow
+  // 4. 3D Seagulls (8 Flying: 7 Wheeling + 1 Low-Skimming, plus 2 Perched), Sea Mist & Rainbow
   // =========================================================================
   const wheelingSpecs = [
     { cx: 3.8, cy: 6.4, cz: 1.6, rx: 4.8, rz: 4.1, speed: 0.34, phase: 0.2, flapFreq: 5.4, dir: 1 },
     { cx: 5.2, cy: 7.3, cz: 3.4, rx: 5.6, rz: 4.6, speed: 0.28, phase: 2.1, flapFreq: 4.9, dir: -1 },
     { cx: 2.6, cy: 8.1, cz: -0.6, rx: 6.2, rz: 4.8, speed: 0.25, phase: 4.0, flapFreq: 5.1, dir: 1 },
     { cx: 6.1, cy: 6.0, cz: 4.2, rx: 4.4, rz: 3.9, speed: 0.37, phase: 5.3, flapFreq: 5.7, dir: -1 },
+    { cx: 14.5, cy: 7.2, cz: 11.5, rx: 5.4, rz: 4.8, speed: 0.29, phase: 1.1, flapFreq: 5.0, dir: 1 },   // Outer bay
+    { cx: 15.8, cy: 4.2, cz: 14.2, rx: 3.4, rz: 3.1, speed: 0.36, phase: 3.1, flapFreq: 5.5, dir: -1 },  // Floral Sea-Stack Islet
+    { cx: -13.5, cy: 6.8, cz: 12.5, rx: 4.6, rz: 4.2, speed: 0.27, phase: 4.8, flapFreq: 4.8, dir: 1 },  // West Flower-Sea Cliff
   ];
 
   const wheelingGulls = wheelingSpecs.map((spec) => {
@@ -1308,13 +1439,14 @@ export function buildSunshowerAtmosphere(opts = {}) {
     return { rig, spec };
   });
 
-  // --- Distant Drifting Sea Mist (5 soft translucent ribbons) ---
+  // --- Distant Drifting Sea Mist (6 soft translucent ribbons across X in [3.0, 21.0], Z in [-11.5, -3.2]) ---
   const mistSpecs = [
-    { baseX: 4.0, y: 0.55, z: -9.2, w: 5.4, h: 0.72, speed: 0.24, opacity: 0.20, seed: 0.1 },
-    { baseX: 7.4, y: 0.85, z: -10.1, w: 6.2, h: 0.88, speed: 0.19, opacity: 0.22, seed: 1.4 },
-    { baseX: 9.8, y: 0.48, z: -9.6, w: 4.8, h: 0.68, speed: 0.27, opacity: 0.18, seed: 2.8 },
-    { baseX: 5.6, y: 1.18, z: -11.1, w: 6.6, h: 0.96, speed: 0.16, opacity: 0.20, seed: 4.1 },
-    { baseX: 8.6, y: 1.32, z: -11.5, w: 5.8, h: 0.84, speed: 0.21, opacity: 0.17, seed: 5.5 },
+    { baseX: 4.2,  y: 0.62, z: -9.6,  w: 6.4, h: 0.78, speed: 0.24, opacity: 0.20, seed: 0.1 },
+    { baseX: 7.8,  y: 0.92, z: -10.8, w: 7.2, h: 0.92, speed: 0.19, opacity: 0.22, seed: 1.4 },
+    { baseX: 11.4, y: 1.38, z: -11.4, w: 7.6, h: 1.02, speed: 0.16, opacity: 0.19, seed: 2.8 },
+    { baseX: 14.6, y: 0.68, z: -4.6,  w: 6.2, h: 0.76, speed: 0.26, opacity: 0.20, seed: 4.1 },
+    { baseX: 17.5, y: 1.12, z: -6.4,  w: 6.8, h: 0.88, speed: 0.21, opacity: 0.18, seed: 5.5 },
+    { baseX: 20.1, y: 1.56, z: -3.5,  w: 6.0, h: 0.84, speed: 0.23, opacity: 0.17, seed: 6.9 },
   ];
 
   const mistRibbons = mistSpecs.map((ms) => {
@@ -1340,16 +1472,16 @@ export function buildSunshowerAtmosphere(opts = {}) {
     return { mesh: mMesh, mat: mMat, spec: ms };
   });
 
-  // --- Rare Serendipitous Sunshower Rainbow ---
-  const RAINBOW_INNER_R = 7.55;
-  const RAINBOW_OUTER_R = 9.35;
+  // --- Grand Panoramic Watercolor Rainbow Arch (arches over Sakura/Flower Hills & Harbor Lighthouse) ---
+  const RAINBOW_INNER_R = 14.2;
+  const RAINBOW_OUTER_R = 17.6;
   const rainbowGeo = new THREE.RingGeometry(
     RAINBOW_INNER_R,
     RAINBOW_OUTER_R,
-    96,
+    128,
     8,
-    0.06 * Math.PI,
-    0.88 * Math.PI
+    0.05 * Math.PI,
+    0.90 * Math.PI
   );
 
   const rainbowUniforms = {
@@ -1370,8 +1502,8 @@ export function buildSunshowerAtmosphere(opts = {}) {
 
   const rainbowMesh = new THREE.Mesh(rainbowGeo, rainbowMat);
   rainbowMesh.name = "SunshowerRainbowArch";
-  rainbowMesh.position.set(4.8, 0.8, -5.8);
-  rainbowMesh.rotation.y = -0.22;
+  rainbowMesh.position.set(1.5, 1.2, -13.8);
+  rainbowMesh.rotation.y = -0.16;
   rainbowMesh.renderOrder = 6;
   rainbowMesh.visible = false;
   rainbowMesh.raycast = () => {};
@@ -1496,7 +1628,7 @@ export function buildSunshowerAtmosphere(opts = {}) {
         if (rObj.isPuddle) {
           placeRandomPuddleRipple(rObj);
         } else {
-          placeRandomHarborRipple(rObj);
+          spawnWaterRipple(rObj);
         }
         rObj.mesh.visible = false;
       } else {
@@ -1543,7 +1675,7 @@ export function buildSunshowerAtmosphere(opts = {}) {
       }
     }
 
-    // 7. 4 Wheeling Harbor Seagulls
+    // 7. 7 Wheeling Harbor & Flower-Hill Seagulls (+ 1 Low-Skimming = 8 Flying Gulls)
     for (let i = 0; i < wheelingGulls.length; i += 1) {
       const { rig, spec } = wheelingGulls[i];
       const ang = elapsed * spec.speed * spec.dir + spec.phase;
@@ -1629,13 +1761,13 @@ export function buildSunshowerAtmosphere(opts = {}) {
       }
     }
 
-    // 10. Distant Drifting Sea Mist Ribbons (X in [2.5, 11.5], Z in [-11.6, -8.8])
+    // 10. Distant Drifting Sea Mist Ribbons (X in [3.0, 21.0], Z in [-11.5, -3.2], Y in [0.55, 1.65])
     for (let i = 0; i < mistRibbons.length; i += 1) {
       const { mesh, mat, spec } = mistRibbons[i];
       mat.uniforms.uTime.value = elapsed;
-      const driftSpan = 9.0; // X spans [2.5, 11.5]
-      const rawX = (spec.baseX - 2.5 + elapsed * spec.speed) % driftSpan;
-      const xPos = 2.5 + rawX;
+      const driftSpan = 18.0; // X spans [3.0, 21.0]
+      const rawX = (spec.baseX - 3.0 + elapsed * spec.speed) % driftSpan;
+      const xPos = 3.0 + rawX;
       const edgeFade = Math.sin((rawX / driftSpan) * Math.PI);
       mesh.position.x = xPos;
       mesh.position.y = spec.y + Math.sin(elapsed * 0.32 + spec.seed) * 0.06;
