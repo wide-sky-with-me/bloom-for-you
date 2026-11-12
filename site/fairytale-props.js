@@ -105,13 +105,13 @@ export function createFairyExplorer({
   root.position.copy(pos);
   scene.add(root);
 
-  // Soft feathered warm ground glow pool beneath the sprite's feet (no hard inner cutout!)
+  // Soft feathered warm ground glow pool beneath the sprite's feet (delicate so boots & petal skirt stay crisp!)
   const footHalo = new THREE.Mesh(
-    new THREE.CircleGeometry(0.42, 32),
-    createGroundGlowDiscMaterial(0xfde047, 0.32)
+    new THREE.CircleGeometry(0.36, 32),
+    createGroundGlowDiscMaterial(0xfde047, 0.15)
   );
   footHalo.rotation.x = -Math.PI * 0.5;
-  footHalo.position.y = 0.025;
+  footHalo.position.y = 0.022;
   root.add(footHalo);
 
   // Body pivot for joyful walking hop, turn banking, and mid-air twirls
@@ -257,10 +257,10 @@ export function createFairyExplorer({
     new THREE.MeshBasicMaterial({ color: 0xfef9c3 })
   );
   const lanternAura = new THREE.Mesh(
-    new THREE.SphereGeometry(0.24, 18, 14),
-    createSoftGlowMaterial(0xfbbf24, 0.68, 2.6)
+    new THREE.SphereGeometry(0.15, 16, 12),
+    createSoftGlowMaterial(0xfbbf24, 0.46, 2.8)
   );
-  const spriteLanternLight = new THREE.PointLight(0xfbbf24, 1.35, 4.6, 1.45);
+  const spriteLanternLight = new THREE.PointLight(0xfbbf24, 1.25, 4.6, 1.45);
   lanternBell.add(lanternCap, lanternCore, lanternAura, spriteLanternLight);
 
   // Mutable animation rig bindings — seamlessly rebound when Blender 4.0 fairy_sprite.glb resolves!
@@ -407,10 +407,10 @@ export function createFairyExplorer({
     (waypoints[wpIndex] || startWp).z
   );
   let hasPlayerTarget = false;
-  let pauseTimer = 0.8;
+  let pauseTimer = 3.2;
   let joySpinTimer = 0;
   let stridePhase = 0;
-  let heading = 0.25;
+  let heading = 0.24;
   let dustAccum = 0;
   const lanternWorldTmp = new THREE.Vector3();
   const headScreenProj = new THREE.Vector3();
@@ -456,9 +456,16 @@ export function createFairyExplorer({
     // Autonomous or player-guided locomotion
     if (pauseTimer > 0) {
       pauseTimer -= dt;
-      // Gentle curious hover & look-around while admiring flowers
+      // Gentle curious hover & turn toward viewer (+Z) while admiring flowers so face & eyes shine!
+      const idleGreetHeading = clamp(-pos.x * 0.14, -0.36, 0.36);
+      let hDiff = idleGreetHeading - heading;
+      while (hDiff > Math.PI) hDiff -= Math.PI * 2;
+      while (hDiff < -Math.PI) hDiff += Math.PI * 2;
+      heading += hDiff * Math.min(1, dt * 2.6);
       rig.bodyPivot.position.y = 0.08 + Math.sin(timeSec * 3.4) * 0.032;
-      rig.headGroup.rotation.y = Math.sin(timeSec * 2.1) * 0.28;
+      rig.headGroup.rotation.y = Math.sin(timeSec * 2.1) * 0.24;
+      rig.leftLeg.rotation.x *= 0.85;
+      rig.rightLeg.rotation.x *= 0.85;
     } else {
       const dx = targetPos.x - pos.x;
       const dz = targetPos.z - pos.z;
@@ -650,7 +657,7 @@ export function createFairytaleWorldProps({
     [-2.95, 2.85], [-3.65, 1.35], [2.15, 2.35], [3.45, 1.55], [2.95, -0.95],
     [1.85, -2.85], [-2.55, -1.65], [-3.25, -3.85], [0.95, -4.45], [-0.85, -5.05],
     [3.85, 0.25], [-1.85, 4.35], [2.45, 3.45], [-4.15, -0.45], [3.25, -2.35],
-    [-1.15, 0.65], [1.95, 0.85], [-2.35, -4.65]
+    [-2.85, 0.45], [1.95, 0.85], [-2.35, -4.65]
   ];
   for (let i = 0; i < boulderCoords.length && sIdx < stoneCount; i++) {
     const [bx, bz] = boulderCoords[i];
@@ -973,62 +980,84 @@ export function createFairytaleWorldProps({
   }
 
   // ==========================================================================
+  // 5B. SCULPTED CLIMBING-ROSE GARDEN ARCHWAY OVER UPPER PATH (蔷薇花拱门)
+  // ==========================================================================
+  const archPt = pathCurve.getPointAt(0.76);
+  const archTan = pathCurve.getTangentAt(0.76);
+  const archPos = new THREE.Vector3(archPt.x, meadowHeight(archPt.x, archPt.z), archPt.z);
+  const archGroup = new THREE.Group();
+  archGroup.position.copy(archPos);
+  archGroup.rotation.y = Math.atan2(-archTan.x, -archTan.z);
+  scene.add(archGroup);
+
+  const archGlowL = new THREE.Mesh(
+    new THREE.SphereGeometry(0.24, 14, 12),
+    createSoftGlowMaterial(0xfde047, 0.44, 2.7)
+  );
+  archGlowL.position.set(-0.54, 1.16, 0);
+  const archGlowR = archGlowL.clone();
+  archGlowR.position.set(0.54, 1.16, 0);
+  archGroup.add(archGlowL, archGlowR);
+
+  // ==========================================================================
   // 6. WONDER #5: MOONLIT GIANT DANDELION PUFFS (月光蒲公英绒球簇 + 飘飞种子)
   // ==========================================================================
   const dandCenter = new THREE.Vector3(1.42, meadowHeight(1.42, -2.05), -2.05);
   const dandGroup = new THREE.Group();
+  dandGroup.position.copy(dandCenter);
   scene.add(dandGroup);
 
-  for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2;
-    const dx = dandCenter.x + Math.cos(a) * (i === 0 ? 0 : 0.28);
-    const dz = dandCenter.z + Math.sin(a) * (i === 0 ? 0 : 0.28);
-    const dy = meadowHeight(dx, dz);
-    const h = 0.44 + (i % 3) * 0.11;
-
+  const dandFallback = new THREE.Group();
+  const dandClockOffsets = [
+    [0.0, 0.58, 0.0],
+    [0.22, 0.49, 0.08],
+    [-0.19, 0.44, 0.15],
+    [-0.16, 0.52, -0.20],
+    [0.18, 0.41, -0.19]
+  ];
+  for (let i = 0; i < dandClockOffsets.length; i++) {
+    const [lx, h, lz] = dandClockOffsets[i];
     const stem = new THREE.Mesh(
       new THREE.CylinderGeometry(0.010, 0.014, h, 8),
       new THREE.MeshLambertMaterial({ color: 0x4d7c0f })
     );
-    stem.position.set(dx, dy + h * 0.5, dz);
-
-    const puffOuter = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.115 + (i === 0 ? 0.025 : 0), 2),
-      new THREE.MeshBasicMaterial({
-        color: 0xe0f2fe,
-        wireframe: true,
-        transparent: true,
-        opacity: 0.52
-      })
+    stem.position.set(lx, h * 0.5, lz);
+    const puffBall = new THREE.Mesh(
+      new THREE.SphereGeometry(0.115, 16, 12),
+      new THREE.MeshLambertMaterial({ color: 0xe0f2fe, transparent: true, opacity: 0.72 })
     );
-    puffOuter.position.set(dx, dy + h, dz);
+    puffBall.position.set(lx, h, lz);
+    dandFallback.add(stem, puffBall);
 
-    const puffInner = new THREE.Mesh(
-      new THREE.SphereGeometry(0.11, 14, 12),
-      createSoftGlowMaterial(0xfef9c3, 0.55, 2.5)
+    const puffHalo = new THREE.Mesh(
+      new THREE.SphereGeometry(0.155, 14, 12),
+      createSoftGlowMaterial(0xfef9c3, 0.36, 2.6)
     );
-    puffInner.position.copy(puffOuter.position);
-    dandGroup.add(stem, puffOuter, puffInner);
+    puffHalo.position.set(lx * 1.06, h * 1.06, lz * 1.06);
+    dandGroup.add(puffHalo);
   }
-  registerWonder('wonder-dandelions', dandCenter, 0.88, 0.42);
+  dandGroup.add(dandFallback);
+  registerWonder('wonder-dandelions', dandCenter, 0.88, 0.45);
 
-  // 42 Floating Parachute Seed Wishes
+  // 42 Floating Parachute Seed Wishes (upgraded to sculpted 3D DandelionSeedMesh!)
   const seedCount = 42;
   const seedMeshes = [];
-  const seedMat = new THREE.MeshBasicMaterial({
+  const seedMat = new THREE.MeshLambertMaterial({
     color: 0xfef9c3,
+    emissive: 0xbae6fd,
+    emissiveIntensity: 0.58,
     transparent: true,
-    opacity: 0.85,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false
+    opacity: 0.92
   });
+  const seedFallbackGeo = new THREE.OctahedronGeometry(0.020, 0);
   for (let i = 0; i < seedCount; i++) {
-    const sm = new THREE.Mesh(new THREE.OctahedronGeometry(0.022, 0), seedMat);
+    const sm = new THREE.Mesh(seedFallbackGeo, seedMat);
     sm.position.set(
       dandCenter.x + (rng() - 0.5) * 0.9,
       dandCenter.y + 0.35 + rng() * 1.4,
       dandCenter.z + (rng() - 0.5) * 0.9
     );
+    sm.scale.setScalar(0.95 + rng() * 0.35);
     scene.add(sm);
     seedMeshes.push({
       mesh: sm,
@@ -1040,9 +1069,9 @@ export function createFairytaleWorldProps({
   }
 
   // ==========================================================================
-  // 7. WONDER #6: MIRROR-MOONLIGHT DEW POND & WATER-LILIES (星影睡莲露珠潭)
+  // 7. WONDER #6: MIRROR-MOONLIGHT DEW POND, LOTUSES & FROG PRINCE (星影睡莲露珠潭)
   // ==========================================================================
-  const pondPos = new THREE.Vector3(-1.18, meadowHeight(-1.18, 3.45) + 0.028, 3.45);
+  const pondPos = new THREE.Vector3(-1.48, meadowHeight(-1.48, 0.85) + 0.028, 0.85);
   const pondGroup = new THREE.Group();
   pondGroup.position.copy(pondPos);
   scene.add(pondGroup);
@@ -1079,9 +1108,10 @@ export function createFairytaleWorldProps({
   });
   const waterDisc = new THREE.Mesh(new THREE.CircleGeometry(0.68, 36), waterMat);
   waterDisc.rotation.x = -Math.PI * 0.5;
+  waterDisc.position.y = 0.008;
   pondGroup.add(waterDisc);
 
-  // 3 Floating Emerald Lily-Pads & Blooming Pink/Cream Water-Lilies
+  const pondFallback = new THREE.Group();
   const lotusSpots = [
     { x: 0.14, z: -0.08, r: 0.16, col: 0xf9a8d4 },
     { x: -0.20, z: 0.14, r: 0.13, col: 0xfef08a },
@@ -1093,24 +1123,16 @@ export function createFairytaleWorldProps({
       new THREE.MeshLambertMaterial({ color: 0x16a34a, emissive: 0x064e3b, emissiveIntensity: 0.5 })
     );
     pad.rotation.x = -Math.PI * 0.5;
-    pad.position.set(ls.x, 0.012, ls.z);
-
-    const lotus = new THREE.Group();
-    lotus.position.set(ls.x, 0.032, ls.z);
-    for (let k = 0; k < 6; k++) {
-      const petal = new THREE.Mesh(
-        new THREE.ConeGeometry(0.032, 0.075, 5),
-        new THREE.MeshBasicMaterial({ color: ls.col })
-      );
-      const pa = (k / 6) * Math.PI * 2;
-      petal.position.set(Math.cos(pa) * 0.026, 0.015, Math.sin(pa) * 0.026);
-      petal.rotation.z = -Math.cos(pa) * 0.65;
-      petal.rotation.x = Math.sin(pa) * 0.65;
-      lotus.add(petal);
-    }
-    pondGroup.add(pad, lotus);
+    pad.position.set(ls.x, 0.014, ls.z);
+    pondFallback.add(pad);
   }
-  registerWonder('wonder-pond', pondPos, 0.90, 0.24);
+  pondGroup.add(pondFallback);
+  registerWonder('wonder-pond', pondPos, 0.92, 0.24);
+
+  const pondRig = {
+    frog: null,
+    frogBaseY: 0.026
+  };
 
   // ==========================================================================
   // 8. WONDER #7: MOSSY HOLLOW TREE STUMP & STARLIGHT HONEY JARS (树洞星光蜜罐)
@@ -1214,6 +1236,58 @@ export function createFairytaleWorldProps({
         }
       }
 
+      // E. Fluffy Sculpted Moonlit Dandelion Clocks + 42 3D Parachute Seeds!
+      const dandModel = gltf.scene.getObjectByName('DandelionClusterProp');
+      if (dandModel) {
+        const dClone = dandModel.clone(true);
+        dClone.position.set(0, 0, 0);
+        dClone.scale.setScalar(1.06);
+        dandGroup.remove(dandFallback);
+        dandGroup.add(dClone);
+      }
+      const seedModel = gltf.scene.getObjectByName('DandelionSeedMesh');
+      if (seedModel && seedModel.geometry) {
+        const sGeo = seedModel.geometry.clone();
+        seedModel.updateMatrix();
+        sGeo.applyMatrix4(seedModel.matrix);
+        for (const s of seedMeshes) {
+          s.mesh.geometry = sGeo;
+        }
+        seedFallbackGeo.dispose();
+      }
+
+      // F. Sculpted Dew Pond Shoreline, V-Notched Lily Pads, 16-Petal Lotuses & Crowned Frog Prince!
+      const pondModel = gltf.scene.getObjectByName('DewPondProp');
+      if (pondModel) {
+        const pClone = pondModel.clone(true);
+        pClone.position.set(0, 0, 0);
+        pondGroup.remove(pondFallback);
+        pondGroup.add(pClone);
+        const frogNode = pClone.getObjectByName('FrogPrinceNode');
+        if (frogNode) {
+          pondRig.frog = frogNode;
+          pondRig.frogBaseY = frogNode.position.y;
+        }
+      }
+
+      // G. Climbing-Rose Fairytale Garden Archway straddling the upper cottage trail!
+      const archModel = gltf.scene.getObjectByName('RoseArchProp');
+      if (archModel) {
+        const aClone = archModel.clone(true);
+        aClone.position.set(0, 0, 0);
+        archGroup.add(aClone);
+      }
+
+      // H. Smooth Subdivision River Cobbles for all 64 Stepping Stones & Hillside Boulders!
+      const cobbleModel = gltf.scene.getObjectByName('CobbleStoneMesh');
+      if (cobbleModel && cobbleModel.geometry) {
+        const cGeo = cobbleModel.geometry.clone();
+        cobbleModel.updateMatrix();
+        cGeo.applyMatrix4(cobbleModel.matrix);
+        stoneInstanced.geometry.dispose();
+        stoneInstanced.geometry = cGeo;
+      }
+
       loadedPropPacks.add('fairytale_landmarks');
     })
     .catch((err) => {
@@ -1305,12 +1379,14 @@ export function createFairytaleWorldProps({
       lb.glow.scale.setScalar(1.0 + 0.14 * Math.sin(timeSec * 3.6 + i) + (activeAnims.bellChime > 0 ? 0.35 : 0));
     }
 
-    // 5. Floating dandelion parachute seeds
+    // 5. Floating 3D dandelion parachute seeds
     if (activeAnims.dandelionGust > 0) activeAnims.dandelionGust = Math.max(0, activeAnims.dandelionGust - dt);
     for (const s of seedMeshes) {
       s.mesh.position.x += (s.vx + Math.sin(timeSec * 1.5 + s.phase) * 0.12) * dt;
       s.mesh.position.y += s.vy * dt;
       s.mesh.position.z += s.vz * dt;
+      s.mesh.rotation.z = Math.sin(timeSec * 2.1 + s.phase) * 0.22;
+      s.mesh.rotation.x = Math.cos(timeSec * 1.7 + s.phase) * 0.16;
       if (s.mesh.position.y > dandCenter.y + 2.6) {
         s.mesh.position.set(
           dandCenter.x + (Math.random() - 0.5) * 0.65,
@@ -1321,11 +1397,23 @@ export function createFairytaleWorldProps({
       }
     }
 
-    // 6. Dew pond splash
+    // 6. Dew pond splash & Golden-Crowned Frog Prince joyful hop!
     if (activeAnims.pondSplash > 0) {
       activeAnims.pondSplash = Math.max(0, activeAnims.pondSplash - dt);
     }
     waterMat.uniforms.uSplash.value = activeAnims.pondSplash;
+    if (pondRig.frog) {
+      if (activeAnims.pondSplash > 0) {
+        const hopT = 1.0 - activeAnims.pondSplash / 1.5;
+        pondRig.frog.position.y = pondRig.frogBaseY + Math.sin(hopT * Math.PI) * 0.34;
+        pondRig.frog.rotation.y = hopT * Math.PI * 2;
+      } else {
+        pondRig.frog.position.y = pondRig.frogBaseY;
+        pondRig.frog.rotation.y = Math.sin(timeSec * 1.5) * 0.18;
+        const breathe = 1.0 + 0.04 * Math.sin(timeSec * 3.8);
+        pondRig.frog.scale.set(breathe, 2.0 - breathe, breathe);
+      }
+    }
 
     // 7. Hollow stump starlight honey glow
     if (activeAnims.stumpSparkle > 0) {
@@ -1338,6 +1426,7 @@ export function createFairytaleWorldProps({
     raycastTargets,
     wonderAnchors,
     lampPositions,
+    archPos,
     onWishBottleReady,
     getLoadedPacks: () => [...loadedPropPacks],
     triggerWonderEffect,

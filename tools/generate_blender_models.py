@@ -294,7 +294,7 @@ def join_subtree_meshes(root_obj: bpy.types.Object, merged_name: str) -> bpy.typ
     return joined
 
 
-def export_glb(filepath: Path, export_materials: str = "EXPORT") -> None:
+def export_glb(filepath: Path, export_materials: str = "EXPORT", export_colors: bool = True) -> None:
     bpy.ops.export_scene.gltf(
         filepath=str(filepath),
         export_format="GLB",
@@ -302,7 +302,7 @@ def export_glb(filepath: Path, export_materials: str = "EXPORT") -> None:
         export_yup=True,
         export_texcoords=True,
         export_normals=True,
-        export_colors=True,
+        export_colors=export_colors,
         export_materials=export_materials,
     )
     print(f"[GLB OK] {filepath.name}: {filepath.stat().st_size / 1024:.1f} KB")
@@ -536,8 +536,9 @@ def build_fairy_sprite_glb() -> None:
         add_subsurf(lock, 1)
 
     # 4. Inverted Scalloped Bluebell Blossom Hat + S-Curved Tip + Hanging 3D Star Bell!
-    hat_node = make_empty("HatNode", (0.0, 0.015, 0.046), parent=head_node)
-    hat_node.rotation_euler = Euler((0.18, 0.0, 0.0), "XYZ")
+    # Tilt backward (-X in Blender = tilts crown toward -Z_gltf away from camera) so face & sapphire eyes shine!
+    hat_node = make_empty("HatNode", (0.0, 0.032, 0.062), parent=head_node)
+    hat_node.rotation_euler = Euler((-0.34, 0.0, 0.0), "XYZ")
 
     hat_brim = create_lathe_mesh(
         "BluebellHatBrim",
@@ -1321,6 +1322,433 @@ def build_fairytale_landmarks_glb() -> None:
     sand.data.materials.append(sand_mat)
     sand.parent = bottle_root
 
+    # --------------------------------------------------------------------------
+    # E. DandelionClusterProp + DandelionSeedMesh (Fluffy Moonlit Dandelion Clocks!)
+    # --------------------------------------------------------------------------
+    dand_root = make_empty("DandelionClusterProp", (0, 0, 0))
+    dand_stem_mat = make_pbr_mat("DandelionStem", "#4d7c0f", roughness=0.58, emission_hex="#65a30d", emission_strength=0.10)
+    dand_leaf_mat = make_pbr_mat("DandelionLeaf", "#15803d", roughness=0.54, emission_hex="#16a34a", emission_strength=0.10)
+    receptacle_mat = make_pbr_mat("DandelionReceptacle", "#fbbf24", roughness=0.42, emission_hex="#f59e0b", emission_strength=0.45)
+    pappus_stalk_mat = make_pbr_mat("PappusFilament", "#fef3c7", roughness=0.35, emission_hex="#fde68a", emission_strength=0.55)
+    pappus_fluff_mat = make_pbr_mat("MoonlitPappusFluff", "#e0f2fe", roughness=0.28, emission_hex="#bae6fd", emission_strength=0.85)
+    achene_mat = make_pbr_mat("DandelionAchene", "#92400e", roughness=0.55, emission_hex="#b45309", emission_strength=0.15)
+
+    # 8 Basal Lion's-Tooth Notched Rosette Leaves hugging the soil
+    for l_i in range(8):
+        la = (l_i / 8.0) * math.tau + 0.22
+        bm_l = bmesh.new()
+        rows_l = []
+        for iu in range(9):
+            u = iu / 8.0
+            # Classic runcinate lion's-tooth dandelion lobes!
+            tooth = 0.42 + 0.58 * abs(math.sin(u * math.pi * 3.5))
+            half_w = 0.052 * math.sin(u * math.pi * 0.88) * tooth + 0.008
+            r_len = 0.03 + u * 0.30
+            z_arch = 0.015 + 0.048 * math.sin(u * math.pi * 0.78) - 0.028 * (u ** 2)
+            row_l = []
+            for iv in range(5):
+                vn = (iv / 4.0) * 2.0 - 1.0
+                w_off = vn * half_w
+                z_v = z_arch + 0.008 * abs(vn)
+                ca, sa = math.cos(la), math.sin(la)
+                row_l.append(bm_l.verts.new((ca * r_len - sa * w_off, sa * r_len + ca * w_off, z_v)))
+            rows_l.append(row_l)
+        for iu in range(8):
+            for iv in range(4):
+                bm_l.faces.new((rows_l[iu][iv], rows_l[iu][iv + 1], rows_l[iu + 1][iv + 1], rows_l[iu + 1][iv]))
+        bmesh.ops.recalc_face_normals(bm_l, faces=bm_l.faces)
+        leaf_o = link_mesh_obj(f"DandRosetteLeaf_{l_i}", bm_l, mat=dand_leaf_mat, parent=dand_root)
+        add_solidify(leaf_o, 0.004)
+
+    # 5 Graceful S-Curved Hollow Stems + Fluffy 36-Tuft Fibonacci Seed Clocks!
+    golden_ang = math.pi * (3.0 - math.sqrt(5.0))
+    clock_specs = [
+        (0.0, 0.0, 0.58, 0.138),
+        (0.22, -0.08, 0.49, 0.116),
+        (-0.19, -0.15, 0.44, 0.110),
+        (-0.16, 0.20, 0.52, 0.120),
+        (0.18, 0.19, 0.41, 0.105),
+    ]
+    for c_idx, (cx, cy, ch, c_rad) in enumerate(clock_specs):
+        make_curve_tube(
+            f"DandScape_{c_idx}",
+            [
+                ((cx * 0.18, cy * 0.18, 0.0), 0.015),
+                ((cx * 0.55, cy * 0.55, ch * 0.36), 0.012),
+                ((cx * 0.88, cy * 0.88, ch * 0.72), 0.010),
+                ((cx, cy, ch), 0.009),
+            ],
+            dand_stem_mat,
+            bevel_res=4,
+            res_u=7,
+            parent=dand_root,
+        )
+        # Golden-amber alveolate receptacle core + green reflexed bract collar
+        bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=2, radius=0.024, location=(cx, cy, ch))
+        rec = bpy.context.active_object
+        rec.data.materials.append(receptacle_mat)
+        rec.parent = dand_root
+
+        bract = create_lathe_mesh(
+            f"DandBract_{c_idx}",
+            [(0.010, ch - 0.006), (0.036, ch - 0.024), (0.028, ch - 0.036)],
+            segs=12,
+            mat=dand_leaf_mat,
+            parent=dand_root,
+            scallop_amp=0.24,
+            scallop_freq=6,
+        )
+        bract.location.x = cx
+        bract.location.y = cy
+
+        # Build all 36 radiating pappus stalks + 6-ray star-fluff umbrellas into one BMesh per clock!
+        bm_p = bmesh.new()
+        n_tufts = 36
+        for t_i in range(n_tufts):
+            zf = 1.0 - (2.0 * (t_i + 0.5)) / n_tufts
+            rf = math.sqrt(max(0.0, 1.0 - zf * zf))
+            az = t_i * golden_ang + c_idx * 0.7
+            dir_v = Vector((rf * math.cos(az), rf * math.sin(az), zf)).normalized()
+            # Orthonormal tangent frame on sphere
+            up_ref = Vector((0.0, 0.0, 1.0)) if abs(dir_v.z) < 0.92 else Vector((1.0, 0.0, 0.0))
+            t1 = dir_v.cross(up_ref).normalized()
+            t2 = dir_v.cross(t1).normalized()
+
+            center_v = Vector((cx, cy, ch))
+            p_base = center_v + dir_v * 0.022
+            p_tip = center_v + dir_v * c_rad
+
+            # Thin 3-sided prism stalk from receptacle to pappus crown
+            s_r0, s_r1 = 0.0024, 0.0014
+            b_ring = [bm_p.verts.new(p_base + (t1 * math.cos(k * math.tau / 3) + t2 * math.sin(k * math.tau / 3)) * s_r0) for k in range(3)]
+            t_ring = [bm_p.verts.new(p_tip + (t1 * math.cos(k * math.tau / 3) + t2 * math.sin(k * math.tau / 3)) * s_r1) for k in range(3)]
+            for k in range(3):
+                kn = (k + 1) % 3
+                bm_p.faces.new((b_ring[k], b_ring[kn], t_ring[kn], t_ring[k]))
+
+            # Flared 6-pointed silky star-fluff canopy at tip!
+            v_hub = bm_p.verts.new(p_tip - dir_v * 0.006)
+            fluff_r = c_rad * 0.25
+            star_verts = []
+            for k in range(12):
+                ka = (k / 12.0) * math.tau + az
+                rad_k = fluff_r if k % 2 == 0 else fluff_r * 0.34
+                lift_k = 0.005 if k % 2 == 0 else 0.001
+                pt_s = p_tip + (t1 * math.cos(ka) + t2 * math.sin(ka)) * rad_k + dir_v * lift_k
+                star_verts.append(bm_p.verts.new(pt_s))
+            for k in range(12):
+                kn = (k + 1) % 12
+                bm_p.faces.new((v_hub, star_verts[k], star_verts[kn]))
+
+        bmesh.ops.recalc_face_normals(bm_p, faces=bm_p.faces)
+        link_mesh_obj(f"DandPappusClock_{c_idx}", bm_p, mat=pappus_fluff_mat, parent=dand_root)
+
+    join_subtree_meshes(dand_root, "DandelionClusterMerged")
+
+    # Individual 3D Floating Parachute Seed Wish (DandelionSeedMesh)
+    seed_root = make_empty("DandelionSeedHolder", (0, 0, 0))
+    make_curve_tube(
+        "SeedAcheneBody",
+        [((0, 0, -0.032), 0.0015), ((0, 0, -0.022), 0.0052), ((0, 0, -0.010), 0.0020)],
+        achene_mat,
+        bevel_res=3,
+        res_u=4,
+        parent=seed_root,
+    )
+    make_curve_tube(
+        "SeedBeakFilament",
+        [((0, 0, -0.010), 0.0012), ((0, 0, 0.018), 0.0010)],
+        pappus_stalk_mat,
+        bevel_res=2,
+        res_u=3,
+        parent=seed_root,
+    )
+    bm_umb = bmesh.new()
+    v_apex = bm_umb.verts.new((0, 0, 0.015))
+    umb_ring = []
+    for k in range(16):
+        ka = (k / 16.0) * math.tau
+        rk = 0.026 if k % 2 == 0 else 0.008
+        zk = 0.032 if k % 2 == 0 else 0.022
+        umb_ring.append(bm_umb.verts.new((math.cos(ka) * rk, math.sin(ka) * rk, zk)))
+    for k in range(16):
+        kn = (k + 1) % 16
+        bm_umb.faces.new((v_apex, umb_ring[k], umb_ring[kn]))
+    bmesh.ops.recalc_face_normals(bm_umb, faces=bm_umb.faces)
+    link_mesh_obj("SeedCanopy", bm_umb, mat=pappus_fluff_mat, parent=seed_root)
+    seed_merged = join_subtree_meshes(seed_root, "DandelionSeedMesh")
+    if seed_merged is not None:
+        bpy.context.view_layer.objects.active = seed_merged
+        seed_merged.select_set(True)
+        bpy.ops.object.parent_clear(type="CLEAR_KEEP_TRANSFORM")
+        seed_merged.select_set(False)
+        bpy.data.objects.remove(seed_root, do_unlink=True)
+
+    # --------------------------------------------------------------------------
+    # F. DewPondProp + FrogPrinceNode (Mossy Stone Shoreline, 3D Lotuses & Crowned Frog!)
+    # --------------------------------------------------------------------------
+    pond_root = make_empty("DewPondProp", (0, 0, 0))
+    pond_static = make_empty("DewPondStatic", (0, 0, 0), parent=pond_root)
+    pad_mat = make_pbr_mat("JadeLilyPad", "#15803d", roughness=0.36, coat=0.45, emission_hex="#16a34a", emission_strength=0.14)
+    lotus_pink = make_pbr_mat("LotusPink", "#f9a8d4", roughness=0.38, emission_hex="#f472b6", emission_strength=0.32)
+    lotus_cream = make_pbr_mat("LotusCream", "#fef3c7", roughness=0.38, emission_hex="#fde047", emission_strength=0.34)
+    lotus_coral = make_pbr_mat("LotusCoral", "#fda4af", roughness=0.38, emission_hex="#fb7185", emission_strength=0.32)
+    frog_green = make_pbr_mat("FrogEmerald", "#22c55e", roughness=0.28, coat=0.65, emission_hex="#16a34a", emission_strength=0.18)
+
+    # 22 Shoreline Tumbled River Cobbles & Plush Velvet Moss Cushions framing r=0.68 water mirror
+    rng_p = random.Random(20261199)
+    for i in range(22):
+        a = (i / 22.0) * math.tau + rng_p.uniform(-0.06, 0.06)
+        r = 0.67 + (i % 3) * 0.035
+        bpy.ops.mesh.primitive_ico_sphere_add(
+            subdivisions=2,
+            radius=0.095 + (i % 2) * 0.028,
+            location=(math.cos(a) * r, math.sin(a) * r, 0.015),
+        )
+        ps = bpy.context.active_object
+        ps.scale = (1.28, 0.96, 0.52)
+        ps.rotation_euler = Euler((rng_p.uniform(-0.15, 0.15), rng_p.uniform(-0.15, 0.15), a), "XYZ")
+        for p in ps.data.polygons:
+            p.use_smooth = True
+        ps.data.materials.append(moss_mat if i % 3 == 0 else stone_mat)
+        ps.parent = pond_static
+
+    # 4 Beveled V-Notched 3D Lily Pads with Upturned Rims + 3 Multi-Whorl Cupped Lotus Blossoms!
+    pad_specs = [
+        (0.16, 0.10, 0.165, 0.4, lotus_pink),
+        (-0.22, -0.14, 0.145, 2.3, lotus_cream),
+        (0.10, -0.26, 0.130, 4.1, lotus_coral),
+        (-0.15, -0.34, 0.175, -0.8, None),  # Front-left royal lily pad stage for FrogPrinceNode!
+    ]
+    for p_idx, (px, py, prad, p_rot, l_mat) in enumerate(pad_specs):
+        bm_pad = bmesh.new()
+        v_ctr = bm_pad.verts.new((0, 0, 0.004))
+        mid_ring = []
+        rim_ring = []
+        arc_segs = 22
+        # Span 328 degrees leaving a crisp 32-degree botanical V-notch!
+        for k in range(arc_segs + 1):
+            ang = 0.28 + (k / arc_segs) * (math.tau - 0.56)
+            mid_ring.append(bm_pad.verts.new((math.cos(ang) * prad * 0.68, math.sin(ang) * prad * 0.68, 0.002)))
+            rim_ring.append(bm_pad.verts.new((math.cos(ang) * prad, math.sin(ang) * prad, 0.016)))
+        for k in range(arc_segs):
+            bm_pad.faces.new((v_ctr, mid_ring[k], mid_ring[k + 1]))
+            bm_pad.faces.new((mid_ring[k], rim_ring[k], rim_ring[k + 1], mid_ring[k + 1]))
+        bmesh.ops.recalc_face_normals(bm_pad, faces=bm_pad.faces)
+        pad_obj = link_mesh_obj(f"LilyPad_{p_idx}", bm_pad, mat=pad_mat, parent=pond_static)
+        pad_obj.location = (px, py, 0.012)
+        pad_obj.rotation_euler = Euler((0, 0, p_rot), "XYZ")
+        add_solidify(pad_obj, 0.006)
+
+        if l_mat is not None:
+            # 16-Petal 2-Whorl Sculpted Water-Lily + Golden Stamen Crown!
+            bm_lot = bmesh.new()
+            for w_idx, (p_cnt, open_a, plen, pwid) in enumerate(((8, 0.92, 0.078, 0.026), (8, 0.48, 0.064, 0.022))):
+                for k in range(p_cnt):
+                    az = (k / p_cnt) * math.tau + w_idx * 0.39
+                    rows_lp = []
+                    for iu in range(6):
+                        u = iu / 5.0
+                        w_prof = math.sin(u * math.pi * 0.88)
+                        r_l = 0.008 + u * plen * math.sin(open_a) - 0.010 * math.sin(u * math.pi)
+                        z_l = 0.006 + u * plen * math.cos(open_a)
+                        row_lp = []
+                        for iv in range(5):
+                            vn = (iv / 4.0) * 2.0 - 1.0
+                            wl = vn * pwid * w_prof
+                            zl = z_l + 0.005 * (1.0 - vn * vn) * u
+                            ca, sa = math.cos(az), math.sin(az)
+                            row_lp.append(bm_lot.verts.new((ca * r_l - sa * wl, sa * r_l + ca * wl, zl)))
+                        rows_lp.append(row_lp)
+                    for iu in range(5):
+                        for iv in range(4):
+                            bm_lot.faces.new((rows_lp[iu][iv], rows_lp[iu][iv + 1], rows_lp[iu + 1][iv + 1], rows_lp[iu + 1][iv]))
+            bmesh.ops.recalc_face_normals(bm_lot, faces=bm_lot.faces)
+            lot_obj = link_mesh_obj(f"WaterLily_{p_idx}", bm_lot, mat=l_mat, parent=pond_static)
+            lot_obj.location = (px, py, 0.022)
+            add_solidify(lot_obj, 0.003)
+
+            bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=2, radius=0.018, location=(px, py, 0.036))
+            stamen = bpy.context.active_object
+            stamen.scale = (1.0, 1.0, 0.65)
+            stamen.data.materials.append(lamp_core_mat)
+            stamen.parent = pond_static
+
+    join_subtree_meshes(pond_static, "DewPondStaticMerged")
+
+    # Animatable Golden-Crowned Fairytale Frog Prince perched on front-left lily pad!
+    frog_node = make_empty("FrogPrinceNode", (-0.15, -0.34, 0.026), parent=pond_root)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=20, ring_count=14, radius=0.046, location=(0, 0, 0.036))
+    f_body = bpy.context.active_object
+    f_body.scale = (1.05, 1.18, 0.92)
+    f_body.rotation_euler = Euler((-0.25, 0, 0), "XYZ")
+    for p in f_body.data.polygons:
+        p.use_smooth = True
+    f_body.data.materials.append(frog_green)
+    f_body.parent = frog_node
+
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=12, radius=0.036, location=(0, -0.018, 0.030))
+    f_belly = bpy.context.active_object
+    f_belly.scale = (0.92, 0.85, 0.82)
+    f_belly.data.materials.append(bird_belly)
+    f_belly.parent = frog_node
+
+    for side in (-1.0, 1.0):
+        # Tucked hind thighs + raised frog eye domes + glossy pupils
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=14, ring_count=10, radius=0.026, location=(side * 0.042, 0.012, 0.022))
+        thigh = bpy.context.active_object
+        thigh.scale = (0.72, 1.25, 0.82)
+        thigh.data.materials.append(frog_green)
+        thigh.parent = frog_node
+
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=14, ring_count=10, radius=0.016, location=(side * 0.024, -0.026, 0.074))
+        edome = bpy.context.active_object
+        edome.data.materials.append(frog_green)
+        edome.parent = frog_node
+
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=8, radius=0.010, location=(side * 0.025, -0.038, 0.076))
+        epupil = bpy.context.active_object
+        epupil.data.materials.append(eye_mat)
+        epupil.parent = frog_node
+
+    # Tiny 5-Pointed Golden Royal Crown atop the Frog Prince's head!
+    crown = create_lathe_mesh(
+        "FrogRoyalCrown",
+        [(0.016, 0.080), (0.024, 0.098), (0.020, 0.104)],
+        segs=15,
+        mat=brass_mat,
+        parent=frog_node,
+        scallop_amp=0.28,
+        scallop_freq=5,
+    )
+    crown.location.y = -0.012
+    add_solidify(crown, 0.003)
+    join_subtree_meshes(frog_node, "FrogPrinceMerged")
+
+    # --------------------------------------------------------------------------
+    # G. RoseArchProp (Fairytale Climbing-Rose Wrought-Iron & Oak Garden Archway!)
+    # --------------------------------------------------------------------------
+    arch_root = make_empty("RoseArchProp", (0, 0, 0))
+    rose_arch_red = make_pbr_mat("ArchRoseCrimson", "#e11d48", roughness=0.40, emission_hex="#f43f5e", emission_strength=0.28)
+    rose_arch_pink = make_pbr_mat("ArchRoseBlush", "#fb7185", roughness=0.40, emission_hex="#fda4af", emission_strength=0.28)
+    rose_arch_gold = make_pbr_mat("ArchRoseGold", "#fde047", roughness=0.38, emission_hex="#facc15", emission_strength=0.30)
+
+    # Molded stone plinths + twin wrought-iron gothic-fairytale arch ribs
+    for side in (-1.0, 1.0):
+        plinth = create_lathe_mesh(
+            f"ArchPlinth_{side}",
+            [(0.11, 0.0), (0.095, 0.08), (0.068, 0.18), (0.052, 0.22)],
+            segs=16,
+            mat=stone_mat,
+            parent=arch_root,
+        )
+        plinth.location.x = side * 0.76
+
+        # Outer & inner iron trellis posts curving to gothic storybook peak at z=1.64
+        for off_x, rad_p in ((0.0, 0.024), (side * 0.08, 0.014)):
+            px0 = side * 0.76 + off_x
+            make_curve_tube(
+                f"ArchRib_{side}_{off_x}",
+                [
+                    ((px0, 0.0, 0.18), rad_p),
+                    ((px0, 0.0, 0.78), rad_p * 0.92),
+                    ((side * 0.68 + off_x * 0.7, 0.0, 1.18), rad_p * 0.85),
+                    ((side * 0.38, 0.0, 1.48), rad_p * 0.80),
+                    ((0.0, 0.0, 1.64 + (0.05 if abs(off_x) > 0.01 else 0.0)), rad_p * 0.75),
+                ],
+                iron_mat,
+                bevel_res=4,
+                res_u=8,
+                parent=arch_root,
+            )
+
+        # Spiraling Emerald Climbing-Rose Vine wrapping around each pillar up to the crown!
+        vine_pts = []
+        for s_k in range(11):
+            t_v = s_k / 10.0
+            ang_w = t_v * math.tau * 2.2
+            bx = side * (0.76 * (1.0 - t_v ** 1.8))
+            bz = 0.16 + t_v * 1.46
+            wx = bx + math.cos(ang_w) * 0.048
+            wy = math.sin(ang_w) * 0.048
+            vine_pts.append(((wx, wy, bz), 0.014 * (1.0 - 0.35 * t_v)))
+        make_curve_tube(f"ClimbingVine_{side}", vine_pts, dand_leaf_mat, bevel_res=3, res_u=6, parent=arch_root)
+
+        # Hanging Teardrop Brass Star-Lantern under each upper arch haunch!
+        lx_h = side * 0.54
+        lz_h = 1.24
+        bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=2, radius=0.042, location=(lx_h, 0.0, lz_h - 0.08))
+        l_orb = bpy.context.active_object
+        l_orb.scale = (0.85, 0.85, 1.25)
+        l_orb.data.materials.append(lamp_core_mat)
+        l_orb.parent = arch_root
+
+        l_hat = create_lathe_mesh(
+            f"ArchLanternCap_{side}",
+            [(0.005, lz_h), (0.052, lz_h - 0.045), (0.042, lz_h - 0.055)],
+            segs=6,
+            mat=brass_mat,
+            parent=arch_root,
+        )
+        l_hat.location.x = lx_h
+
+    # Golden Star Finial crowning the gothic arch peak
+    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=2, radius=0.052, location=(0.0, 0.0, 1.72))
+    arch_finial = bpy.context.active_object
+    arch_finial.data.materials.append(brass_mat)
+    arch_finial.parent = arch_root
+
+    # 11 Sculpted Cupped Climbing Roses + Serrated Leaves blooming along the archway!
+    arch_rose_spots = [
+        (-0.78, -0.05, 0.52, rose_arch_red, 1.05),
+        (-0.75, 0.05, 0.86, rose_arch_pink, 0.95),
+        (-0.62, -0.05, 1.18, rose_arch_gold, 0.92),
+        (-0.36, -0.04, 1.46, rose_arch_red, 1.08),
+        (-0.12, 0.04, 1.60, rose_arch_pink, 1.00),
+        (0.0, -0.06, 1.64, rose_arch_red, 1.16),
+        (0.16, -0.04, 1.58, rose_arch_gold, 0.96),
+        (0.40, 0.04, 1.44, rose_arch_pink, 1.06),
+        (0.64, -0.05, 1.16, rose_arch_red, 0.98),
+        (0.76, -0.05, 0.82, rose_arch_pink, 1.02),
+        (0.78, 0.04, 0.48, rose_arch_gold, 0.94),
+    ]
+    for r_i, (rx, ry, rz, r_mat, r_scl) in enumerate(arch_rose_spots):
+        bm_ar = bmesh.new()
+        for w_idx, (cnt, op, r_len, r_wid) in enumerate(((5, 0.25, 0.042, 0.022), (7, 0.68, 0.054, 0.030))):
+            for p_k in range(cnt):
+                az = (p_k / cnt) * math.tau + w_idx * 0.55
+                ca, sa = math.cos(az), math.sin(az)
+                v0 = bm_ar.verts.new((0, 0, 0))
+                v1 = bm_ar.verts.new((ca * r_len * 0.55 - sa * r_wid, sa * r_len * 0.55 + ca * r_wid, r_len * 0.52))
+                v2 = bm_ar.verts.new((ca * r_len * math.sin(op + 0.35), sa * r_len * math.sin(op + 0.35), r_len * math.cos(op)))
+                v3 = bm_ar.verts.new((ca * r_len * 0.55 + sa * r_wid, sa * r_len * 0.55 - ca * r_wid, r_len * 0.52))
+                bm_ar.faces.new((v0, v1, v2, v3))
+        bmesh.ops.recalc_face_normals(bm_ar, faces=bm_ar.faces)
+        ar_obj = link_mesh_obj(f"ArchClimbingRose_{r_i}", bm_ar, mat=r_mat, parent=arch_root)
+        ar_obj.location = (rx, ry, rz)
+        ar_obj.rotation_euler = Euler((1.15, 0.0, rx * 0.4), "XYZ")
+        ar_obj.scale = (r_scl, r_scl, r_scl)
+        add_solidify(ar_obj, 0.004)
+        add_subsurf(ar_obj, 1)
+
+    join_subtree_meshes(arch_root, "RoseArchMerged")
+
+    # --------------------------------------------------------------------------
+    # H. CobbleStoneMesh (Smooth Natural River Cobble for Path & Slopes!)
+    # --------------------------------------------------------------------------
+    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=2, radius=0.18, location=(0, 0, 0))
+    cobble = bpy.context.active_object
+    cobble.name = "CobbleStoneMesh"
+    for v in cobble.data.vertices:
+        # Gentle organic river-worn asymmetry
+        v.co.x *= 1.06 + 0.08 * math.sin(v.co.y * 14.0)
+        v.co.y *= 0.96 + 0.08 * math.cos(v.co.x * 12.0)
+        v.co.z *= 0.78 + 0.06 * math.sin(v.co.x * 9.0 + v.co.y * 9.0)
+    for p in cobble.data.polygons:
+        p.use_smooth = True
+    add_subsurf(cobble, 1)
+    cobble.data.materials.append(stone_mat)
+
     export_glb(OUT_DIR / "fairytale_landmarks.glb")
 
 
@@ -1332,11 +1760,10 @@ def build_fairytale_landmarks_glb() -> None:
 def add_sculpted_petal_to_bm(
     bm: bmesh.types.BMesh,
     uv_layer,
-    color_layer,
     seg_u: int,
     seg_v: int,
     eval_fn,
-    rgb_fn,
+    uv_fn=None,
 ) -> None:
     rows = []
     for iu in range(seg_u + 1):
@@ -1346,45 +1773,55 @@ def add_sculpted_petal_to_bm(
             v = (iv / seg_v) * 2.0 - 1.0  # -1..+1 width
             co = eval_fn(u, v)
             vert = bm.verts.new(co)
-            row.append((vert, (v + 1.0) * 0.5, u, rgb_fn(u, v)))
+            if uv_fn is not None:
+                s, t = uv_fn(u, v)
+            else:
+                s, t = (v + 1.0) * 0.5, u
+            row.append((vert, s, t))
         rows.append(row)
 
     for iu in range(seg_u):
         for iv in range(seg_v):
-            v00, s00, t00, c00 = rows[iu][iv]
-            v01, s01, t01, c01 = rows[iu][iv + 1]
-            v11, s11, t11, c11 = rows[iu + 1][iv + 1]
-            v10, s10, t10, c10 = rows[iu + 1][iv]
+            v00, s00, t00 = rows[iu][iv]
+            v01, s01, t01 = rows[iu][iv + 1]
+            v11, s11, t11 = rows[iu + 1][iv + 1]
+            v10, s10, t10 = rows[iu + 1][iv]
             f = bm.faces.new((v00, v01, v11, v10))
-            for loop, (s, t, col) in zip(f.loops, ((s00, t00, c00), (s01, t01, c01), (s11, t11, c11), (s10, t10, c10))):
+            for loop, (s, t) in zip(f.loops, ((s00, t00), (s01, t01), (s11, t11), (s10, t10))):
                 # Blender glTF exporter flips V -> 1 - V; store (s, 1 - t) so glTF TEXCOORD_0 has (s, u)!
                 loop[uv_layer].uv = (s, 1.0 - t)
-                loop[color_layer] = (col[0], col[1], col[2], 1.0)
+
+
+def apply_rot_x(obj: bpy.types.Object, angle_rad: float) -> None:
+    obj.rotation_euler = Euler((angle_rad, 0.0, 0.0), "XYZ")
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+    obj.select_set(False)
 
 
 def build_botanical_blooms_glb() -> None:
     reset_scene()
     dummy_mat = make_pbr_mat("PetalCarrier", "#ffffff", roughness=0.5)
 
-    # --- A. RoseBloom: 38-Petal Cupped David Austin English Rose ---
+    # --- A1. RoseBloom: 40-Petal High-Centered Spiral Heart & Cupped David Austin Rose ---
     bm_rose = bmesh.new()
     uv_r = bm_rose.loops.layers.uv.new("UVMap")
-    col_r = bm_rose.loops.layers.color.new("Col")
 
     whorls = [
-        {"count": 5, "r0": 0.010, "open": 0.14, "h": 0.126, "wid": 0.056, "cup": 0.032, "reflex": 0.010, "y0": 0.026, "ao": 0.44},
-        {"count": 6, "r0": 0.022, "open": 0.28, "h": 0.144, "wid": 0.078, "cup": 0.034, "reflex": 0.022, "y0": 0.020, "ao": 0.58},
-        {"count": 8, "r0": 0.036, "open": 0.45, "h": 0.158, "wid": 0.100, "cup": 0.034, "reflex": 0.036, "y0": 0.012, "ao": 0.74},
-        {"count": 9, "r0": 0.052, "open": 0.64, "h": 0.168, "wid": 0.118, "cup": 0.030, "reflex": 0.050, "y0": 0.004, "ao": 0.88},
-        {"count": 10, "r0": 0.068, "open": 0.85, "h": 0.174, "wid": 0.134, "cup": 0.024, "reflex": 0.064, "y0": -0.004, "ao": 1.00},
+        {"count": 5, "r0": 0.005, "open": 0.07, "h": 0.132, "wid": 0.048, "cup": 0.028, "reflex": 0.006, "y0": 0.032},
+        {"count": 6, "r0": 0.016, "open": 0.21, "h": 0.146, "wid": 0.072, "cup": 0.034, "reflex": 0.018, "y0": 0.024},
+        {"count": 8, "r0": 0.032, "open": 0.40, "h": 0.158, "wid": 0.098, "cup": 0.035, "reflex": 0.034, "y0": 0.014},
+        {"count": 10, "r0": 0.049, "open": 0.61, "h": 0.168, "wid": 0.118, "cup": 0.030, "reflex": 0.050, "y0": 0.004},
+        {"count": 11, "r0": 0.066, "open": 0.84, "h": 0.175, "wid": 0.136, "cup": 0.024, "reflex": 0.066, "y0": -0.005},
     ]
 
     seed_idx = 0
     for w_i, w in enumerate(whorls):
         for p in range(w["count"]):
-            az = (p / w["count"]) * math.tau + w_i * 0.68 + math.sin(seed_idx * 1.9) * 0.08
-            open_ang = w["open"] + math.sin(seed_idx * 2.7) * 0.04
-            asym = math.sin(seed_idx * 3.1) * 0.010
+            az = (p / w["count"]) * math.tau + w_i * 0.72 + math.sin(seed_idx * 1.9) * 0.07
+            open_ang = w["open"] + math.sin(seed_idx * 2.7) * 0.035
+            asym = (0.012 if w_i < 2 else math.sin(seed_idx * 3.1) * 0.010)
             seed_idx += 1
 
             def eval_rose(u: float, v: float, w=w, az=az, open_ang=open_ang, asym=asym, p=p):
@@ -1399,27 +1836,105 @@ def build_botanical_blooms_glb() -> None:
                 r_local = w["r0"] + u * w["h"] * math.sin(open_ang) - belly_cup + lip_reflex
                 z_up = 0.03 + w["y0"] + u * w["h"] * math.cos(open_ang) - lip_reflex * 0.52 - 0.012 * v * v * u + ruffle
                 ca, sa = math.cos(az), math.sin(az)
-                # Note: Blender (X, Y, Z) -> glTF (X, Z, -Y)
                 return (ca * r_local - sa * w_local, sa * r_local + ca * w_local, z_up)
 
-            def col_rose(u: float, v: float, ao=w["ao"]):
-                shade = ao * (0.60 + 0.40 * u)
-                return (shade, shade, shade)
-
-            add_sculpted_petal_to_bm(bm_rose, uv_r, col_r, 10, 9, eval_rose, col_rose)
+            add_sculpted_petal_to_bm(bm_rose, uv_r, 10, 9, eval_rose)
 
     bmesh.ops.recalc_face_normals(bm_rose, faces=bm_rose.faces)
     rose_obj = link_mesh_obj("RoseBloom", bm_rose, mat=dummy_mat)
-    rose_obj.rotation_euler = Euler((0.28, 0.0, 0.0), "XYZ")
-    bpy.context.view_layer.objects.active = rose_obj
-    rose_obj.select_set(True)
-    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-    rose_obj.select_set(False)
+    apply_rot_x(rose_obj, 0.28)
 
-    # --- B. TulipBloom: 6 Interlocking Sculpted Darwin Goblet Tepals ---
+    # --- A2. RoseCalyx: Pyriform Rosehip Receptacle + 5 Recurved Green Sepals ---
+    bm_rcal = bmesh.new()
+    uv_rc = bm_rcal.loops.layers.uv.new("UVMap")
+
+    # Swollen urn-shaped receptacle base
+    def eval_hip(u: float, v: float):
+        ang = (v + 1.0) * math.pi
+        r_hip = 0.013 + 0.034 * math.sin(u * math.pi * 0.82)
+        z_hip = -0.042 + u * 0.068
+        return (math.cos(ang) * r_hip, math.sin(ang) * r_hip, z_hip)
+
+    add_sculpted_petal_to_bm(bm_rcal, uv_rc, 6, 12, eval_hip)
+
+    # 5 pointed recurved calyx sepals cradling outer rose petals
+    for s_i in range(5):
+        az = (s_i / 5.0) * math.tau + 0.3
+        ca, sa = math.cos(az), math.sin(az)
+
+        def eval_sepal(u: float, v: float, ca=ca, sa=sa):
+            taper = (1.0 - u ** 0.88) * math.sin(min(1.0, u * 3.5 + 0.2) * math.pi * 0.5)
+            w_l = v * 0.030 * taper
+            r_l = 0.038 + u * 0.118
+            z_l = 0.018 + 0.016 * math.sin(u * math.pi * 0.7) - 0.048 * (u ** 2.1)
+            return (ca * r_l - sa * w_l, sa * r_l + ca * w_l, z_l)
+
+        add_sculpted_petal_to_bm(bm_rcal, uv_rc, 7, 4, eval_sepal)
+
+    bmesh.ops.recalc_face_normals(bm_rcal, faces=bm_rcal.faces)
+    rcal_obj = link_mesh_obj("RoseCalyx", bm_rcal, mat=dummy_mat)
+    apply_rot_x(rcal_obj, 0.28)
+
+    # --- B1. SunflowerRays: 38 Sculpted Double-Ring Grooved & Waved Ray Florets ---
+    bm_srays = bmesh.new()
+    uv_sr = bm_srays.loops.layers.uv.new("UVMap")
+    n_rays = 38
+    for i in range(n_rays):
+        tier = i % 2
+        az = (i / n_rays) * math.tau + tier * 0.038
+        ca, sa = math.cos(az), math.sin(az)
+        len_scale = 0.90 + 0.16 * math.sin(i * 3.1 + 0.6)
+        twist = math.sin(i * 2.3) * 0.09
+        droop_var = 0.038 + 0.012 * math.cos(i * 1.7)
+
+        def eval_sray(u: float, v: float, ca=ca, sa=sa, tier=tier, len_scale=len_scale, twist=twist, droop_var=droop_var):
+            # Sculpted lance-ovate profile with longitudinal central groove & organic tip curl
+            prof = math.sin(u * math.pi * 0.92) ** 0.58
+            w_l = v * (0.046 if tier == 0 else 0.041) * (0.28 + 0.72 * prof)
+            r_l = 0.110 + u * 0.222 * len_scale
+            arch = 0.040 * math.sin(u * math.pi * 0.72) - droop_var * (u ** 2.15)
+            groove = -0.009 * (1.0 - v * v) * math.sin(u * math.pi)
+            z_l = tier * 0.009 + arch + groove + w_l * twist
+            return (ca * r_l - sa * w_l, sa * r_l + ca * w_l, z_l)
+
+        add_sculpted_petal_to_bm(bm_srays, uv_sr, 10, 6, eval_sray)
+
+    bmesh.ops.recalc_face_normals(bm_srays, faces=bm_srays.faces)
+    srays_obj = link_mesh_obj("SunflowerRays", bm_srays, mat=dummy_mat)
+    apply_rot_x(srays_obj, 0.58)
+
+    # --- B2. SunflowerCalyx: Involucral Receptacle Bowl + 18 Pointed Phyllary Bracts ---
+    bm_scal = bmesh.new()
+    uv_sc = bm_scal.loops.layers.uv.new("UVMap")
+
+    def eval_sun_cup(u: float, v: float):
+        ang = (v + 1.0) * math.pi
+        r_c = 0.018 + 0.118 * (u ** 0.72)
+        z_c = -0.052 + u * 0.056
+        return (math.cos(ang) * r_c, math.sin(ang) * r_c, z_c)
+
+    add_sculpted_petal_to_bm(bm_scal, uv_sc, 6, 16, eval_sun_cup)
+
+    for b_i in range(18):
+        az = (b_i / 18.0) * math.tau
+        ca, sa = math.cos(az), math.sin(az)
+
+        def eval_bract(u: float, v: float, ca=ca, sa=sa, b_i=b_i):
+            taper = 1.0 - (u ** 0.9)
+            w_l = v * 0.028 * taper
+            r_l = 0.112 + u * 0.095
+            z_l = -0.004 + (b_i % 2) * 0.005 - 0.026 * (u ** 1.8)
+            return (ca * r_l - sa * w_l, sa * r_l + ca * w_l, z_l)
+
+        add_sculpted_petal_to_bm(bm_scal, uv_sc, 5, 4, eval_bract)
+
+    bmesh.ops.recalc_face_normals(bm_scal, faces=bm_scal.faces)
+    scal_obj = link_mesh_obj("SunflowerCalyx", bm_scal, mat=dummy_mat)
+    apply_rot_x(scal_obj, 0.58)
+
+    # --- C. TulipBloom: 6 Interlocking Sculpted Darwin Goblet Tepals ---
     bm_tulip = bmesh.new()
     uv_t = bm_tulip.loops.layers.uv.new("UVMap")
-    col_t = bm_tulip.loops.layers.color.new("Col")
 
     for k in range(6):
         inner = k % 2 == 0
@@ -1434,24 +1949,15 @@ def build_botanical_blooms_glb() -> None:
             ca, sa = math.cos(az), math.sin(az)
             return (ca * r_local - sa * w_local, sa * r_local + ca * w_local, z_up)
 
-        def col_tulip(u: float, v: float, inner=inner):
-            shade = (0.96 if inner else 0.88) * (0.60 + 0.40 * u)
-            return (shade, shade, shade)
-
-        add_sculpted_petal_to_bm(bm_tulip, uv_t, col_t, 10, 8, eval_tulip, col_tulip)
+        add_sculpted_petal_to_bm(bm_tulip, uv_t, 10, 8, eval_tulip)
 
     bmesh.ops.recalc_face_normals(bm_tulip, faces=bm_tulip.faces)
     tulip_obj = link_mesh_obj("TulipBloom", bm_tulip, mat=dummy_mat)
-    tulip_obj.rotation_euler = Euler((0.16, 0.0, 0.0), "XYZ")
-    bpy.context.view_layer.objects.active = tulip_obj
-    tulip_obj.select_set(True)
-    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-    tulip_obj.select_set(False)
+    apply_rot_x(tulip_obj, 0.16)
 
-    # --- C. IrisBloom: 3 Ruffled Domed Standards + 3 Cascading Waterfall Falls + 3 Style Crests ---
+    # --- D. IrisBloom: 3 Domed Standards + 3 Bearded Velvet Falls + 3 Arching Style Crests ---
     bm_iris = bmesh.new()
     uv_i = bm_iris.loops.layers.uv.new("UVMap")
-    col_i = bm_iris.loops.layers.color.new("Col")
 
     # 3 Domed Standards
     for i in range(3):
@@ -1465,13 +1971,9 @@ def build_botanical_blooms_glb() -> None:
             ca, sa = math.cos(az), math.sin(az)
             return (ca * radial - sa * wid, sa * radial + ca * wid, z_up)
 
-        def col_std(u: float, v: float):
-            s = 0.70 + 0.30 * u
-            return (s, s, s)
+        add_sculpted_petal_to_bm(bm_iris, uv_i, 10, 8, eval_std)
 
-        add_sculpted_petal_to_bm(bm_iris, uv_i, col_i, 10, 8, eval_std, col_std)
-
-    # 3 Cascading Ruffled Velvet Falls + 3 Style Arms
+    # 3 Cascading Ruffled Velvet Falls + 3 Arching Feathered Style Arms!
     for i in range(3):
         az = (i / 3.0) * math.tau + math.pi / 3.0
 
@@ -1479,48 +1981,94 @@ def build_botanical_blooms_glb() -> None:
             radial = 0.024 + u * 0.238 - 0.032 * (u ** 2.6)
             wid = v * 0.120 * (0.25 + 0.75 * (math.sin(u * math.pi * 0.90) ** 0.50))
             ruffle = math.sin(v * 5.8 + u * 11.5) * 0.011 * max(0.0, (u - 0.28) / 0.72)
-            # Subtle raised central beard ridge on basal claw!
             beard_ridge = 0.012 * math.exp(-v * v * 28.0) * math.sin(min(1.0, u * 2.1) * math.pi)
             z_up = 0.038 + 0.066 * math.sin(u * math.pi * 0.56) - 0.188 * (u ** 1.85) - 0.018 * v * v + ruffle + beard_ridge
             ca, sa = math.cos(az), math.sin(az)
             return (ca * radial - sa * wid, sa * radial + ca * wid, z_up)
 
-        def col_fall(u: float, v: float):
-            s = 0.64 + 0.36 * u
-            return (s, s, s)
+        add_sculpted_petal_to_bm(bm_iris, uv_i, 11, 9, eval_fall)
 
-        add_sculpted_petal_to_bm(bm_iris, uv_i, col_i, 11, 9, eval_fall, col_fall)
+        def eval_style_crest(u: float, v: float, az=az):
+            radial = 0.012 + u * 0.125
+            wid = v * 0.032 * (0.45 + 0.55 * u)
+            z_up = 0.048 + 0.068 * math.sin(u * math.pi * 0.72) + 0.012 * (u ** 3) - 0.008 * v * v
+            ca, sa = math.cos(az), math.sin(az)
+            return (ca * radial - sa * wid, sa * radial + ca * wid, z_up)
+
+        add_sculpted_petal_to_bm(bm_iris, uv_i, 6, 4, eval_style_crest)
 
     bmesh.ops.recalc_face_normals(bm_iris, faces=bm_iris.faces)
     link_mesh_obj("IrisBloom", bm_iris, mat=dummy_mat)
 
-    # --- D. HydrangeaFloret: 4 Overlapping Cupped Obovate Sepals ---
+    # --- E. HydrangeaFloret: Full Lush 4-Sepal Cupped Obovate Floret + Central Pearl Bud ---
     bm_hyd = bmesh.new()
     uv_h = bm_hyd.loops.layers.uv.new("UVMap")
-    col_h = bm_hyd.loops.layers.color.new("Col")
 
     for p in range(4):
-        az = (p / 4.0) * math.tau + (0.08 if p % 2 == 0 else -0.08)
-        lift_sep = 0.004 * (p % 2)
+        az = (p / 4.0) * math.tau + (0.09 if p % 2 == 0 else -0.09)
+        lift_sep = 0.005 * (p % 2)
 
         def eval_hyd(u: float, v: float, az=az, lift_sep=lift_sep):
-            r_local = 0.005 + u * 0.056
-            w_local = v * 0.038 * (0.28 + 0.72 * (math.sin(u * math.pi * 0.90) ** 0.52))
-            cup = 0.012 * math.sin(u * math.pi * 0.85) - 0.008 * v * v * u
-            z_up = lift_sep + cup + 0.010 * u
+            r_local = 0.006 + u * 0.088
+            w_local = v * 0.072 * (0.32 + 0.68 * (math.sin(u * math.pi * 0.90) ** 0.48))
+            cup = 0.018 * math.sin(u * math.pi * 0.82) - 0.013 * v * v * u
+            z_up = lift_sep + cup + 0.008 * u
             ca, sa = math.cos(az), math.sin(az)
             return (ca * r_local - sa * w_local, sa * r_local + ca * w_local, z_up)
 
-        def col_hyd(u: float, v: float):
-            s = 0.76 + 0.24 * u
-            return (s, s, s)
+        add_sculpted_petal_to_bm(bm_hyd, uv_h, 7, 7, eval_hyd)
 
-        add_sculpted_petal_to_bm(bm_hyd, uv_h, col_h, 7, 7, eval_hyd, col_hyd)
+    # Tiny sculpted central fertile flower bead at heart of the 4 sepals
+    def eval_hyd_bud(u: float, v: float):
+        ang = (v + 1.0) * math.pi
+        rad = 0.011 * math.sin(u * math.pi)
+        z_b = 0.006 + 0.018 * u
+        return (math.cos(ang) * rad, math.sin(ang) * rad, z_b)
+
+    add_sculpted_petal_to_bm(bm_hyd, uv_h, 4, 8, eval_hyd_bud, uv_fn=lambda u, v: (0.5, 0.06))
 
     bmesh.ops.recalc_face_normals(bm_hyd, faces=bm_hyd.faces)
     link_mesh_obj("HydrangeaFloret", bm_hyd, mat=dummy_mat)
 
-    export_glb(OUT_DIR / "botanical_blooms.glb", export_materials="NONE")
+    # --- F. GypsophilaCluster: 3 Puffy 3D Double-Cupped Cloudlet Rosettes (48 tris!) ---
+    bm_gyp = bmesh.new()
+    uv_g = bm_gyp.loops.layers.uv.new("UVMap")
+
+    floret_specs = [
+        ((0.0, 0.0, 0.022), (0.24, 0.14, 0.0), 0.056),
+        ((0.034, -0.022, 0.004), (-0.42, 0.34, 0.8), 0.048),
+        ((-0.030, 0.024, 0.008), (0.38, -0.36, 2.1), 0.050),
+    ]
+    for center_co, rot_xyz, f_scale in floret_specs:
+        rot_m = Euler(rot_xyz, "XYZ").to_matrix()
+        ctr_v = Vector(center_co)
+        for tier_idx, (r_mul, cup_h, z_lift, spin) in enumerate(((1.0, 0.020, 0.0, 0.0), (0.70, 0.022, 0.010, 0.52))):
+            v_hub = bm_gyp.verts.new(ctr_v + rot_m @ Vector((0, 0, z_lift)))
+            rim_verts = []
+            rim_uvs = []
+            segs_g = 8
+            for k in range(segs_g):
+                ka = (k / segs_g) * math.tau + spin
+                pt_local = Vector((math.cos(ka) * f_scale * r_mul, math.sin(ka) * f_scale * r_mul, z_lift + cup_h))
+                rim_verts.append(bm_gyp.verts.new(ctr_v + rot_m @ pt_local))
+                su = 0.5 + 0.49 * math.cos(ka - spin)
+                tu = 0.5 + 0.49 * math.sin(ka - spin)
+                rim_uvs.append((su, 1.0 - tu))
+            for k in range(segs_g):
+                kn = (k + 1) % segs_g
+                f = bm_gyp.faces.new((v_hub, rim_verts[k], rim_verts[kn]))
+                f.loops[0][uv_g].uv = (0.5, 0.5)
+                f.loops[1][uv_g].uv = rim_uvs[k]
+                f.loops[2][uv_g].uv = rim_uvs[kn]
+
+    bmesh.ops.recalc_face_normals(bm_gyp, faces=bm_gyp.faces)
+    link_mesh_obj("GypsophilaCluster", bm_gyp, mat=dummy_mat)
+
+    export_glb(
+        OUT_DIR / "botanical_blooms.glb",
+        export_materials="NONE",
+        export_colors=False,
+    )
 
 
 def main() -> None:

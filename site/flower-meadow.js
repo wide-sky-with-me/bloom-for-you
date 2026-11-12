@@ -99,9 +99,9 @@ export function meadowHeight(x, z) {
   const pathHollow = -0.072 * Math.exp(-(dPath * dPath) / 0.18);
   const pathShoulder = 0.036 * Math.exp(-(((dPath - 0.68) ** 2) / 0.09));
 
-  // Shallow basin for the foreground Dew Pond at [-1.18, 3.45]
-  const dPond = Math.hypot(x + 1.18, z - 3.45);
-  const pondBasin = -0.062 * Math.exp(-(dPond * dPond) / 0.38);
+  // Shallow basin for the Starlight Dew Pond & Frog Prince at [-1.48, 0.85]
+  const dPond = Math.hypot(x + 1.48, z - 0.85);
+  const pondBasin = -0.068 * Math.exp(-(dPond * dPond) / 0.42);
 
   return (
     valleyRise
@@ -610,15 +610,15 @@ export function createMeadowScene(
 
   // Curated scenic fairytale waypoints so the Sprite freely explores path, knolls, flowers & secrets!
   const spriteWaypoints = [
-    { x: -0.25, z: 2.95, whisper: '提着小灯笼，陪你在梵高星空小路散步啦 ✨' },
+    { x: -0.06, z: 2.24, whisper: '提着小灯笼，陪你在梵高星空小路散步啦 ✨' },
     { x: 0.55, z: 2.05, whisper: '快看小路边！丝绒玫瑰丛里藏着发光的星砂许愿瓶～' },
     { x: -0.45, z: 1.55, whisper: '木路牌上的小青鸟说：往哪边走都是被偏爱的春天 ♪' },
     { x: -1.85, z: 2.15, whisper: '左前方的草坡开满了蓝色无尽夏与满天星呢！' },
-    { x: -1.15, z: 3.55, whisper: '星影露珠潭里映着今晚的月亮与睡莲 ✦' },
+    { x: -1.12, z: 1.18, whisper: '星影露珠潭里的小青蛙王子正在看今晚的月亮与睡莲 ✦' },
     { x: 0.95, z: 0.45, whisper: '顺着蜿蜒土坡往上走，晚风里全是花香～' },
     { x: 2.05, z: -0.15, whisper: '哇！小土坡上的七彩荧光蘑菇圈在偷偷唱歌！' },
     { x: 1.15, z: -1.85, whisper: '轻轻吹一口月光蒲公英，把心愿寄给漫天繁星 ✧' },
-    { x: -0.75, z: -2.65, whisper: '山坡上的梵高金色向日葵，夜里也在仰望你呀～' },
+    { x: -0.52, z: -2.65, whisper: '穿过这座爬满蔷薇与星灯的花拱门，前面就是童话小屋啦～' },
     { x: -1.45, z: -4.45, whisper: '山顶暖光童话小屋的烟囱，正在冒金色爱心烟圈呢！' },
     { x: -2.15, z: 0.25, whisper: '点击草坡或小路任意地方，我都会提灯跑过去找你哦～' }
   ];
@@ -644,9 +644,14 @@ export function createMeadowScene(
   registerSpot(-1.85, -5.35, 1.05); // Hilltop Cozy Cottage yard
   registerSpot(2.35, -0.15, 0.78);  // 7-Mushroom Fairy Ring clearing
   registerSpot(-0.62, 1.65, 0.36);  // Wooden Signpost
-  registerSpot(-1.18, 3.45, 0.78);  // Dew Pond clearing
+  registerSpot(-1.48, 0.85, 0.92);  // Dew Pond & Frog Prince clearing
+  registerSpot(-1.25, 1.68, 0.45);  // Keep sightline to Dew Pond open!
   registerSpot(2.68, 2.78, 0.46);   // Hollow Tree Stump
-  registerSpot(1.42, -2.05, 0.48);  // Giant Dandelions
+  registerSpot(1.42, -2.05, 0.52);  // Giant Dandelions
+  if (worldProps.archPos) {
+    registerSpot(worldProps.archPos.x - 0.72, worldProps.archPos.z, 0.32);
+    registerSpot(worldProps.archPos.x + 0.72, worldProps.archPos.z, 0.32);
+  }
 
   function canPlacePlant(x, z, r, minPathDist = 0.56) {
     if (distToPath(x, z) < minPathDist) return false;
@@ -725,6 +730,20 @@ export function createMeadowScene(
     rootAnchored: true,
     sssStrength: 0.14,
     sheenStrength: 0.14
+  });
+  const roseCalyxMat = createBotanicalMaterial(sharedUniforms, {
+    map: null,
+    swayWeight: 0.72,
+    rootAnchored: false,
+    sssStrength: 0.18,
+    sheenStrength: 0.16
+  });
+  const sunCalyxMat = createBotanicalMaterial(sharedUniforms, {
+    map: null,
+    swayWeight: 0.80,
+    rootAnchored: false,
+    sssStrength: 0.18,
+    sheenStrength: 0.16
   });
   const grassMat = createBotanicalMaterial(sharedUniforms, {
     map: null,
@@ -900,7 +919,10 @@ export function createMeadowScene(
   const sunRaysGeo = createSunflowerRaysGeometry();
   const sunDiscInstanced = new THREE.InstancedMesh(sunDiscGeo, sunDiscMat, sunflowerCoords.length);
   const sunRaysInstanced = new THREE.InstancedMesh(sunRaysGeo, sunRayMat, sunflowerCoords.length);
+  const sunCalyxInstanced = new THREE.InstancedMesh(new THREE.BufferGeometry(), sunCalyxMat, sunflowerCoords.length);
+  sunCalyxInstanced.visible = false;
   const sunRayTints = [new THREE.Color('#ffffff'), new THREE.Color('#fef3c7'), new THREE.Color('#fde68a')];
+  const calyxEmerald = new THREE.Color('#2d6a4f');
 
   for (let i = 0; i < sunflowerCoords.length; i++) {
     const sc = sunflowerCoords[i];
@@ -912,6 +934,8 @@ export function createMeadowScene(
     sunDiscInstanced.setMatrixAt(i, dummy.matrix);
     sunRaysInstanced.setMatrixAt(i, dummy.matrix);
     sunRaysInstanced.setColorAt(i, sunRayTints[i % sunRayTints.length]);
+    sunCalyxInstanced.setMatrixAt(i, dummy.matrix);
+    sunCalyxInstanced.setColorAt(i, calyxEmerald);
 
     stemRecords.push({
       x: sc.x,
@@ -936,8 +960,10 @@ export function createMeadowScene(
   }
   sunDiscInstanced.instanceMatrix.needsUpdate = true;
   sunRaysInstanced.instanceMatrix.needsUpdate = true;
+  sunCalyxInstanced.instanceMatrix.needsUpdate = true;
   if (sunRaysInstanced.instanceColor) sunRaysInstanced.instanceColor.needsUpdate = true;
-  scene.add(sunDiscInstanced, sunRaysInstanced);
+  if (sunCalyxInstanced.instanceColor) sunCalyxInstanced.instanceColor.needsUpdate = true;
+  scene.add(sunDiscInstanced, sunRaysInstanced, sunCalyxInstanced);
 
   // --- 3. LIFELIKE RUFFLED BEARDED IRISES (46 Veined Blooms on Terraced Slope & Pond Edge) ---
   const irisTints = ['#818cf8', '#6366f1', '#a78bfa', '#60a5fa', '#c084fc'];
@@ -946,9 +972,9 @@ export function createMeadowScene(
     { x: 2.12, z: 1.38, scale: 1.14, height: 0.76, tint: '#818cf8' },
     { x: 2.52, z: 1.12, scale: 1.06, height: 0.70, tint: '#a78bfa' },
     { x: 1.82, z: 1.62, scale: 1.02, height: 0.68, tint: '#6366f1' },
-    // Dew pond border irises
-    { x: -1.85, z: 3.62, scale: 1.04, height: 0.70, tint: '#60a5fa' },
-    { x: -1.62, z: 4.28, scale: 0.96, height: 0.64, tint: '#a78bfa' }
+    // Dew pond border irises framing left bank without blocking Frog Prince!
+    { x: -2.06, z: 3.48, scale: 1.04, height: 0.70, tint: '#60a5fa' },
+    { x: -1.92, z: 4.16, scale: 0.96, height: 0.64, tint: '#a78bfa' }
   ];
   for (const ic of irisCoords) registerSpot(ic.x, ic.z, 0.20);
 
@@ -1043,6 +1069,8 @@ export function createMeadowScene(
 
   const roseGeo = createRoseBloomGeometry();
   const roseInstanced = new THREE.InstancedMesh(roseGeo, roseMat, roseCoords.length);
+  const roseCalyxInstanced = new THREE.InstancedMesh(new THREE.BufferGeometry(), roseCalyxMat, roseCoords.length);
+  roseCalyxInstanced.visible = false;
   for (let i = 0; i < roseCoords.length; i++) {
     const rc = roseCoords[i];
     const gy = meadowHeight(rc.x, rc.z);
@@ -1052,6 +1080,8 @@ export function createMeadowScene(
     dummy.updateMatrix();
     roseInstanced.setMatrixAt(i, dummy.matrix);
     roseInstanced.setColorAt(i, new THREE.Color(rc.tint));
+    roseCalyxInstanced.setMatrixAt(i, dummy.matrix);
+    roseCalyxInstanced.setColorAt(i, calyxEmerald);
 
     stemRecords.push({
       x: rc.x,
@@ -1076,8 +1106,10 @@ export function createMeadowScene(
     }
   }
   roseInstanced.instanceMatrix.needsUpdate = true;
+  roseCalyxInstanced.instanceMatrix.needsUpdate = true;
   if (roseInstanced.instanceColor) roseInstanced.instanceColor.needsUpdate = true;
-  scene.add(roseInstanced);
+  if (roseCalyxInstanced.instanceColor) roseCalyxInstanced.instanceColor.needsUpdate = true;
+  scene.add(roseInstanced, roseCalyxInstanced);
 
   // --- 5. LIFELIKE DARWIN GOBLET TULIPS (64 Silky Cupped Tulips on Slopes & Path Verges) ---
   const tulipPalettes = ['#fda4af', '#fde68a', '#f472b6', '#fbbf24', '#c4b5fd', '#fb7185'];
@@ -1211,7 +1243,7 @@ export function createMeadowScene(
     const side = i % 2 === 0 ? -1 : 1;
     const gx = pt.x + side * (0.68 + rng() * 0.55);
     const gz = pt.z + (rng() - 0.5) * 0.45;
-    if (distToPath(gx, gz) > 0.56) {
+    if (distToPath(gx, gz) > 0.56 && Math.hypot(gx + 1.48, gz - 0.85) > 0.92) {
       gypClouds.push({ x: gx, z: gz, r: 0.26 + rng() * 0.16, h: 0.18 + rng() * 0.14 });
     }
   }
@@ -1220,7 +1252,7 @@ export function createMeadowScene(
     const d = (0.46 + rng() * 0.20) * shrub.scale;
     const gx = shrub.x + Math.cos(a) * d;
     const gz = shrub.z + Math.sin(a) * d;
-    if (distToPath(gx, gz) > 0.56) {
+    if (distToPath(gx, gz) > 0.56 && Math.hypot(gx + 1.48, gz - 0.85) > 0.92) {
       gypClouds.push({ x: gx, z: gz, r: 0.30 + rng() * 0.15, h: 0.22 + rng() * 0.14 });
     }
   }
@@ -1229,8 +1261,15 @@ export function createMeadowScene(
     const cloud = gypClouds[i % gypClouds.length];
     const a = rng() * Math.PI * 2;
     const rad = cloud.r * Math.pow(rng(), 0.62);
-    const gx = cloud.x + Math.cos(a) * rad;
-    const gz = cloud.z + Math.sin(a) * rad;
+    let gx = cloud.x + Math.cos(a) * rad;
+    let gz = cloud.z + Math.sin(a) * rad;
+    // Keep Dew Pond water mirror crystal-clear of baby's-breath florets!
+    const dPondGyp = Math.hypot(gx + 1.48, gz - 0.85);
+    if (dPondGyp < 0.82) {
+      const pushAng = Math.atan2(gz - 0.85, gx + 1.48);
+      gx = -1.48 + Math.cos(pushAng) * 0.86;
+      gz = 0.85 + Math.sin(pushAng) * 0.86;
+    }
     const dome = Math.sqrt(Math.max(0, 1 - (rad / (cloud.r + 0.01)) ** 2));
     const gy = meadowHeight(gx, gz) + 0.09 + dome * cloud.h + (rng() - 0.5) * 0.07;
 
@@ -1262,7 +1301,7 @@ export function createMeadowScene(
     const z = 5.2 - Math.pow(rng(), 0.85) * 12.2;
     const dP = distToPath(x, z);
     if (dP < 0.46) continue; // Keep winding country dirt lane clean & crisp!
-    if (Math.hypot(x + 1.18, z - 3.45) < 0.72) continue; // Keep mirror dew pond clear!
+    if (Math.hypot(x + 1.48, z - 0.85) < 0.78) continue; // Keep mirror dew pond & Frog Prince clear!
     if (Math.hypot(x - 2.35, z + 0.15) < 0.62) continue; // Keep 7-mushroom fairy ring visible!
     if (Math.hypot(x + 1.85, z + 5.35) < 0.72) continue; // Keep cottage footprint clear!
 
@@ -1435,7 +1474,10 @@ export function createMeadowScene(
   // Upgrade GPU-instanced flower species with Blender 4.0 Subdivision-Sculpted .glb Bloom Meshes!
   let botanicalGlbLoaded = false;
 
-  function prepareSculptedBloomGeometry(meshNode, innerRadiusMax = 0.14, aoFloor = 0.50) {
+  function prepareSculptedBloomGeometry(
+    meshNode,
+    { tiltX = 0, innerRadiusMax = 0.14, aoFloor = 0.50, uniformShade = false } = {}
+  ) {
     if (!meshNode || !meshNode.geometry) return null;
     const geo = meshNode.geometry.clone();
     meshNode.updateMatrix();
@@ -1446,15 +1488,23 @@ export function createMeadowScene(
     const uvAttr = geo.attributes.uv;
     if (!posAttr || !uvAttr) return null;
 
+    const cosT = Math.cos(-tiltX);
+    const sinT = Math.sin(-tiltX);
     const count = posAttr.count;
     const colors = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      const x = posAttr.getX(i);
-      const z = posAttr.getZ(i);
-      const r = Math.hypot(x, z);
-      const u = clamp(uvAttr.getY(i), 0, 1);
-      const radialAo = aoFloor + (1.0 - aoFloor) * smoothstep(0.012, innerRadiusMax, r);
-      const shade = radialAo * (0.64 + 0.36 * u);
+      let shade = 0.96;
+      if (!uniformShade) {
+        const x = posAttr.getX(i);
+        const y = posAttr.getY(i);
+        const z = posAttr.getZ(i);
+        // Un-rotate baked bloom tilt so radial AO centers cleanly on the true inner bud heart!
+        const uz = y * sinT + z * cosT;
+        const r = Math.hypot(x, uz);
+        const u = clamp(uvAttr.getY(i), 0, 1);
+        const radialAo = aoFloor + (1.0 - aoFloor) * smoothstep(0.008, innerRadiusMax, r);
+        shade = radialAo * (0.62 + 0.38 * u);
+      }
       colors[i * 3] = shade;
       colors[i * 3 + 1] = shade;
       colors[i * 3 + 2] = shade;
@@ -1466,25 +1516,75 @@ export function createMeadowScene(
 
   loadFairytaleGlb('./assets/models/botanical_blooms.glb')
     .then((gltf) => {
-      const sculptedRose = prepareSculptedBloomGeometry(gltf.scene.getObjectByName('RoseBloom'), 0.15, 0.46);
+      const sculptedRose = prepareSculptedBloomGeometry(gltf.scene.getObjectByName('RoseBloom'), {
+        tiltX: 0.28,
+        innerRadiusMax: 0.15,
+        aoFloor: 0.40
+      });
       if (sculptedRose) {
         roseInstanced.geometry.dispose();
         roseInstanced.geometry = sculptedRose;
       }
-      const sculptedTulip = prepareSculptedBloomGeometry(gltf.scene.getObjectByName('TulipBloom'), 0.10, 0.62);
+      const sculptedRoseCalyx = prepareSculptedBloomGeometry(gltf.scene.getObjectByName('RoseCalyx'), {
+        tiltX: 0.28,
+        innerRadiusMax: 0.12,
+        aoFloor: 0.65
+      });
+      if (sculptedRoseCalyx) {
+        roseCalyxInstanced.geometry.dispose();
+        roseCalyxInstanced.geometry = sculptedRoseCalyx;
+        roseCalyxInstanced.visible = true;
+      }
+      const sculptedSunRays = prepareSculptedBloomGeometry(gltf.scene.getObjectByName('SunflowerRays'), {
+        tiltX: 0.58,
+        innerRadiusMax: 0.28,
+        aoFloor: 0.74
+      });
+      if (sculptedSunRays) {
+        sunRaysInstanced.geometry.dispose();
+        sunRaysInstanced.geometry = sculptedSunRays;
+      }
+      const sculptedSunCalyx = prepareSculptedBloomGeometry(gltf.scene.getObjectByName('SunflowerCalyx'), {
+        tiltX: 0.58,
+        innerRadiusMax: 0.18,
+        aoFloor: 0.62
+      });
+      if (sculptedSunCalyx) {
+        sunCalyxInstanced.geometry.dispose();
+        sunCalyxInstanced.geometry = sculptedSunCalyx;
+        sunCalyxInstanced.visible = true;
+      }
+      const sculptedTulip = prepareSculptedBloomGeometry(gltf.scene.getObjectByName('TulipBloom'), {
+        tiltX: 0.16,
+        innerRadiusMax: 0.10,
+        aoFloor: 0.60
+      });
       if (sculptedTulip) {
         tulipInstanced.geometry.dispose();
         tulipInstanced.geometry = sculptedTulip;
       }
-      const sculptedIris = prepareSculptedBloomGeometry(gltf.scene.getObjectByName('IrisBloom'), 0.16, 0.58);
+      const sculptedIris = prepareSculptedBloomGeometry(gltf.scene.getObjectByName('IrisBloom'), {
+        innerRadiusMax: 0.16,
+        aoFloor: 0.56
+      });
       if (sculptedIris) {
         irisInstanced.geometry.dispose();
         irisInstanced.geometry = sculptedIris;
       }
-      const sculptedHydrangea = prepareSculptedBloomGeometry(gltf.scene.getObjectByName('HydrangeaFloret'), 0.06, 0.72);
+      const sculptedHydrangea = prepareSculptedBloomGeometry(gltf.scene.getObjectByName('HydrangeaFloret'), {
+        innerRadiusMax: 0.08,
+        aoFloor: 0.68
+      });
       if (sculptedHydrangea) {
         hydrangeaInstanced.geometry.dispose();
         hydrangeaInstanced.geometry = sculptedHydrangea;
+      }
+      const sculptedGyp = prepareSculptedBloomGeometry(gltf.scene.getObjectByName('GypsophilaCluster'), {
+        uniformShade: true
+      });
+      if (sculptedGyp) {
+        gypInstanced.geometry.dispose();
+        gypInstanced.geometry = sculptedGyp;
       }
       botanicalGlbLoaded = true;
     })
@@ -1863,7 +1963,8 @@ export function createMeadowScene(
   function getWonderScreenPositions() {
     const m = new Map(worldProps.wonderAnchors);
     const sp = fairySprite.getPosition();
-    m.set('wonder-sprite', new THREE.Vector3(sp.x, sp.y + 0.52, sp.z));
+    // Offset wonder star badge delicately beside her hat tip so her porcelain face & eyes stay unobstructed!
+    m.set('wonder-sprite', new THREE.Vector3(sp.x + 0.22, sp.y + 0.68, sp.z));
     return projectWorldMap(m);
   }
 
@@ -1879,11 +1980,15 @@ export function createMeadowScene(
   return {
     resize,
     focusEgg,
-    focusCamera(camArr, lookArr, durationMs = 12000) {
+    focusCamera(camArr, lookArr, durationMs = 12000, snap = false) {
       focusedTarget = {
         camPos: new THREE.Vector3(...camArr),
         lookAt: new THREE.Vector3(...lookArr)
       };
+      if (snap) {
+        cameraCurrentPos.copy(focusedTarget.camPos);
+        cameraCurrentLook.copy(focusedTarget.lookAt);
+      }
       focusUntil = performance.now() + durationMs;
     },
     triggerWonder,

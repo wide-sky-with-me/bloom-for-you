@@ -89,20 +89,46 @@ class TestStarryMeadowBuild(unittest.TestCase):
             )
 
     def test_sculpted_blender_glb_models_have_valid_binary_headers(self) -> None:
-        expected_models = (
-            "fairy_sprite.glb",
-            "storybook_cottage.glb",
-            "mushroom_cluster.glb",
-            "fairytale_landmarks.glb",
-            "botanical_blooms.glb",
-        )
+        expected_models = {
+            "fairy_sprite.glb": ("FairyRoot", "BodyPivot", "HeadNode", "HatNode", "LanternSwingNode"),
+            "storybook_cottage.glb": ("CottageRoot", "CottageMergedMesh"),
+            "mushroom_cluster.glb": ("MushroomA", "MushroomB", "MushroomC", "MushroomD"),
+            "fairytale_landmarks.glb": (
+                "SignpostProp",
+                "BluebirdNode",
+                "StreetlampProp",
+                "HollowStumpProp",
+                "WishBottleProp",
+                "DandelionClusterProp",
+                "DandelionSeedMesh",
+                "DewPondProp",
+                "FrogPrinceNode",
+                "RoseArchProp",
+                "CobbleStoneMesh",
+            ),
+            "botanical_blooms.glb": (
+                "RoseBloom",
+                "RoseCalyx",
+                "SunflowerRays",
+                "SunflowerCalyx",
+                "TulipBloom",
+                "IrisBloom",
+                "HydrangeaFloret",
+                "GypsophilaCluster",
+            ),
+        }
         models_dir = ROOT / "site" / "assets" / "models"
-        for name in expected_models:
+        for name, required_nodes in expected_models.items():
             path = models_dir / name
             self.assertTrue(path.is_file(), f"Missing .glb model pack: {name}")
             raw = path.read_bytes()
             self.assertGreater(len(raw), 1024)
             self.assertEqual(raw[:4], b"glTF")
+            json_len = int.from_bytes(raw[12:16], "little")
+            gltf_json = json.loads(raw[20 : 20 + json_len].decode("utf-8"))
+            node_names = {n.get("name") for n in gltf_json.get("nodes", [])}
+            for node_name in required_nodes:
+                self.assertIn(node_name, node_names, f"{name} missing sculpted node {node_name}")
 
 
 if __name__ == "__main__":

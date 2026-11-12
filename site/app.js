@@ -795,8 +795,8 @@ async function initApp() {
       meadow.walkSpriteTo(x, z, msg);
       return this.getDiagnostics();
     },
-    focusCamera(camArr, lookArr, durationMs = 12000) {
-      meadow.focusCamera(camArr, lookArr, durationMs);
+    focusCamera(camArr, lookArr, durationMs = 12000, snap = false) {
+      meadow.focusCamera(camArr, lookArr, durationMs, snap);
       return this.getDiagnostics();
     },
     triggerFinale() {
