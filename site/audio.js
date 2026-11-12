@@ -121,6 +121,7 @@ export function createHarborAudio() {
   }
 
   return {
+    unlock: ensureUnlocked,
     playRoofChime,
     playLetterUnfold,
     playLighthouseBell,

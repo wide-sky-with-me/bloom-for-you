@@ -24,11 +24,11 @@ class RealisticCoastalEstateTests(unittest.TestCase):
             self.assertTrue((built / "THIRD_PARTY_NOTICES.md").is_file())
 
             manifest = json.loads((built / "release.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["schema"], 6)
-            self.assertEqual(manifest["style"], "realistic-coastal-villa-flower-estate-v3")
+            self.assertEqual(manifest["schema"], 7)
+            self.assertEqual(manifest["style"], "realistic-coastal-villa-pond-swing-flower-estate-v4")
             self.assertEqual(manifest["worldSizeMeters"], 260)
             self.assertEqual(manifest["renderer"], "three-0.186.1")
-            self.assertEqual(manifest["navigation"], "first-person-walk-inside-and-aerial-roam")
+            self.assertEqual(manifest["navigation"], "default-aerial-overlook-click-to-dive-and-walk-inside")
             for mod in (
                 "modules/pbr-kit.js",
                 "modules/exploration-controls.js",
@@ -36,6 +36,13 @@ class RealisticCoastalEstateTests(unittest.TestCase):
                 "modules/harbor-and-estate.js",
                 "modules/coastal-villa.js",
                 "modules/botanical-flora.js",
+                "modules/secret-gardens-and-pond.js",
+                "assets/models/freshwater_shrimp.glb",
+                "assets/models/ryukin_goldfish.glb",
+                "assets/models/pond_koi.glb",
+                "assets/models/waterlily.glb",
+                "assets/models/rose_bush.glb",
+                "assets/models/wisteria_cascade.glb",
             ):
                 self.assertIn(mod, manifest["files"])
 
@@ -98,7 +105,7 @@ class RealisticCoastalEstateTests(unittest.TestCase):
             SITE / "audio.js",
             *sorted((SITE / "modules").glob("*.js")),
         ]
-        self.assertEqual(len(js_files), 8)
+        self.assertEqual(len(js_files), 9)
         for js_path in js_files:
             proc = subprocess.run(
                 [node, "--check", str(js_path)],

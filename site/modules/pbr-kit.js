@@ -412,12 +412,34 @@ export function getCreekCenterX(z) {
   return 8.0 + 5.2 * Math.sin((z + 52.0) * 0.055);
 }
 
+// Shared Landmark Coordinates for Monet Pond & Bougainvillea Two-Person Swing Garden
+export const POND_CONFIG = {
+  cx: -1.5,
+  cz: 16.8,
+  rx: 5.4,
+  rz: 4.1,
+  waterY: 2.05,
+  bedY: 1.18,
+};
+
+export const SWING_CONFIG = {
+  cx: -28.5,
+  cz: 14.0,
+  groundY: 2.2,
+};
+
+export function getPondNormalizedRadius(x, z) {
+  const dx = x - POND_CONFIG.cx;
+  const dz = z - POND_CONFIG.cz + 0.34 * Math.sin((x - POND_CONFIG.cx) * 0.46);
+  return Math.hypot(dx / POND_CONFIG.rx, dz / POND_CONFIG.rz);
+}
+
 // Deterministic C1-smooth realistic coastal topography across X, Z in [-140, +140].
 // Y = 0.00m is Mean Sea Level.
 export function getWorldTerrainY(x, z) {
   // Base organic coastal landmass profile: high in North & West, shelving to East Harbor & South Sea
   const eastSeaMask = smoothstep(38.0, 56.0, x);
-  const southSeaMask = smoothstep(26.0, 62.0, z) * smoothstep(-42.0, -18.0, x);
+  const southSeaMask = smoothstep(35.0, 66.0, z) * smoothstep(-44.0, -18.0, x);
   const farWestCliff = smoothstep(-106.0, -126.0, x);
   const farSouthCliff = smoothstep(78.0, 102.0, z);
   const farNorthDrop = smoothstep(-114.0, -134.0, z);
@@ -433,15 +455,18 @@ export function getWorldTerrainY(x, z) {
 
   // West & South-West Grand Flower-Sea Headland rising to +9.2m
   const westHeadland =
-    smoothstep(-26.0, -86.0, x) *
+    smoothstep(-34.0, -88.0, x) *
     (1.0 - 0.55 * smoothstep(58.0, 96.0, z)) *
     (5.8 + 1.5 * Math.cos(z * 0.052));
 
   let y = 2.2 + northRise + westHeadland + macroRoll * 0.55;
 
-  // Flatten Central Villa & Courtyard Terrace: X in [-31, +3], Z in [-17, +13] -> Y = +2.20m
-  const villaFlatX = (1.0 - smoothstep(15.0, 23.0, Math.abs(x + 14.0)));
-  const villaFlatZ = (1.0 - smoothstep(13.0, 20.0, Math.abs(z + 2.0)));
+  // Flatten Central Villa, Monet Pond Terrace & Swing Secret Garden:
+  // X in [-36.5, +6.0], Z in [-15.5, +23.2] -> Y = +2.20m
+  const villaFlatX =
+    smoothstep(-42.5, -36.0, x) * (1.0 - smoothstep(5.8, 9.8, x));
+  const villaFlatZ =
+    smoothstep(-21.5, -15.0, z) * (1.0 - smoothstep(23.0, 28.5, z));
   const villaWeight = villaFlatX * villaFlatZ;
   y = lerp(y, 2.2, villaWeight);
 
@@ -463,15 +488,25 @@ export function getWorldTerrainY(x, z) {
   const seaBlend = clamp(Math.max(oceanDrop, clamp(harborBasin, 0, 1)), 0, 1);
   y = lerp(y, -4.6 - 2.2 * smoothstep(55.0, 115.0, Math.hypot(x, z)), seaBlend);
 
-  // Gentle Golden-Sand Cove Beach south of Villa: X in [-32, +8], Z in [+13, +48]
+  // Gentle Golden-Sand Cove Beach south of Garden Terrace: X in [-34, +8], Z in [+23.2, +56]
   const coveGate =
-    smoothstep(-34.0, -24.0, x) *
+    smoothstep(-36.0, -25.0, x) *
     (1.0 - smoothstep(6.0, 13.0, x)) *
-    smoothstep(11.0, 16.0, z) *
-    (1.0 - smoothstep(46.0, 62.0, z));
+    smoothstep(22.5, 26.5, z) *
+    (1.0 - smoothstep(54.0, 68.0, z));
   if (coveGate > 0.001) {
-    const beachSlope = lerp(2.15, -2.6, smoothstep(13.0, 46.0, z));
+    const beachSlope = lerp(2.16, -2.6, smoothstep(23.5, 54.0, z));
     y = lerp(y, beachSlope, coveGate * 0.92);
+  }
+
+  // Carve Monet Crystal-Clear Water-Lily & Fish/Shrimp Garden Pond Basin at (-1.5, +16.8)
+  const rPond = getPondNormalizedRadius(x, z);
+  if (rPond < 1.14) {
+    const pondCarve = 1.0 - smoothstep(0.66, 1.06, rPond);
+    // Subtle natural shelf on South-West side for shallow sunlit river-shrimp rocks
+    const shelfBias = smoothstep(-0.2, 0.85, (z - POND_CONFIG.cz) / POND_CONFIG.rz) * 0.16;
+    const targetBedY = POND_CONFIG.bedY + shelfBias;
+    y = lerp(y, targetBedY, pondCarve);
   }
 
   // Carve North Mountain Creek Bed: Z in [-112, -25] flowing into North Harbor Cove

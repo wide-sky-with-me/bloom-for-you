@@ -1,8 +1,17 @@
-// Realistic Coastal Villa, Botanical Flower Peninsula & Harbor Free-Exploration World
-// Supports seamless first-person walk-inside exploration (WASD + click-to-walk) & aerial panorama.
+// Realistic Coastal Villa, Monet Fish & Shrimp Pond, Bougainvillea Two-Person Swing
+// & Botanical Flower Peninsula World — Default Panoramic Overlook + Click-to-Dive Exploration.
 
-import { THREE, clearNavigationRegistry, isPositionWalkable } from "./modules/pbr-kit.js";
-import { createExplorationControls } from "./modules/exploration-controls.js";
+import {
+  THREE,
+  POND_CONFIG,
+  SWING_CONFIG,
+  clearNavigationRegistry,
+  isPositionWalkable,
+} from "./modules/pbr-kit.js";
+import {
+  createExplorationControls,
+  findNearestWalkableSpot,
+} from "./modules/exploration-controls.js";
 import {
   SUN_DIRECTION,
   createRealisticSkyEnvironment,
@@ -10,7 +19,8 @@ import {
 } from "./modules/realistic-ocean-sky.js";
 import { buildHarborAndEstate } from "./modules/harbor-and-estate.js";
 import { buildCoastalVilla } from "./modules/coastal-villa.js";
-import { buildBotanicalFlora, createRoseBouquet } from "./modules/botanical-flora.js";
+import { buildBotanicalFlora } from "./modules/botanical-flora.js";
+import { buildSecretGardensAndPond } from "./modules/secret-gardens-and-pond.js";
 import { createHarborAudio } from "./audio.js";
 
 async function loadGiftLetter() {
@@ -61,7 +71,10 @@ async function init() {
   const gl = renderer.getContext();
   const dbg = gl.getExtension("WEBGL_debug_renderer_info");
   const isSoftware = Boolean(
-    dbg && /SwiftShader|llvmpipe|Software/i.test(String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || ""))
+    dbg &&
+      /SwiftShader|llvmpipe|Software/i.test(
+        String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || "")
+      )
   );
   renderer.setPixelRatio(isSoftware ? 1 : Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
@@ -86,14 +99,14 @@ async function init() {
 
   const isPortrait = window.innerWidth < window.innerHeight;
   const camera = new THREE.PerspectiveCamera(
-    isPortrait ? 62 : 54,
+    isPortrait ? 62 : 52,
     window.innerWidth / Math.max(1, window.innerHeight),
-    0.15,
+    0.14,
     2200
   );
 
   // Physically-balanced coastal sunlight + warm limestone hemisphere bounce
-  const hemiLight = new THREE.HemisphereLight(0xe2f1ff, 0xdccfb9, 0.96);
+  const hemiLight = new THREE.HemisphereLight(0xe2f1ff, 0xdccfb9, 0.98);
   hemiLight.position.set(0, 80, 0);
   scene.add(hemiLight);
 
@@ -130,13 +143,32 @@ async function init() {
   const flora = buildBotanicalFlora();
   worldRoot.add(flora.group);
 
+  const secretGardens = await buildSecretGardensAndPond({ villaGroup: villa.group });
+  worldRoot.add(secretGardens.group);
+
+  if (isSoftware) {
+    renderer.shadowMap.needsUpdate = true;
+  }
+
+  function markActivePill(presetName) {
+    if (!exploreBar) return;
+    exploreBar.querySelectorAll(".explore-pill").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.preset === presetName);
+    });
+  }
+
   const controls = createExplorationControls(camera, canvas, {
+    isPortrait,
     onModeChange(nextMode) {
-      if (!exploreHint) return;
-      exploreHint.textContent =
-        nextMode === "aerial"
-          ? "拖拽旋转 · 右键平移 · 滚轮拉近落地漫游"
-          : "WASD / 点击地面自由进屋探索 · 拖拽环顾";
+      if (exploreHint) {
+        exploreHint.textContent =
+          nextMode === "aerial"
+            ? "点击任意景致深入探索 · 拖拽旋转俯瞰"
+            : "WASD / 点击地面自由漫步 · 按 Esc 返回俯瞰全景";
+      }
+      if (nextMode === "aerial") {
+        markActivePill("aerialOverlook");
+      }
     },
   });
 
@@ -158,13 +190,57 @@ async function init() {
     if (e.target === letterModal) closeLetterModal();
   });
   window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && letterModal && !letterModal.hidden) {
-      closeLetterModal();
+    if (e.key === "Escape") {
+      if (letterModal && !letterModal.hidden) {
+        closeLetterModal();
+      } else if (controls.getMode() !== "aerial") {
+        controls.flyToAerial([-4.5, 2.8, 9.2], window.innerWidth < window.innerHeight ? 76.0 : 66.0, 1.0, 0.3);
+        markActivePill("aerialOverlook");
+      }
     }
   });
 
-  // Presets supporting both human-eye walk-inside views and panoramic aerial views
+  // Presets supporting default panoramic overlook, secret gardens, pond macro, and Villa interior
   const CAMERA_PRESETS = {
+    aerialOverlook: {
+      type: "aerial",
+      target: [-4.5, 2.8, 9.2],
+      radius: isPortrait ? 76.0 : 66.0,
+      phi: 1.0,
+      theta: 0.3,
+    },
+    pondWaterfallWalk: {
+      type: "walk",
+      x: -1.5,
+      z: 22.1,
+      yaw: 0.0,
+      pitch: -0.20,
+      eyeHeight: 1.46,
+    },
+    pondFishShrimpCloseup: {
+      type: "walk",
+      x: -0.55,
+      z: 20.55,
+      yaw: 0.04,
+      pitch: -0.50,
+      eyeHeight: 0.84,
+    },
+    coupleSwingWalk: {
+      type: "walk",
+      x: -28.5,
+      z: 18.7,
+      yaw: 0.0,
+      pitch: -0.01,
+      eyeHeight: 1.45,
+    },
+    monetPathWalk: {
+      type: "walk",
+      x: -14.0,
+      z: 21.8,
+      yaw: 0.0,
+      pitch: 0.03,
+      eyeHeight: 1.65,
+    },
     courtyardWalk: { type: "walk", x: -14.0, z: 13.8, yaw: 0.0, pitch: 0.04 },
     villaLivingWalk: { type: "walk", x: -22.5, z: 3.05, yaw: -0.96, pitch: -0.04 },
     villaMasterWalk: { type: "walk", x: -17.4, z: -4.4, yaw: 0.42, pitch: -0.06 },
@@ -172,23 +248,33 @@ async function init() {
     gazeboFlowerWalk: { type: "walk", x: -51.5, z: 31.8, yaw: 2.26, pitch: 0.01 },
     harborPierWalk: { type: "walk", x: 34.0, z: 4.5, yaw: -1.32, pitch: -0.02 },
     creekBridgeWalk: { type: "walk", x: 1.5, z: -34.5, yaw: -0.45, pitch: 0.05 },
-    aerialEstateOverview: { type: "aerial", target: [-4.0, 3.0, 2.0], radius: 132.0, phi: 1.06, theta: 0.62 },
-    aerialVillaHarbor: { type: "aerial", target: [6.0, 2.5, 4.0], radius: 68.0, phi: 1.12, theta: 0.52 },
-    mobileOverview: { type: "walk", x: -14.0, z: 15.2, yaw: 0.0, pitch: 0.05 },
+    aerialEstateOverview: {
+      type: "aerial",
+      target: [-6.0, 3.0, 4.0],
+      radius: 122.0,
+      phi: 1.04,
+      theta: 0.56,
+    },
+    mobileOverview: {
+      type: "aerial",
+      target: [-13.5, 2.8, 11.2],
+      radius: 68.0,
+      phi: 0.98,
+      theta: 0.22,
+    },
   };
 
-  function markActivePill(presetName) {
-    if (!exploreBar) return;
-    exploreBar.querySelectorAll(".explore-pill").forEach((btn) => {
-      btn.classList.toggle("is-active", btn.dataset.preset === presetName);
-    });
-  }
-
-  function setCameraPreset(name) {
+  function setCameraPreset(name, { smooth = false } = {}) {
     const p = CAMERA_PRESETS[name];
     if (!p) return false;
     if (p.type === "walk") {
-      controls.teleportWalk(p.x, p.z, p.yaw, p.pitch);
+      if (smooth) {
+        controls.diveToWalk(p.x, p.z, p.yaw, p.pitch, { eyeHeight: p.eyeHeight ?? 1.68 });
+      } else {
+        controls.teleportWalk(p.x, p.z, p.yaw, p.pitch, p.eyeHeight ?? 1.68);
+      }
+    } else if (smooth) {
+      controls.flyToAerial(p.target, p.radius, p.phi, p.theta);
     } else {
       controls.setAerialImmediate(p.target, p.radius, p.phi, p.theta);
     }
@@ -201,7 +287,7 @@ async function init() {
       e.stopPropagation();
       audio.unlock();
       const preset = btn.dataset.preset;
-      if (preset) setCameraPreset(preset);
+      if (preset) setCameraPreset(preset, { smooth: true });
     });
   });
 
@@ -217,7 +303,7 @@ async function init() {
   window.addEventListener("keydown", bumpCapsuleActivity, { passive: true });
   bumpCapsuleActivity();
 
-  // Interactive 3D Raycasting & Click-to-Walk
+  // Interactive 3D Raycasting & Click-to-Dive / Click-to-Walk
   const raycaster = new THREE.Raycaster();
   const pointerNDC = new THREE.Vector2();
 
@@ -242,6 +328,8 @@ async function init() {
     return { interactive: null, hitPoint: groundPoint };
   }
 
+  let pondCloseupToggle = false;
+
   function triggerInteraction(id) {
     switch (id) {
       case "mailbox":
@@ -249,6 +337,15 @@ async function init() {
         openLetterModal();
         audio.playLetterUnfold();
         return { id, letterOpen: true };
+      case "couple-swing":
+        secretGardens.boostSwing?.();
+        flora.burstPetals?.();
+        audio.playPetalGlissando();
+        return { id, swingBoosted: true };
+      case "garden-pond":
+        secretGardens.ripplePond?.();
+        audio.playFishRipple?.();
+        return { id, pondRippled: true };
       case "lighthouse":
         estate.flashLighthouse?.();
         oceanSky.triggerRainbow?.();
@@ -278,29 +375,141 @@ async function init() {
     }
   }
 
+  // Smart destination resolver when clicking in Default Overlook ("点击什么地方才深入")
+  function handleOverlookDiveClick(picked) {
+    const id = picked.interactive?.id || null;
+    const hit = picked.hitPoint;
+
+    // 1. Clicked on or right around the Monet Waterfall & Fish/Shrimp Pond
+    if (
+      id === "garden-pond" ||
+      (hit && Math.hypot(hit.x - POND_CONFIG.cx, hit.z - POND_CONFIG.cz) < 6.8)
+    ) {
+      pondCloseupToggle = true;
+      setCameraPreset("pondFishShrimpCloseup", { smooth: true });
+      markActivePill("pondWaterfallWalk");
+      triggerInteraction("garden-pond");
+      return;
+    }
+
+    // 2. Clicked on or right around the White A-Frame Two-Person Swing Secret Garden
+    if (
+      id === "couple-swing" ||
+      (hit && Math.hypot(hit.x - SWING_CONFIG.cx, hit.z - SWING_CONFIG.cz) < 6.0)
+    ) {
+      setCameraPreset("coupleSwingWalk", { smooth: true });
+      triggerInteraction("couple-swing");
+      return;
+    }
+
+    // 3. Clicked on the Mediterranean Two-Bedroom Villa -> dive right inside that room!
+    if (hit && hit.x >= -25.2 && hit.x <= -3.0 && hit.z >= -11.0 && hit.z <= 5.2) {
+      if (hit.z < -3.0 && hit.x < -14.0) {
+        setCameraPreset("villaMasterWalk", { smooth: true });
+      } else if (hit.z < -3.0 && hit.x >= -14.0) {
+        setCameraPreset("villaStudyWalk", { smooth: true });
+      } else {
+        setCameraPreset("villaLivingWalk", { smooth: true });
+      }
+      return;
+    }
+
+    // 4. Clicked on specific interactive landmarks
+    if (id === "mailbox") {
+      controls.diveToWalk(-12.2, 12.6, -0.32, -0.02);
+      markActivePill("");
+      triggerInteraction("mailbox");
+      return;
+    }
+    if (id === "love-letter") {
+      setCameraPreset("villaStudyWalk", { smooth: true });
+      triggerInteraction("love-letter");
+      return;
+    }
+    if (id === "lighthouse") {
+      controls.diveToWalk(39.0, -14.5, -1.05, 0.14);
+      markActivePill("harborPierWalk");
+      triggerInteraction("lighthouse");
+      return;
+    }
+    if (id === "boat") {
+      setCameraPreset("harborPierWalk", { smooth: true });
+      triggerInteraction("boat");
+      return;
+    }
+    if (id === "flower-gazebo") {
+      setCameraPreset("gazeboFlowerWalk", { smooth: true });
+      markActivePill("");
+      triggerInteraction("flower-gazebo");
+      return;
+    }
+    if (id === "windmill") {
+      controls.diveToWalk(-44.0, -58.5, 0.65, 0.12);
+      markActivePill("");
+      triggerInteraction("windmill");
+      return;
+    }
+
+    // 5. Clicked anywhere else on the gardens, courtyard, paths, harbor quay, or hills!
+    if (hit) {
+      const spot = findNearestWalkableSpot(hit.x, hit.z, 12.0);
+      const camDirX = hit.x - camera.position.x;
+      const camDirZ = hit.z - camera.position.z;
+      const lookYaw = Math.atan2(-camDirX, -camDirZ);
+      controls.diveToWalk(spot.x, spot.z, lookYaw, -0.02);
+      markActivePill("");
+      if (id) triggerInteraction(id);
+    }
+  }
+
   canvas.addEventListener("pointermove", (e) => {
     if (e.buttons !== 0) return;
     const picked = pickScene(e.clientX, e.clientY);
-    canvas.classList.toggle("is-hover-interactive", Boolean(picked.interactive));
+    const clickable =
+      controls.getMode() === "aerial"
+        ? Boolean(picked.interactive || picked.hitPoint)
+        : Boolean(picked.interactive);
+    canvas.classList.toggle("is-hover-interactive", clickable);
   });
 
-  canvas.addEventListener("pointerup", (e) => {
+  canvas.addEventListener("click", (e) => {
     audio.unlock();
     if (!controls.wasClickGesture()) return;
     const picked = pickScene(e.clientX, e.clientY);
+
+    if (controls.getMode() === "aerial") {
+      handleOverlookDiveClick(picked);
+      return;
+    }
+
     if (picked.interactive) {
+      if (picked.interactive.id === "garden-pond") {
+        pondCloseupToggle = !pondCloseupToggle;
+        setCameraPreset(
+          pondCloseupToggle ? "pondFishShrimpCloseup" : "pondWaterfallWalk",
+          { smooth: true }
+        );
+        markActivePill("pondWaterfallWalk");
+      } else if (picked.interactive.id === "couple-swing") {
+        const wp = controls.getWalkPosition();
+        if (Math.hypot(wp.x - SWING_CONFIG.cx, wp.z - SWING_CONFIG.cz) > 9.0) {
+          setCameraPreset("coupleSwingWalk", { smooth: true });
+        }
+      }
       triggerInteraction(picked.interactive.id);
       return;
     }
+
     if (picked.hitPoint && isPositionWalkable(picked.hitPoint.x, picked.hitPoint.z, 0.28)) {
       controls.walkTo(picked.hitPoint.x, picked.hitPoint.z);
+      markActivePill("");
     }
   });
 
   window.addEventListener("resize", () => {
     const w = window.innerWidth;
     const h = Math.max(1, window.innerHeight);
-    camera.fov = w < h ? 62 : 54;
+    camera.fov = w < h ? 62 : 52;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h, false);
@@ -318,6 +527,7 @@ async function init() {
     estate.update?.(elapsed, dt);
     villa.update?.(elapsed, dt);
     flora.update?.(elapsed, dt);
+    secretGardens.update?.(elapsed, dt);
   }
 
   function animate() {
@@ -343,6 +553,7 @@ async function init() {
     estate,
     villa,
     flora,
+    secretGardens,
     openLetterModal,
     closeLetterModal,
     triggerInteraction,
@@ -387,10 +598,16 @@ async function init() {
       const wp = controls.getWalkPosition();
       return {
         mode: controls.getMode(),
+        eyeHeight: Number(controls.getEyeHeight().toFixed(2)),
         walkPosition: [
           Number(wp.x.toFixed(2)),
           Number(wp.y.toFixed(2)),
           Number(wp.z.toFixed(2)),
+        ],
+        cameraPosition: [
+          Number(camera.position.x.toFixed(2)),
+          Number(camera.position.y.toFixed(2)),
+          Number(camera.position.z.toFixed(2)),
         ],
         meshes,
         instancedFloraCount: instancedCount,

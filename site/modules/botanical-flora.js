@@ -72,8 +72,17 @@ export function isMeadowFloraAllowed(x, z) {
   // 3. Exclude East Harbor Quay & Ramp
   if (x >= 2.0 && x <= 48.0 && z >= -28.0 && z <= 24.0) return false;
 
+  // 3b. Exclude Monet Waterfall & Fish/Shrimp Pond Basin + Viewing Terrace
+  if (x >= -8.8 && x <= 5.6 && z >= 11.4 && z <= 22.8) return false;
+
+  // 3c. Exclude Bougainvillea Two-Person Swing Secret Garden Clearing & Pebble Walk
+  if (x >= -34.8 && x <= -22.2 && z >= 8.8 && z <= 22.4) return false;
+
+  // 3d. Exclude Central Monet Giverny Flagstone Walk
+  if (x >= -16.4 && x <= -11.6 && z >= 11.2 && z <= 23.8) return false;
+
   // 4. Exclude Sandy Cove Beach
-  if (x >= -33.0 && x <= 9.0 && z >= 12.0 && z <= 52.0 && y < 2.15) return false;
+  if (x >= -35.0 && x <= 9.0 && z >= 22.0 && z <= 60.0 && y < 2.15) return false;
 
   // 5. Exclude Creek Channel
   if (z >= -114.0 && z <= -23.0 && Math.abs(x - getCreekCenterX(z)) < 3.6) return false;
@@ -98,7 +107,7 @@ function isTreeSpotAllowed(x, z, placedTrees, minSpacing = 4.2) {
   if (distToPolyline2D(x, z, NORTH_WINDMILL_TRAIL) < 2.65) return false;
   if (Math.hypot(x + 64.0, z - 42.0) < 7.6) return false;
   if (Math.hypot(x + 52.0, z + 68.0) < 8.2) return false;
-  if (x >= -30.6 && x <= 3.6 && z >= -14.6 && z <= 13.4) return false;
+  if (x >= -36.5 && x <= 6.8 && z >= -14.6 && z <= 24.5) return false;
   if (z >= -114.0 && z <= -23.0 && Math.abs(x - getCreekCenterX(z)) < 4.5) return false;
 
   const nrm = getTerrainNormal(x, z, _tmpNormal);

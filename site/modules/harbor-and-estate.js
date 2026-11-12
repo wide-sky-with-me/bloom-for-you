@@ -22,6 +22,7 @@ import {
   getWorldTerrainY,
   getTerrainNormal,
   getCreekCenterX,
+  getPondNormalizedRadius,
   registerWalkZone,
   registerBoxCollider,
   registerCircleCollider,
@@ -349,6 +350,14 @@ function buildCoastalTerrainAndHorizon(parent) {
       const strata = 0.5 + 0.5 * Math.sin(y * 2.3 + n2 * 2.2);
       tmpB.copy(cCliffDark).lerp(cCliffLight, strata);
       tmpA.lerp(tmpB, rockWeight);
+    }
+
+    // Sunlit jade-limestone river-pebble pond bed so fish & river shrimp are crystal-clear
+    const rPond = getPondNormalizedRadius(x, z);
+    if (rPond < 1.12) {
+      const pondTint = 1.0 - smoothstep(0.76, 1.12, rPond);
+      tmpB.setHex(0xcbe2d9).lerp(cDrySand, 0.35 + 0.2 * n2);
+      tmpA.lerp(tmpB, pondTint * 0.92);
     }
 
     colors[i * 3 + 0] = tmpA.r;

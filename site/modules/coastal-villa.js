@@ -276,6 +276,7 @@ function addRoseArrangement(parent, mats, x, y, z, scale = 1.0) {
   const bouquet = createRoseBouquet({ count: 7, scale: 0.88 });
   bouquet.position.y = 0.04;
   g.add(bouquet);
+  g.userData.isHeroRoseVase = true;
 
   parent.add(g);
   return g;
