@@ -1,5 +1,5 @@
-// Self-hosted Web Audio API celesta music-box synthesizer for "予你花开 · Bloom for You"
-// Zero external audio dependencies; generates soft pentatonic chimes on user gesture.
+// Self-hosted Web Audio API sunshower harbor & celesta music-box synthesizer
+// Zero external audio dependencies; unlocks cleanly on user interaction with 3D miniature objects.
 
 const PENTATONIC_FREQ = [
   261.63, // C4
@@ -15,115 +15,107 @@ const PENTATONIC_FREQ = [
   1046.50, // C6
 ];
 
-const MELODY_SEQUENCE = [
-  { note: 5, beats: 1.5 },
-  { note: 7, beats: 1.0 },
-  { note: 8, beats: 1.5 },
-  { note: 9, beats: 2.0 },
-  { note: 8, beats: 1.0 },
-  { note: 7, beats: 1.5 },
-  { note: 5, beats: 1.5 },
-  { note: 3, beats: 2.0 },
-  { note: 4, beats: 1.5 },
-  { note: 5, beats: 1.0 },
-  { note: 7, beats: 1.5 },
-  { note: 6, beats: 2.5 },
-];
-
-export function createMusicBoxAudio() {
+export function createHarborAudio() {
   let ctx = null;
   let masterGain = null;
-  let enabled = false;
-  let melodyTimer = null;
-  let stepIndex = 0;
 
-  function ensureContext() {
-    if (ctx) return ctx;
+  function ensureUnlocked() {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return null;
-    ctx = new AudioCtx();
-    masterGain = ctx.createGain();
-    masterGain.gain.value = 0.22;
-    masterGain.connect(ctx.destination);
+    if (!ctx) {
+      ctx = new AudioCtx();
+      masterGain = ctx.createGain();
+      masterGain.gain.value = 0.24;
+      masterGain.connect(ctx.destination);
+    }
+    if (ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
     return ctx;
   }
 
-  function playCelestaNote(freq, duration = 2.1, volume = 0.18, delaySec = 0) {
-    const audioCtx = ensureContext();
-    if (!audioCtx || !enabled) return;
-    if (audioCtx.state === "suspended") {
-      audioCtx.resume().catch(() => {});
-    }
-
+  function playTone(freq, duration = 1.6, volume = 0.16, delaySec = 0, type = "sine") {
+    const audioCtx = ensureUnlocked();
+    if (!audioCtx) return;
     const now = audioCtx.currentTime + delaySec;
-    const osc1 = audioCtx.createOscillator();
-    const osc2 = audioCtx.createOscillator();
+    const osc = audioCtx.createOscillator();
+    const overtone = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
-    const overtoneGain = audioCtx.createGain();
+    const overGain = audioCtx.createGain();
 
-    osc1.type = "sine";
-    osc1.frequency.setValueAtTime(freq, now);
-    osc2.type = "triangle";
-    osc2.frequency.setValueAtTime(freq * 2.0, now);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, now);
+    overtone.type = "triangle";
+    overtone.frequency.setValueAtTime(freq * 2.0, now);
 
-    overtoneGain.gain.setValueAtTime(0.12, now);
-    overtoneGain.gain.exponentialRampToValueAtTime(0.001, now + duration * 0.45);
+    overGain.gain.setValueAtTime(0.09, now);
+    overGain.gain.exponentialRampToValueAtTime(0.0008, now + duration * 0.45);
 
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(volume, now + 0.028);
+    gain.gain.linearRampToValueAtTime(volume, now + 0.022);
     gain.gain.exponentialRampToValueAtTime(0.0005, now + duration);
 
-    osc1.connect(gain);
-    osc2.connect(overtoneGain);
-    overtoneGain.connect(gain);
+    osc.connect(gain);
+    overtone.connect(overGain);
+    overGain.connect(gain);
     gain.connect(masterGain);
 
-    osc1.start(now);
-    osc2.start(now);
-    osc1.stop(now + duration + 0.05);
-    osc2.stop(now + duration + 0.05);
+    osc.start(now);
+    overtone.start(now);
+    osc.stop(now + duration + 0.04);
+    overtone.stop(now + duration + 0.04);
   }
 
-  function scheduleNextMelodyNote() {
-    if (!enabled) return;
-    const item = MELODY_SEQUENCE[stepIndex % MELODY_SEQUENCE.length];
-    const freq = PENTATONIC_FREQ[item.note] || 523.25;
-    playCelestaNote(freq, 2.5, 0.13, 0);
-    if (stepIndex % 3 === 0) {
-      const bassFreq = (PENTATONIC_FREQ[item.note % 5] || 261.63) * 0.5;
-      playCelestaNote(bassFreq, 3.5, 0.08, 0.04);
-    }
-    stepIndex += 1;
-    melodyTimer = window.setTimeout(scheduleNextMelodyNote, item.beats * 800);
+  function playRoofChime(opened = true) {
+    const seq = opened ? [5, 6, 7, 9] : [9, 7, 6, 5];
+    seq.forEach((n, i) => {
+      playTone(PENTATONIC_FREQ[n], 1.4, 0.13, i * 0.075);
+    });
   }
 
-  function setEnabled(nextState) {
-    enabled = Boolean(nextState);
-    if (enabled) {
-      const audioCtx = ensureContext();
-      if (audioCtx && audioCtx.state === "suspended") {
-        audioCtx.resume().catch(() => {});
-      }
-      if (!melodyTimer) scheduleNextMelodyNote();
-    } else if (melodyTimer) {
-      clearTimeout(melodyTimer);
-      melodyTimer = null;
-    }
-    return enabled;
+  function playLetterUnfold() {
+    [5, 7, 8, 10].forEach((n, i) => {
+      playTone(PENTATONIC_FREQ[n], 2.1, 0.15, i * 0.09);
+    });
   }
 
-  function playChime(accentIndex = 0) {
-    if (!enabled) return;
-    const base = (accentIndex * 2) % 5;
-    [base + 4, base + 6, base + 8].forEach((idx, i) => {
-      playCelestaNote(PENTATONIC_FREQ[idx % PENTATONIC_FREQ.length], 2.0, 0.14, i * 0.09);
+  function playLighthouseBell() {
+    playTone(587.33, 2.6, 0.16, 0.0);
+    playTone(880.00, 2.8, 0.13, 0.14);
+    playTone(1174.66, 2.4, 0.09, 0.28);
+  }
+
+  function playShipBell() {
+    playTone(783.99, 1.8, 0.16, 0.0, "triangle");
+    playTone(783.99, 2.1, 0.14, 0.24, "triangle");
+  }
+
+  function playDuetArpeggio() {
+    // Violin + guitar warm romantic chord arpeggio
+    const notes = [261.63, 329.63, 392.0, 493.88, 523.25, 659.25, 783.99];
+    notes.forEach((f, i) => {
+      playTone(f, 2.3, 0.13, i * 0.085, i < 3 ? "triangle" : "sine");
+    });
+  }
+
+  function playVendingClink() {
+    playTone(987.77, 0.45, 0.12, 0.0, "sine");
+    playTone(1318.51, 0.65, 0.14, 0.09, "sine");
+  }
+
+  function playFishRipple() {
+    [6, 8, 9, 10].forEach((n, i) => {
+      playTone(PENTATONIC_FREQ[n], 0.85, 0.11, i * 0.055);
     });
   }
 
   return {
-    isEnabled: () => enabled,
-    setEnabled,
-    toggle: () => setEnabled(!enabled),
-    playChime,
+    playRoofChime,
+    playLetterUnfold,
+    playLighthouseBell,
+    playShipBell,
+    playDuetArpeggio,
+    playVendingClink,
+    playFishRipple,
   };
 }

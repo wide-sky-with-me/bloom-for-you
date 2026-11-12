@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the '予你花开 · Bloom for You' 3D Clay Diorama Scroll World static Pages artifact."""
+"""Build the '予你花开 · 太阳雨中的童话星语花湾' 3D Anime Diorama static Pages artifact."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import struct
 
 ROOT = Path(__file__).resolve().parent
 
@@ -17,14 +16,17 @@ REQUIRED_SITE_FILES = (
     "index.html",
     "style.css",
     "app.js",
-    "diorama-stage.js",
-    "scrub-world.js",
     "audio.js",
     "gift.json",
+    "modules/toon-kit.js",
+    "modules/diorama-controls.js",
+    "modules/harbor-base.js",
+    "modules/fairytale-villa.js",
+    "modules/harbor-craft-and-props.js",
+    "modules/sunshower-atmosphere.js",
     "assets/flower-song.woff2",
     "assets/FONT-LICENSE.txt",
     "assets/flower.svg",
-    "assets/models/bloom_scroll_world.glb",
     "vendor/three-0.186.1/three.module.js",
     "vendor/three-0.186.1/three.core.js",
     "vendor/three-0.186.1/addons/loaders/GLTFLoader.js",
@@ -33,31 +35,9 @@ REQUIRED_SITE_FILES = (
     "vendor/three-0.186.1/LICENSE",
 )
 
-REQUIRED_GLB_NODES = (
-    "ScrollWorldRoot",
-    "VillaBaseNode",
-    "VillaRoofNode",
-    "VillaFrontUpperNode",
-    "HeroBouquetNode",
-    "BouquetOrbitNode",
-)
-
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def _parse_glb_json(glb_path: Path) -> dict:
-    data = glb_path.read_bytes()
-    if len(data) < 20 or data[:4] != b"glTF":
-        raise ValueError(f"Invalid glTF binary header in {glb_path.name}")
-    version, total_len = struct.unpack_from("<II", data, 4)
-    if version != 2 or total_len != len(data):
-        raise ValueError(f"Malformed glTF 2.0 container in {glb_path.name}")
-    chunk_len, chunk_type = struct.unpack_from("<II", data, 12)
-    if chunk_type != 0x4E4F534A:  # JSON
-        raise ValueError(f"Missing glTF JSON chunk in {glb_path.name}")
-    return json.loads(data[20 : 20 + chunk_len].decode("utf-8"))
 
 
 def verify_source(source: Path) -> dict:
@@ -78,7 +58,7 @@ def verify_source(source: Path) -> dict:
     ):
         raise ValueError("gift.json: letter must contain non-empty text paragraphs")
 
-    # Validate Three.js 0.186.1 vendor bundle + GLTFLoader addons
+    # Validate Three.js 0.186.1 vendor bundle integrity
     three_dir = source / "vendor" / "three-0.186.1"
     three_meta = json.loads((three_dir / "metadata.json").read_text(encoding="utf-8"))
     if three_meta.get("name") != "three" or three_meta.get("version") != "0.186.1":
@@ -96,14 +76,8 @@ def verify_source(source: Path) -> dict:
         if not path.is_file() or _sha256(path) != record.get("sha256"):
             raise ValueError(f"Three.js vendor integrity failed: {name}")
 
-    # Validate Cycles-baked 3D diorama world GLB & required hierarchy nodes
-    glb_doc = _parse_glb_json(source / "assets" / "models" / "bloom_scroll_world.glb")
-    node_names = {n.get("name") for n in glb_doc.get("nodes", [])}
-    for req_node in REQUIRED_GLB_NODES:
-        if req_node not in node_names:
-            raise ValueError(f"bloom_scroll_world.glb missing required node: {req_node}")
-
-    return {"glbNodes": len(glb_doc.get("nodes", [])), "glbMeshes": len(glb_doc.get("meshes", []))}
+    module_files = sorted(p.name for p in (source / "modules").glob("*.js"))
+    return {"modules": module_files}
 
 
 def build(output: Path) -> Path:
@@ -127,19 +101,11 @@ def build(output: Path) -> Path:
             file_hashes[rel] = _sha256(file_path)
 
     release = {
-        "schema": 3,
-        "style": "clay-diorama-scroll-world-v1",
+        "schema": 4,
+        "style": "sunshower-fairytale-harbor-diorama-v1",
         "renderer": "three-0.186.1",
-        "sections": [
-            "brook",
-            "plaza",
-            "villa",
-            "living",
-            "bedrooms",
-            "bouquet",
-        ],
-        "glbNodes": summary["glbNodes"],
-        "glbMeshes": summary["glbMeshes"],
+        "uiChrome": "zero-hud-tabletop-diorama",
+        "modules": summary["modules"],
         "revision": os.environ.get("BLOOM_BUILD_REVISION", "local"),
         "files": file_hashes,
     }
@@ -147,7 +113,7 @@ def build(output: Path) -> Path:
         json.dumps(release, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    print(f"Built Bloom for You 3D Scroll World: {output}")
+    print(f"Built Sunshower Fairytale Harbor 3D Diorama: {output}")
     return output
 
 

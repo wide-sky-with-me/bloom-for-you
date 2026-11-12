@@ -2,9 +2,9 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>予你花开 — 致我最爱的老婆</title>
-  <meta name="description" content="穿过花溪拱桥、星灯花廊与两室一厅的南法花墅，把永不凋谢的花束捧到你面前。" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>予你花开 · 太阳雨中的童话星语花湾</title>
+  <meta name="description" content="献给最爱的老婆：可自由拖拽、旋转、缩放与互动的三渲二微缩海港与两室一厅童话小屋。" />
   <link rel="icon" href="./assets/flower.svg" type="image/svg+xml" />
   <link rel="preload" href="./assets/flower-song.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="./style.css" />
@@ -18,75 +18,8 @@
   </script>
 </head>
 <body>
-  <div id="top"></div>
-  <div id="world" class="sw-root">
-    <!-- Atmospheric cream studio backdrop & drifting bokeh particles -->
-    <div class="sw-sky" aria-hidden="true">
-      <div class="sw-sky__grad"></div>
-      <div class="sw-sky__glow"></div>
-      <div class="sw-particles" id="sw-particles"></div>
-    </div>
+  <canvas id="diorama-canvas" aria-label="太阳雨中的童话星语花湾微缩三维模型"></canvas>
 
-    <!-- 3px top scroll progress bar -->
-    <div class="sw-scrollbar" aria-hidden="true">
-      <span id="sw-scrollbar-fill"></span>
-    </div>
-
-    <!-- Minimalist 3-part scroll-world topbar -->
-    <header class="sw-topbar">
-      <a class="sw-brand" href="#top" id="sw-brand-link">
-        <span class="sw-brand__mark" aria-hidden="true"></span>
-        <span class="sw-brand__name">予你花开</span>
-      </a>
-
-      <nav class="sw-nav" id="sw-nav" aria-label="漫游章节"></nav>
-
-      <div class="sw-topactions">
-        <button type="button" class="sw-audio-btn" id="sw-audio-btn" aria-pressed="false" aria-label="开启八音盒旋律" title="八音盒旋律">
-          <span aria-hidden="true">♪</span>
-        </button>
-        <button type="button" class="sw-topcta" id="sw-topcta">展读情书</button>
-      </div>
-    </header>
-
-    <!-- Full-bleed 3D Clay Diorama Stage -->
-    <div class="sw-stage" id="sw-stage">
-      <canvas id="diorama-canvas" aria-label="3D 微缩花境与两室一厅花墅"></canvas>
-    </div>
-
-    <!-- Left borderless editorial copy layer -->
-    <main class="sw-copylayer" id="sw-copylayer"></main>
-
-    <!-- Right route rail -->
-    <aside class="sw-route" id="sw-route" aria-label="章节进度导航"></aside>
-
-    <!-- Bottom scroll-wheel cue -->
-    <div class="sw-hint" id="sw-hint" aria-hidden="true">
-      <span>向下轻滚 · 飞入花境</span>
-      <i></i>
-    </div>
-
-    <!-- Interactive 360° House Inspection Dock (only shown when 360° mode is active) -->
-    <div class="sw-explore-bar" id="sw-explore-bar" hidden>
-      <span class="sw-explore-bar__tip">拖拽旋转 · 滚轮缩放两室一厅</span>
-      <div class="sw-explore-bar__btns">
-        <button type="button" class="sw-pill-btn" id="btn-toggle-roof">合拢屋顶看外观</button>
-        <button type="button" class="sw-pill-btn" id="btn-explore-letter">展读情书</button>
-        <button type="button" class="sw-pill-btn sw-pill-btn--dark" id="btn-exit-explore">返回漫游</button>
-      </div>
-    </div>
-
-    <!-- Scroll track spacer -->
-    <div class="sw-track" id="sw-track" aria-hidden="true"></div>
-
-    <!-- Soft studio loading veil -->
-    <div class="sw-loader" id="sw-loader" role="status" aria-live="polite">
-      <div class="sw-loader__mark" aria-hidden="true"></div>
-      <p class="sw-loader__text" id="sw-loader-text">正在点亮微缩花境与两室一厅…</p>
-    </div>
-  </div>
-
-  <!-- Tactile Cotton-Paper Love Letter Modal (populated from site/gift.json) -->
   <div class="letter-backdrop" id="letter-modal" role="dialog" aria-modal="true" aria-labelledby="letter-salutation" hidden>
     <article class="letter-sheet">
       <button type="button" class="letter-close" id="letter-close" aria-label="收起情书">×</button>

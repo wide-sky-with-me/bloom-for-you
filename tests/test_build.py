@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "site"
 
 
-class ScrollWorldBuildTests(unittest.TestCase):
+class SunshowerHarborDioramaTests(unittest.TestCase):
     def test_build_produces_verified_release_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "dist"
@@ -24,14 +24,27 @@ class ScrollWorldBuildTests(unittest.TestCase):
             self.assertTrue((built / "THIRD_PARTY_NOTICES.md").is_file())
 
             manifest = json.loads((built / "release.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["schema"], 3)
-            self.assertEqual(manifest["style"], "clay-diorama-scroll-world-v1")
+            self.assertEqual(manifest["schema"], 4)
+            self.assertEqual(manifest["style"], "sunshower-fairytale-harbor-diorama-v1")
             self.assertEqual(manifest["renderer"], "three-0.186.1")
-            self.assertEqual(
-                manifest["sections"],
-                ["brook", "plaza", "villa", "living", "bedrooms", "bouquet"],
-            )
-            self.assertIn("assets/models/bloom_scroll_world.glb", manifest["files"])
+            self.assertEqual(manifest["uiChrome"], "zero-hud-tabletop-diorama")
+            for mod in (
+                "modules/toon-kit.js",
+                "modules/diorama-controls.js",
+                "modules/harbor-base.js",
+                "modules/fairytale-villa.js",
+                "modules/harbor-craft-and-props.js",
+                "modules/sunshower-atmosphere.js",
+            ):
+                self.assertIn(mod, manifest["files"])
+
+    def test_zero_permanent_ui_chrome_in_index_html(self) -> None:
+        html = (SITE / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="diorama-canvas"', html)
+        self.assertIn('id="letter-modal"', html)
+        self.assertIn("hidden", html)
+        for forbidden_hud in ("sw-topbar", "sw-nav", "sw-route", "sw-scrollbar", "sw-copylayer"):
+            self.assertNotIn(forbidden_hud, html)
 
     def test_zero_external_runtime_urls_in_first_party_site(self) -> None:
         url_re = re.compile(r"https?://", re.IGNORECASE)
@@ -51,21 +64,17 @@ class ScrollWorldBuildTests(unittest.TestCase):
                     f"External runtime URL forbidden in first-party file {rel}",
                 )
                 checked += 1
-        self.assertGreaterEqual(checked, 7)
+        self.assertGreaterEqual(checked, 10)
 
     def test_legacy_files_removed(self) -> None:
         legacy_paths = (
-            SITE / "vangogh-sky.js",
-            SITE / "flower-meadow.js",
-            SITE / "botanical-assets.js",
-            SITE / "fairytale-props.js",
-            SITE / "scroll-world-engine.js",
-            SITE / "assets" / "confessions.json",
-            SITE / "vendor" / "p5-1.9.4",
-            SITE / "assets" / "models" / "storybook_cottage.glb",
+            SITE / "diorama-stage.js",
+            SITE / "scrub-world.js",
+            SITE / "assets" / "models" / "bloom_scroll_world.glb",
+            ROOT / "tools",
         )
         for p in legacy_paths:
-            self.assertFalse(p.exists(), f"Legacy file should be removed: {p}")
+            self.assertFalse(p.exists(), f"Obsolete file should be removed: {p}")
 
     def test_gift_letter_preserved_verbatim(self) -> None:
         gift = json.loads((SITE / "gift.json").read_text(encoding="utf-8"))
@@ -75,34 +84,24 @@ class ScrollWorldBuildTests(unittest.TestCase):
         self.assertEqual(len(gift["letter"]), 4)
         self.assertIn("想送你一束花，又贪心地想让它永远盛开。", gift["letter"][0])
 
-    def test_javascript_modules_pass_node_syntax_check(self) -> None:
+    def test_all_javascript_modules_pass_node_syntax_check(self) -> None:
         node = shutil.which("node")
         if not node:
             self.skipTest("node not installed")
-        for js_name in ("app.js", "diorama-stage.js", "scrub-world.js", "audio.js"):
+        js_files = [
+            SITE / "app.js",
+            SITE / "audio.js",
+            *sorted((SITE / "modules").glob("*.js")),
+        ]
+        self.assertGreaterEqual(len(js_files), 8)
+        for js_path in js_files:
             proc = subprocess.run(
-                [node, "--check", str(SITE / js_name)],
+                [node, "--check", str(js_path)],
                 capture_output=True,
                 text=True,
                 check=False,
             )
-            self.assertEqual(proc.returncode, 0, f"Syntax error in {js_name}: {proc.stderr}")
-
-    def test_glb_contains_villa_cutaway_and_bouquet_hierarchy(self) -> None:
-        glb_doc = build._parse_glb_json(SITE / "assets" / "models" / "bloom_scroll_world.glb")
-        node_names = {n.get("name") for n in glb_doc.get("nodes", [])}
-        for req in (
-            "ScrollWorldRoot",
-            "OutdoorIslandsBaked",
-            "VillaBaseNode",
-            "VillaRoofNode",
-            "VillaFrontUpperNode",
-            "VillaInteriorShellBaked",
-            "VillaFurnitureBaked",
-            "HeroBouquetNode",
-            "BouquetOrbitNode",
-        ):
-            self.assertIn(req, node_names)
+            self.assertEqual(proc.returncode, 0, f"Syntax error in {js_path.name}: {proc.stderr}")
 
 
 if __name__ == "__main__":
