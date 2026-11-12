@@ -308,6 +308,7 @@ function createBotanicalMaterial(
         }
 
         vec3 N = length(vNormal) > 0.0001 ? normalize(vNormal) : vec3(0.0, 1.0, 0.0);
+        float camDist = length(vViewDir);
         vec3 V = normalize(vViewDir);
         if (dot(N, V) < 0.0) N = -N;
 
@@ -347,9 +348,9 @@ function createBotanicalMaterial(
         lit += sheenCol * fresnel * (uSheenStrength + 0.16 * uFinaleProgress + vRipple * 0.24);
         lit += (vec3(0.18) + baseAlbedo * 0.82) * mix(vec3(0.38, 0.82, 1.0), vec3(1.0, 0.88, 0.44), 0.45) * vRipple * 0.26;
 
-        // Dreamy fairytale atmospheric mist into distant Saint-Rémy hills
-        float distMist = smoothstep(5.8, 14.2, length(vWorldPos.xz - vec2(0.0, 1.5)));
-        lit = mix(lit, vec3(0.018, 0.042, 0.105), distMist * 0.68);
+        // Camera-aware fairytale atmospheric mist (stays vivid when diving close to hilltop blooms!)
+        float distMist = smoothstep(7.4, 16.2, camDist);
+        lit = mix(lit, vec3(0.018, 0.042, 0.105), distMist * 0.65);
 
         // Clean ACES filmic tone mapping + single sRGB encode
         vec3 mapped = (lit * (2.51 * lit + 0.03)) / (lit * (2.43 * lit + 0.59) + 0.14);
@@ -437,6 +438,9 @@ export function createMeadowScene(
 
   let macroMode = false;
   let followSpriteMode = false;
+  let scrollCameraMode = true;
+  const scrollCamPos = cameraBase.clone();
+  const scrollCamLook = cameraLookBase.clone();
   let focusedTarget = null;
   let focusUntil = 0;
   let finaleProgress = 0;
@@ -578,8 +582,9 @@ export function createMeadowScene(
         float ripple = computeRippleBoost(vWorldPos);
         lit += mix(vec3(0.32, 0.78, 1.0), vec3(1.0, 0.86, 0.42), 0.45) * ripple * 0.32;
 
-        // Atmospheric indigo horizon blend into p5.js Saint-Rémy foothills
-        float farMix = smoothstep(0.5, -7.2, vWorldPos.z);
+        // Camera-aware indigo horizon blend into p5.js Saint-Rémy foothills (stays vivid on hilltop fly-ins!)
+        float camNear = smoothstep(2.2, 6.2, length(vWorldPos - cameraPosition));
+        float farMix = smoothstep(-2.4, -7.8, vWorldPos.z) * (0.28 + 0.72 * camNear);
         lit = mix(lit, vec3(0.014, 0.036, 0.095), farMix * 0.78);
 
         vec3 mapped = (lit * (2.51 * lit + 0.03)) / (lit * (2.43 * lit + 0.59) + 0.14);
@@ -1718,6 +1723,20 @@ export function createMeadowScene(
       return;
     }
 
+    if (scrollCameraMode) {
+      cameraTargetPos.set(
+        scrollCamPos.x + parallaxOffset.x * 0.28,
+        scrollCamPos.y + parallaxOffset.y * 0.12,
+        scrollCamPos.z
+      );
+      cameraTargetLook.set(
+        scrollCamLook.x + parallaxOffset.x * 0.18,
+        scrollCamLook.y + parallaxOffset.y * 0.10,
+        scrollCamLook.z
+      );
+      return;
+    }
+
     if (macroMode) {
       cameraTargetPos.set(
         parallaxOffset.x * 1.05 + dragYaw * 2.0,
@@ -1781,7 +1800,8 @@ export function createMeadowScene(
     });
 
     updateCameraTargets(nowMs);
-    const camLerp = 1 - Math.exp(-dt * 3.4);
+    const lerpSpeed = scrollCameraMode && !(focusedTarget && nowMs < focusUntil) && !followSpriteMode ? 9.5 : 3.4;
+    const camLerp = 1 - Math.exp(-dt * lerpSpeed);
     cameraCurrentPos.lerp(cameraTargetPos, camLerp);
     cameraCurrentLook.lerp(cameraTargetLook, camLerp);
     camera.position.copy(cameraCurrentPos);
@@ -1814,8 +1834,10 @@ export function createMeadowScene(
       const dx = ev.clientX - downX;
       const dy = ev.clientY - downY;
       movedDist += Math.hypot(dx, dy);
-      dragYaw = clamp(dragYaw - dx * 0.0022, -1.15, 1.15);
-      dragPitch = clamp(dragPitch - dy * 0.0018, -0.45, 0.52);
+      if (!scrollCameraMode || followSpriteMode) {
+        dragYaw = clamp(dragYaw - dx * 0.0022, -1.15, 1.15);
+        dragPitch = clamp(dragPitch - dy * 0.0018, -0.45, 0.52);
+      }
       downX = ev.clientX;
       downY = ev.clientY;
     }
@@ -1991,29 +2013,66 @@ export function createMeadowScene(
       }
       focusUntil = performance.now() + durationMs;
     },
+    clearFocus() {
+      focusedTarget = null;
+      focusUntil = 0;
+    },
+    setScrollCameraMode(enabled) {
+      scrollCameraMode = Boolean(enabled);
+      if (scrollCameraMode) {
+        followSpriteMode = false;
+        macroMode = false;
+        dragYaw = 0;
+        dragPitch = 0;
+      }
+      return scrollCameraMode;
+    },
+    isScrollCameraMode: () => scrollCameraMode,
+    setScrollCameraPose(camArr, lookArr, snap = false) {
+      scrollCamPos.set(camArr[0], camArr[1], camArr[2]);
+      scrollCamLook.set(lookArr[0], lookArr[1], lookArr[2]);
+      if (snap) {
+        focusedTarget = null;
+        focusUntil = 0;
+        cameraTargetPos.copy(scrollCamPos);
+        cameraTargetLook.copy(scrollCamLook);
+        cameraCurrentPos.copy(scrollCamPos);
+        cameraCurrentLook.copy(scrollCamLook);
+        camera.position.copy(scrollCamPos);
+        camera.lookAt(scrollCamLook);
+      }
+    },
     triggerWonder,
     markEggUnlocked,
     triggerFinaleState,
     spawnRipple,
     toggleMacroMode() {
       macroMode = !macroMode;
-      if (macroMode) followSpriteMode = false;
+      if (macroMode) {
+        followSpriteMode = false;
+        scrollCameraMode = false;
+      }
       return macroMode;
     },
     toggleFollowSprite(forceState) {
       followSpriteMode = typeof forceState === 'boolean' ? forceState : !followSpriteMode;
       if (followSpriteMode) {
         macroMode = false;
+        scrollCameraMode = false;
         focusedTarget = null;
       }
       return followSpriteMode;
     },
     isFollowingSprite: () => followSpriteMode,
     nudgeSprite: (dx, dz) => fairySprite.nudge(dx, dz),
-    walkSpriteTo: (x, z, msg) => fairySprite.walkTo(x, z, msg),
+    walkSpriteTo: (x, z, msg, holdSec = 3.2) => fairySprite.walkTo(x, z, msg, holdSec),
     getEggScreenPositions,
     getWonderScreenPositions,
     getSpriteScreenPosition,
+    getCameraState: () => ({
+      position: cameraCurrentPos.toArray().map((v) => Number(v.toFixed(3))),
+      lookAt: cameraCurrentLook.toArray().map((v) => Number(v.toFixed(3)))
+    }),
     getDiagnostics() {
       const loadedModelPacks = [
         ...(fairySprite.isGlbLoaded() ? ['fairy_sprite'] : []),
@@ -2037,6 +2096,7 @@ export function createMeadowScene(
           grassBlades: gPlaced
         },
         followSpriteMode,
+        scrollCameraMode,
         macroMode,
         finaleProgress,
         spritePosition: {

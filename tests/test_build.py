@@ -69,6 +69,7 @@ class TestStarryMeadowBuild(unittest.TestCase):
     def test_javascript_modules_pass_node_syntax_check(self) -> None:
         for js_name in (
             "app.js",
+            "scroll-world-engine.js",
             "vangogh-sky.js",
             "flower-meadow.js",
             "botanical-assets.js",
@@ -129,6 +130,18 @@ class TestStarryMeadowBuild(unittest.TestCase):
             node_names = {n.get("name") for n in gltf_json.get("nodes", [])}
             for node_name in required_nodes:
                 self.assertIn(node_name, node_names, f"{name} missing sculpted node {node_name}")
+
+    def test_scroll_world_engine_and_html_track_contract(self) -> None:
+        html = (ROOT / "site" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="sw-track"', html)
+        self.assertIn('id="btn-mode-toggle"', html)
+
+        sw_js = (ROOT / "site" / "scroll-world-engine.js").read_text(encoding="utf-8")
+        self.assertIn("FAIRYTALE_SCROLL_SECTIONS", sw_js)
+        self.assertIn("lingerEase", sw_js)
+        self.assertIn("mountFairytaleScrollWorld", sw_js)
+        self.assertNotIn("http://", sw_js)
+        self.assertNotIn("https://", sw_js)
 
 
 if __name__ == "__main__":

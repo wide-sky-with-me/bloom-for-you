@@ -60,6 +60,11 @@
       </div>
 
       <div class="hud-actions">
+        <button id="btn-mode-toggle" class="hud-pill hud-btn hud-btn--scroll" type="button" aria-pressed="true" title="切换一镜到底滚动飞越长卷与 360° 自由探索模式">
+          <span class="pill-icon" id="mode-toggle-icon" aria-hidden="true">📜</span>
+          <span id="mode-toggle-label">漫游<span class="hide-xs">飞越</span></span>
+        </button>
+
         <button id="btn-follow-sprite" class="hud-pill hud-btn hud-btn--fairy" type="button" aria-pressed="false" title="切换第三人称视角，跟随提灯小精灵漫步小路与花坡">
           <span class="pill-icon" aria-hidden="true">✧</span>
           <span id="follow-label"><span class="hide-xs">跟随</span>精灵</span>
@@ -160,6 +165,9 @@
       </div>
     </aside>
   </div>
+
+  <!-- Scroll-World Document Height Track (drives continuous 3D camera flight via native scroll) -->
+  <div id="sw-track" class="sw-track" aria-hidden="true"></div>
 
   <script type="module" src="./app.js"></script>
 </body>

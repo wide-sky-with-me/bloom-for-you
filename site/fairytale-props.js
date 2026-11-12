@@ -415,14 +415,17 @@ export function createFairyExplorer({
   const lanternWorldTmp = new THREE.Vector3();
   const headScreenProj = new THREE.Vector3();
 
-  function walkTo(tx, tz, whisper = '') {
+  let arrivalHoldSec = 3.2;
+
+  function walkTo(tx, tz, whisper = '', holdSec = 3.2) {
     const cx = clamp(tx, -8.5, 8.5);
     const cz = clamp(tz, -6.8, 5.2);
     targetPos.set(cx, meadowHeight(cx, cz), cz);
     hasPlayerTarget = true;
+    arrivalHoldSec = Math.max(1.8, holdSec);
     pauseTimer = 0;
     destRing.position.set(cx, meadowHeight(cx, cz) + 0.04, cz);
-    destRing.material.opacity = 0.82;
+    destRing.material.opacity = holdSec > 6 ? 0.42 : 0.82;
     if (whisper) {
       onArrivalWhisper(whisper);
     }
@@ -474,7 +477,7 @@ export function createFairyExplorer({
       if (dist < 0.16) {
         if (hasPlayerTarget) {
           hasPlayerTarget = false;
-          pauseTimer = 2.6;
+          pauseTimer = arrivalHoldSec;
           triggerJoySpin();
         } else if (waypoints.length > 0) {
           const arrivedWp = waypoints[wpIndex];

@@ -1,6 +1,7 @@
 import { createVanGoghSky } from "./vangogh-sky.js";
 import { createMeadowScene } from "./flower-meadow.js";
 import { createNightAudio } from "./audio.js";
+import { mountFairytaleScrollWorld } from "./scroll-world-engine.js";
 
 const STORAGE_KEY_EGGS = "bloom_for_you_vangogh_unlocked_v2";
 const STORAGE_KEY_WONDERS = "bloom_for_you_fairytale_wonders_v1";
@@ -63,6 +64,7 @@ function normalizeProjectedEntries(projected) {
 
 async function initApp() {
   const appShell = document.getElementById("app-shell");
+  const swTrackEl = document.getElementById("sw-track");
   const skyContainer = document.getElementById("sky-container");
   const meadowCanvas = document.getElementById("meadow-canvas");
   const wonderMarkersRoot = document.getElementById("wonder-markers");
@@ -80,6 +82,9 @@ async function initApp() {
   const wonderToastTextEl = document.getElementById("wonder-toast-text");
   const btnCloseToast = document.getElementById("btn-close-toast");
 
+  const btnModeToggle = document.getElementById("btn-mode-toggle");
+  const modeToggleIcon = document.getElementById("mode-toggle-icon");
+  const modeToggleLabel = document.getElementById("mode-toggle-label");
   const btnFollowSprite = document.getElementById("btn-follow-sprite");
   const followLabel = document.getElementById("follow-label");
   const btnAudio = document.getElementById("btn-audio");
@@ -193,6 +198,50 @@ async function initApp() {
     meadow.triggerFinaleState();
   }
 
+  function syncModeButtonUI(isScrollMode) {
+    if (!btnModeToggle) return;
+    btnModeToggle.setAttribute("aria-pressed", isScrollMode ? "true" : "false");
+    if (modeToggleIcon) {
+      modeToggleIcon.textContent = isScrollMode ? "📜" : "✧";
+    }
+    if (modeToggleLabel) {
+      modeToggleLabel.innerHTML = isScrollMode
+        ? `漫游<span class="hide-xs">飞越</span>`
+        : `自由<span class="hide-xs">探索</span>`;
+    }
+  }
+
+  // 2B. Mount Scroll-World Continuous 3D Camera-Flight Engine (adapted from oso95/scroll-world)
+  const scrollWorld = mountFairytaleScrollWorld({
+    shellEl: appShell,
+    trackEl: swTrackEl,
+    meadow,
+    sky,
+    skyContainer,
+    onEggAction: (eggId) => {
+      openEggConfession(eggId);
+    },
+    onWonderAction: (wonderId) => {
+      meadow.triggerWonder(wonderId);
+    },
+    onSpecialAction: (actionName) => {
+      if (actionName === "toggle-audio") {
+        btnAudio.click();
+      } else if (actionName === "trigger-finale") {
+        triggerFinale();
+      } else if (actionName === "open-letter") {
+        openOriginalLoveLetter();
+      } else if (actionName === "enter-explore") {
+        scrollWorld.setEnabled(false);
+      }
+    },
+    onModeChange: (isScrollMode) => {
+      syncModeButtonUI(isScrollMode);
+      syncFollowButtonUI();
+    },
+  });
+  syncModeButtonUI(scrollWorld.isEnabled());
+
   // 3. Create Floating 3D-Projected Starlight Beacons, Wonder Sparkle Pins & Quick Nav Chips
   const beaconElements = new Map();
   const wonderPinElements = new Map();
@@ -276,6 +325,7 @@ async function initApp() {
     const eggCount = unlockedIds.size;
     const wonderCount = unlockedWonders.size;
     counterValueEl.textContent = `${eggCount}/${eggs.length} · ✧${wonderCount}/${wonders.length}`;
+    scrollWorld.syncUnlockedState(unlockedIds, unlockedWonders);
 
     if (drawerEggsHeading) {
       drawerEggsHeading.textContent = `✦ 爱的告白信笺 (${eggCount} / ${eggs.length})`;
@@ -539,12 +589,17 @@ async function initApp() {
     const width = window.innerWidth;
     const height = window.innerHeight;
     const isCompact = width < 768;
+    const isScrollLayoutMobile = width <= 860;
     const modalOpen = modalEl.getAttribute("aria-hidden") === "false";
+    const scrollActive = scrollWorld.isEnabled();
+    appShell.dataset.modalOpen = modalOpen ? "true" : "false";
 
     const minX = isCompact ? 56 : 86;
-    const maxX = Math.max(minX, width - minX);
+    const maxX = Math.max(minX, width - (scrollActive ? 74 : minX));
     const meadowMinY = isCompact ? height * 0.44 : height * 0.40;
     const meadowMaxY = isCompact ? height - 102 : height - 106;
+    const desktopCopyGuardX = Math.min(width * 0.39, 472);
+    const mobileCopyGuardY = height * 0.52;
 
     // A. 5 Core Confession Beacons with 2D Pairwise Elliptical Repulsion
     const projectedEggs = normalizeProjectedEntries(meadow.getEggScreenPositions());
@@ -554,7 +609,8 @@ async function initApp() {
       const beacon = beaconElements.get(pos.id);
       if (!beacon) return;
 
-      if (!pos.visible) {
+      // On mobile in Scroll-World mode, sw-copy provides dedicated chapter buttons without badge clutter
+      if (!pos.visible || (scrollActive && isScrollLayoutMobile)) {
         beacon.style.opacity = "0";
         beacon.style.pointerEvents = "none";
         return;
@@ -565,13 +621,19 @@ async function initApp() {
       const isSkyEgg = pos.id === "egg-starry-sky";
 
       if (isSkyEgg) {
-        x = Math.min(Math.max(x, width * 0.30), width * 0.74);
+        x = Math.min(Math.max(x, scrollActive ? Math.max(width * 0.42, desktopCopyGuardX) : width * 0.30), width * 0.74);
         y = isCompact
           ? Math.min(Math.max(y, 106), height * 0.28)
           : Math.min(Math.max(y, height * 0.13), height * 0.28);
       } else {
         x = Math.min(Math.max(x, minX), maxX);
         y = Math.min(Math.max(y, meadowMinY), meadowMaxY);
+      }
+
+      if (scrollActive && !isScrollLayoutMobile && x < desktopCopyGuardX) {
+        beacon.style.opacity = "0";
+        beacon.style.pointerEvents = "none";
+        return;
       }
 
       placedEggs.push({ id: pos.id, beacon, x, y, isSkyEgg });
@@ -595,8 +657,9 @@ async function initApp() {
             const overlap = (1.0 - dist) * 0.52;
             const ux = Math.abs(nx) < 0.02 ? (i % 2 === 0 ? -1 : 1) : nx / dist;
             const uy = ny / dist;
-            a.x = Math.min(Math.max(a.x - ux * overlap * sepX, minX), maxX);
-            b.x = Math.min(Math.max(b.x + ux * overlap * sepX, minX), maxX);
+            const leftMin = scrollActive && !isScrollLayoutMobile ? desktopCopyGuardX : minX;
+            a.x = Math.min(Math.max(a.x - ux * overlap * sepX, leftMin), maxX);
+            b.x = Math.min(Math.max(b.x + ux * overlap * sepX, leftMin), maxX);
             a.y = Math.min(Math.max(a.y - uy * overlap * sepY, meadowMinY), meadowMaxY);
             b.y = Math.min(Math.max(b.y + uy * overlap * sepY, meadowMinY), meadowMaxY);
           }
@@ -623,8 +686,21 @@ async function initApp() {
         return;
       }
 
-      let wx = Math.min(Math.max(pos.x, 26), width - 26);
+      let wx = Math.min(Math.max(pos.x, 26), width - (scrollActive ? 52 : 26));
       let wy = Math.min(Math.max(pos.y, isCompact ? 96 : 74), height - 98);
+
+      if (scrollActive) {
+        if (!isScrollLayoutMobile && wx < desktopCopyGuardX) {
+          pin.style.opacity = "0";
+          pin.style.pointerEvents = "none";
+          return;
+        }
+        if (isScrollLayoutMobile && wy > mobileCopyGuardY) {
+          pin.style.opacity = "0";
+          pin.style.pointerEvents = "none";
+          return;
+        }
+      }
 
       // Push any wonder pin away from nearby larger egg-beacons so they never overlap!
       for (const eb of placedEggs) {
@@ -644,10 +720,16 @@ async function initApp() {
     const spritePos = meadow.getSpriteScreenPosition();
     const showBubble = !modalOpen && spritePos && spritePos.visible && nowMs < spriteWhisperUntil;
     if (showBubble) {
-      const bx = Math.min(Math.max(spritePos.x, 126), width - 126);
-      const by = Math.min(Math.max(spritePos.y - 24, isCompact ? 96 : 76), height - 116);
-      spriteBubbleEl.setAttribute("aria-hidden", "false");
-      spriteBubbleEl.style.transform = `translate3d(${Math.round(bx)}px, ${Math.round(by)}px, 0) translate(-50%, -100%)`;
+      const leftGuard = scrollActive && !isScrollLayoutMobile ? desktopCopyGuardX + 86 : 126;
+      const bottomGuard = scrollActive && isScrollLayoutMobile ? mobileCopyGuardY - 12 : height - 116;
+      if (scrollActive && isScrollLayoutMobile && spritePos.y - 24 > mobileCopyGuardY + 18) {
+        spriteBubbleEl.setAttribute("aria-hidden", "true");
+      } else {
+        const bx = Math.min(Math.max(spritePos.x, leftGuard), Math.max(leftGuard, width - 126));
+        const by = Math.min(Math.max(spritePos.y - 24, isCompact ? 96 : 76), bottomGuard);
+        spriteBubbleEl.setAttribute("aria-hidden", "false");
+        spriteBubbleEl.style.transform = `translate3d(${Math.round(bx)}px, ${Math.round(by)}px, 0) translate(-50%, -100%)`;
+      }
     } else {
       spriteBubbleEl.setAttribute("aria-hidden", "true");
     }
@@ -665,14 +747,27 @@ async function initApp() {
     sky.handlePointerMove(nx, ny);
   });
 
+  if (btnModeToggle) {
+    btnModeToggle.addEventListener("click", () => {
+      const nextScrollMode = scrollWorld.toggleEnabled();
+      if (!nextScrollMode) {
+        hintTextEl.textContent = "✧ 已进入 360° 自由探索模式：拖拽旋转镜头，点击任意花丛、小路或彩蛋与提灯小精灵互动";
+      }
+    });
+  }
+
   btnFollowSprite.addEventListener("click", () => {
-    const following = meadow.toggleFollowSprite();
+    const willFollow = !meadow.isFollowingSprite();
+    if (willFollow && scrollWorld.isEnabled()) {
+      scrollWorld.setEnabled(false);
+    }
+    const following = meadow.toggleFollowSprite(willFollow);
     syncFollowButtonUI();
     if (following) {
       showSpriteWhisper("跟紧我的星光小灯笼，带你逛遍花坡和小路 ✨", 4500);
       hintTextEl.textContent = "✧ 正在跟随提灯精灵漫步！点击小路或按方向键 / WASD 可自由指引方向";
     } else {
-      hintTextEl.textContent = "✧ 已切回星月夜全景视角，点击任意花丛、土坡、小屋或蘑菇圈触发童话彩蛋";
+      hintTextEl.textContent = "✧ 已切回星月夜自由全景视角，点击顶部「漫游飞越」可回到滚动长卷";
     }
   });
 
@@ -774,9 +869,29 @@ async function initApp() {
         activeCardId,
         activeWonderId,
         followingSprite: meadow.isFollowingSprite(),
+        scrollWorld: scrollWorld.getDiagnostics(),
         sky: sky.getDiagnostics(),
         meadow: meadow.getDiagnostics(),
       };
+    },
+    jumpToChapter(index, instant = false) {
+      if (!scrollWorld.isEnabled()) scrollWorld.setEnabled(true);
+      scrollWorld.jumpTo(index, instant);
+      return this.getDiagnostics();
+    },
+    setScrollProgress(p, snap = true) {
+      scrollWorld.setProgressNormalized(p, snap);
+      return this.getDiagnostics();
+    },
+    setScrollWorldMode(enabled) {
+      scrollWorld.setEnabled(enabled);
+      return this.getDiagnostics();
+    },
+    getScrollSegments() {
+      return scrollWorld.getSegments();
+    },
+    getCameraState() {
+      return meadow.getCameraState();
     },
     unlockEgg(eggId) {
       return openEggConfession(eggId);
@@ -818,6 +933,7 @@ async function initApp() {
     },
     dispose() {
       window.cancelAnimationFrame(rafId);
+      scrollWorld.dispose();
       sky.dispose();
       meadow.dispose();
     },

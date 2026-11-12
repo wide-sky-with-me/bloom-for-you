@@ -16,6 +16,7 @@ REQUIRED_SITE_FILES = (
     "index.html",
     "style.css",
     "app.js",
+    "scroll-world-engine.js",
     "vangogh-sky.js",
     "flower-meadow.js",
     "botanical-assets.js",
