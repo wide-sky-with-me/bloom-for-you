@@ -785,15 +785,15 @@ function createCamberedFrondCard(size, pos, dir, roll, shade, rng) {
   return nonIdx;
 }
 
-function getTreeArchetype(species, variantIdx) {
-  return getCachedFloraAsset(`treeArch_${species}_${variantIdx}`, () => {
+function getTreeArchetype(species, variantIdx, isDistantLOD = false) {
+  return getCachedFloraAsset(`treeArch_${species}_${variantIdx}_${isDistantLOD ? "far" : "near"}`, () => {
     const rng = mulberry32(14000 + variantIdx * 317 + species.charCodeAt(0) * 97);
     const woodParts = [];
     const frondParts = [];
     const sprayAnchors = [];
 
     if (species === "cypress") {
-      // Tall slender Mediterranean coastal spire: 8-ring trunk + 18 steep ascending limbs + 74 sprays
+      // Tall slender Mediterranean coastal spire: 8-ring trunk + ascending limbs + sprays
       const h = 11.4 + variantIdx * 0.9;
       const trunkPts = [
         new THREE.Vector3(0, -0.15, 0),
@@ -801,10 +801,11 @@ function getTreeArchetype(species, variantIdx) {
         new THREE.Vector3((rng() - 0.5) * 0.18, h * 0.68, (rng() - 0.5) * 0.18),
         new THREE.Vector3(0, h * 0.96, 0),
       ];
-      woodParts.push(buildCurvedBranchTube(trunkPts, 0.24, 0.03, 8, 7, 0.36));
+      woodParts.push(buildCurvedBranchTube(trunkPts, 0.24, 0.03, isDistantLOD ? 6 : 8, isDistantLOD ? 5 : 7, 0.36));
 
-      for (let b = 0; b < 18; b += 1) {
-        const t = b / 17;
+      const limbCount = isDistantLOD ? 11 : 18;
+      for (let b = 0; b < limbCount; b += 1) {
+        const t = b / Math.max(1, limbCount - 1);
         const by = 1.25 + t * (h * 0.80);
         const az = b * 2.39996 + rng() * 0.35;
         const env = Math.sin(Math.pow(t, 0.72) * Math.PI * 0.92) * 0.95 + 0.18;
@@ -813,13 +814,15 @@ function getTreeArchetype(species, variantIdx) {
         const p0 = new THREE.Vector3(0, by, 0);
         const p1 = new THREE.Vector3(Math.cos(az) * reach * 0.65, by + rise * 0.5, Math.sin(az) * reach * 0.65);
         const p2 = new THREE.Vector3(Math.cos(az) * reach, by + rise, Math.sin(az) * reach);
-        woodParts.push(buildCurvedBranchTube([p0, p1, p2], 0.065 * (1.1 - t * 0.5), 0.016, 4, 5, 0));
+        if (!isDistantLOD) {
+          woodParts.push(buildCurvedBranchTube([p0, p1, p2], 0.065 * (1.1 - t * 0.5), 0.016, 4, 5, 0));
+        }
         sprayAnchors.push({ pos: p1, dir: p2.clone().sub(p0), size: 1.38 * (1.08 - t * 0.38), shade: 0.82 + t * 0.2 });
         sprayAnchors.push({ pos: p2, dir: new THREE.Vector3(Math.cos(az) * 0.34, 1.0, Math.sin(az) * 0.34), size: 1.32 * (1.05 - t * 0.42), shade: 0.88 + t * 0.18 });
       }
       sprayAnchors.push({ pos: new THREE.Vector3(0, h * 0.93, 0), dir: new THREE.Vector3(0.04, 1, 0), size: 1.25, shade: 1.04 });
     } else {
-      // Cherry, Oak, Silver Birch & Olive: 8-ring curved trunk -> 5 primary limbs -> 12 secondary -> 14 twigs
+      // Cherry, Oak, Silver Birch & Olive: curved trunk -> 5 primary limbs -> secondary -> (near only) fine twigs
       const cfg = {
         cherry: { h: 3.1, r0: 0.28, spread: 2.85, lift: 2.35, card: 1.68, flare: 0.44 },
         oak: { h: 3.6, r0: 0.36, spread: 3.25, lift: 3.05, card: 1.74, flare: 0.55 },
@@ -836,7 +839,7 @@ function getTreeArchetype(species, variantIdx) {
         new THREE.Vector3(leanX * 0.78 - (rng() - 0.5) * 0.16, cfg.h * 0.72, leanZ * 0.78 + (rng() - 0.5) * 0.16),
         topTrunk,
       ];
-      woodParts.push(buildCurvedBranchTube(trunkPts, cfg.r0, cfg.r0 * 0.54, 8, 8, cfg.flare));
+      woodParts.push(buildCurvedBranchTube(trunkPts, cfg.r0, cfg.r0 * 0.54, isDistantLOD ? 6 : 8, isDistantLOD ? 6 : 8, cfg.flare));
 
       const nPrimary = 5;
       for (let p = 0; p < nPrimary; p += 1) {
@@ -855,11 +858,10 @@ function getTreeArchetype(species, variantIdx) {
           pStart.y + rise,
           pStart.z + Math.sin(az) * reach
         );
-        woodParts.push(buildCurvedBranchTube([pStart, pMid, pEnd], cfg.r0 * 0.44, cfg.r0 * 0.17, 5, 6, 0));
+        woodParts.push(buildCurvedBranchTube([pStart, pMid, pEnd], cfg.r0 * 0.44, cfg.r0 * 0.17, 4, 5, 0));
         sprayAnchors.push({ pos: pEnd, dir: pEnd.clone().sub(pMid), size: cfg.card, shade: 0.96 });
 
-        // 2-3 secondary branches per primary limb (12-13 total) + fine outer twigs
-        const nSec = p < 3 ? 3 : 2;
+        const nSec = isDistantLOD ? 2 : p < 3 ? 3 : 2;
         for (let s = 0; s < nSec; s += 1) {
           const u = 0.46 + s * 0.25;
           const sBase = pStart.clone().lerp(pEnd, u);
@@ -876,29 +878,34 @@ function getTreeArchetype(species, variantIdx) {
             sBase.y + sRise,
             sBase.z + Math.sin(sAz) * sLen
           );
-          woodParts.push(buildCurvedBranchTube([sBase, sMid, sTip], cfg.r0 * 0.19, 0.022, 4, 5, 0));
+          woodParts.push(buildCurvedBranchTube([sBase, sMid, sTip], cfg.r0 * 0.19, 0.022, 3, 4, 0));
           sprayAnchors.push({ pos: sMid, dir: sTip.clone().sub(sBase), size: cfg.card * 0.94, shade: 0.86 });
           sprayAnchors.push({ pos: sTip, dir: sTip.clone().sub(sMid), size: cfg.card * 1.02, shade: 1.02 });
 
-          // Fine outer twig fork
-          const twAz = sAz + (s % 2 === 0 ? 0.52 : -0.52);
-          const twTip = new THREE.Vector3(
-            sTip.x + Math.cos(twAz) * 0.62,
-            sTip.y + (species === "birch" ? -0.12 : 0.34),
-            sTip.z + Math.sin(twAz) * 0.62
-          );
-          woodParts.push(buildCurvedBranchTube([sTip, twTip], 0.024, 0.011, 2, 4, 0));
-          sprayAnchors.push({ pos: twTip, dir: twTip.clone().sub(sTip), size: cfg.card * 0.92, shade: 1.04 });
+          if (!isDistantLOD) {
+            // Fine outer twig fork on foreground/mid-near trees only
+            const twAz = sAz + (s % 2 === 0 ? 0.52 : -0.52);
+            const twTip = new THREE.Vector3(
+              sTip.x + Math.cos(twAz) * 0.62,
+              sTip.y + (species === "birch" ? -0.12 : 0.34),
+              sTip.z + Math.sin(twAz) * 0.62
+            );
+            woodParts.push(buildCurvedBranchTube([sTip, twTip], 0.024, 0.011, 2, 4, 0));
+            sprayAnchors.push({ pos: twTip, dir: twTip.clone().sub(sTip), size: cfg.card * 0.92, shade: 1.04 });
+          }
         }
       }
     }
 
-    // Crossed & arched 3D frond pairs (~68-82 curved botanical sprays per tree)
+    // Near trees get dual crossed cambered sprays; distant LOD trees get fuller single sprays (-55% overdraw)
     for (let i = 0; i < sprayAnchors.length; i += 1) {
       const a = sprayAnchors[i];
-      frondParts.push(createCamberedFrondCard(a.size, a.pos, a.dir, i * 1.1, a.shade, rng));
-      const crossDir = a.dir.clone().add(new THREE.Vector3((rng() - 0.5) * 0.55, 0.28, (rng() - 0.5) * 0.55));
-      frondParts.push(createCamberedFrondCard(a.size * 0.93, a.pos, crossDir, i * 1.1 + 1.57, a.shade * 0.94, rng));
+      const cardMul = isDistantLOD ? 1.15 : 1.0;
+      frondParts.push(createCamberedFrondCard(a.size * cardMul, a.pos, a.dir, i * 1.1, a.shade, rng));
+      if (!isDistantLOD || i % 3 === 0) {
+        const crossDir = a.dir.clone().add(new THREE.Vector3((rng() - 0.5) * 0.55, 0.28, (rng() - 0.5) * 0.55));
+        frondParts.push(createCamberedFrondCard(a.size * 0.93 * cardMul, a.pos, crossDir, i * 1.1 + 1.57, a.shade * 0.94, rng));
+      }
     }
 
     const woodGeo = mergeGeometries(woodParts, false);
@@ -1055,6 +1062,43 @@ function buildAllBotanicalTrees(group, uTimeRef) {
   ];
   cypressHints.forEach((p) => spawnList.push({ sp: "cypress", x: p[0], z: p[1] }));
 
+  // Batch all trees by (species, variantIdx, isDistantLOD) into InstancedMeshes:
+  // Near core trees (dist <= 48m from (-14, 6)) get full twig detail & cast shadows;
+  // Distant hillside/islet trees (> 48m) use simplified LOD canopy & castShadow = false.
+  const instBuckets = new Map();
+  const matLookup = {
+    cherry: [cherryBarkMat, cherryLeafMat, blossomAssets.depthMat],
+    oak: [oakBarkMat, oakLeafMat, leafAssets.depthMat],
+    birch: [birchBarkMat, birchLeafMat, leafAssets.depthMat],
+    olive: [oliveBarkMat, oliveLeafMat, oliveAssets.depthMat],
+    cypress: [oakBarkMat, cypressLeafMat, cypressAssets.depthMat],
+  };
+
+  const enqueueTreeInstance = (sp, vIdx, x, z, yaw, scale, leanX, leanZ, registerCol) => {
+    const isFar = Math.hypot(x + 14.0, z - 6.0) > 88.0;
+    const key = `${sp}_${vIdx}_${isFar ? "far" : "near"}`;
+    if (!instBuckets.has(key)) {
+      instBuckets.set(key, {
+        sp,
+        vIdx,
+        isFar,
+        arch: getTreeArchetype(sp, vIdx, isFar),
+        mats: matLookup[sp],
+        matrices: [],
+      });
+    }
+    const y = getWorldTerrainY(x, z);
+    const holder = new THREE.Object3D();
+    holder.position.set(x, y - 0.06, z);
+    holder.rotation.set(leanX, yaw, leanZ);
+    holder.scale.setScalar(scale);
+    holder.updateMatrix();
+    instBuckets.get(key).matrices.push(holder.matrix.clone());
+    if (registerCol) {
+      registerCircleCollider(x, z, 0.36);
+    }
+  };
+
   for (let i = 0; i < spawnList.length; i += 1) {
     const item = spawnList[i];
     let spot = findValidTreeCoords(item.x, item.z, placedTrees, rng, 15.0, 3.8);
@@ -1072,7 +1116,6 @@ function buildAllBotanicalTrees(group, uTimeRef) {
     placedTrees.push(spot);
 
     const vIdx = i % 2;
-    const arch = getTreeArchetype(item.sp, vIdx);
     const scale =
       item.sp === "cypress"
         ? 0.88 + rng() * 0.28
@@ -1082,16 +1125,7 @@ function buildAllBotanicalTrees(group, uTimeRef) {
     const yaw = rng() * Math.PI * 2.0;
     const leanX = (rng() - 0.5) * 0.05;
     const leanZ = (rng() - 0.5) * 0.05;
-
-    const matMap = {
-      cherry: [cherryBarkMat, cherryLeafMat, blossomAssets.depthMat],
-      oak: [oakBarkMat, oakLeafMat, leafAssets.depthMat],
-      birch: [birchBarkMat, birchLeafMat, leafAssets.depthMat],
-      olive: [oliveBarkMat, oliveLeafMat, oliveAssets.depthMat],
-      cypress: [oakBarkMat, cypressLeafMat, cypressAssets.depthMat],
-    }[item.sp];
-
-    placeTreeMeshPair(treeGroup, arch, matMap[0], matMap[1], matMap[2], spot.x, spot.z, yaw, scale, leanX, leanZ, true);
+    enqueueTreeInstance(item.sp, vIdx, spot.x, spot.z, yaw, scale, leanX, leanZ, true);
   }
 
   // 3 wind-sculpted Italian Coastal Cypresses crowning the Limestone Sea-Stack Islet at (58, 56)
@@ -1101,25 +1135,40 @@ function buildAllBotanicalTrees(group, uTimeRef) {
     { x: 56.4, z: 57.4, s: 0.68 },
   ];
   isletSpots.forEach((st, idx) => {
-    const arch = getTreeArchetype("cypress", idx % 2);
-    placeTreeMeshPair(
-      treeGroup,
-      arch,
-      oakBarkMat,
-      cypressLeafMat,
-      cypressAssets.depthMat,
-      st.x,
-      st.z,
-      idx * 2.1,
-      st.s,
-      0.04,
-      -0.03,
-      false
-    );
+    enqueueTreeInstance("cypress", idx % 2, st.x, st.z, idx * 2.1, st.s, 0.04, -0.03, false);
   });
 
+  const farCanopyMeshes = [];
+  for (const bucket of instBuckets.values()) {
+    const cnt = bucket.matrices.length;
+    if (!cnt) continue;
+    const [barkMat, leafMat, depthMat] = bucket.mats;
+    const barkInst = new THREE.InstancedMesh(bucket.arch.woodGeo, barkMat, cnt);
+    const canopyInst = new THREE.InstancedMesh(bucket.arch.canopyGeo, leafMat, cnt);
+    for (let k = 0; k < cnt; k += 1) {
+      barkInst.setMatrixAt(k, bucket.matrices[k]);
+      canopyInst.setMatrixAt(k, bucket.matrices[k]);
+    }
+    barkInst.instanceMatrix.needsUpdate = true;
+    canopyInst.instanceMatrix.needsUpdate = true;
+    barkInst.castShadow = !bucket.isFar;
+    barkInst.receiveShadow = true;
+    canopyInst.castShadow = !bucket.isFar;
+    canopyInst.receiveShadow = !bucket.isFar;
+    if (!bucket.isFar) {
+      canopyInst.customDepthMaterial = depthMat;
+    } else {
+      farCanopyMeshes.push(canopyInst);
+    }
+    barkInst.raycast = () => {};
+    canopyInst.raycast = () => {};
+    barkInst.computeBoundingSphere();
+    canopyInst.computeBoundingSphere();
+    treeGroup.add(barkInst, canopyInst);
+  }
+
   group.add(treeGroup);
-  return placedTrees.length + isletSpots.length;
+  return { count: placedTrees.length + isletSpots.length, farCanopyMeshes };
 }
 
 // ---------------------------------------------------------------------------
@@ -1895,8 +1944,20 @@ function buildMeadowAndFlowerSea(group, uTimeRef) {
   grassInst.frustumCulled = false;
   grassInst.raycast = () => {};
 
+  const scalableInstMeshes = [];
+
+  // Sort meadow spots near-to-far relative to garden core (-14, 10) so quality tier scaling
+  // keeps 100% of near-core grass & blooms intact while smoothly thinning distant hillsides.
+  const grassSpots = [];
   for (let i = 0; i < GRASS_COUNT; i += 1) {
     const sp = sampleOrganicMeadowSpot(rng, -1);
+    const d2 = (sp.x + 14.0) * (sp.x + 14.0) + (sp.z - 10.0) * (sp.z - 10.0);
+    grassSpots.push({ x: sp.x, z: sp.z, d2 });
+  }
+  grassSpots.sort((a, b) => a.d2 - b.d2);
+
+  for (let i = 0; i < GRASS_COUNT; i += 1) {
+    const sp = grassSpots[i];
     const y = getWorldTerrainY(sp.x, sp.z);
     getTerrainNormal(sp.x, sp.z, _tmpNormal);
     _tmpNormal.lerp(_upVec, 0.65).normalize();
@@ -1916,6 +1977,7 @@ function buildMeadowAndFlowerSea(group, uTimeRef) {
   grassInst.instanceMatrix.needsUpdate = true;
   grassInst.instanceColor.needsUpdate = true;
   seaGroup.add(grassInst);
+  scalableInstMeshes.push({ mesh: grassInst, maxCount: GRASS_COUNT });
 
   // 2. 13,000 Sculpted Multi-Petal 3D Field Flowers across 4 Botanical Species
   const flowerSpecs = [
@@ -1984,8 +2046,16 @@ function buildMeadowAndFlowerSea(group, uTimeRef) {
     inst.frustumCulled = false;
     inst.raycast = () => {};
 
+    const fSpots = [];
     for (let i = 0; i < spec.count; i += 1) {
       const sp = sampleOrganicMeadowSpot(rng, s);
+      const d2 = (sp.x + 14.0) * (sp.x + 14.0) + (sp.z - 10.0) * (sp.z - 10.0);
+      fSpots.push({ x: sp.x, z: sp.z, d2 });
+    }
+    fSpots.sort((a, b) => a.d2 - b.d2);
+
+    for (let i = 0; i < spec.count; i += 1) {
+      const sp = fSpots[i];
       const y = getWorldTerrainY(sp.x, sp.z);
       getTerrainNormal(sp.x, sp.z, _tmpNormal);
       _tmpNormal.lerp(_upVec, 0.72).normalize();
@@ -2007,9 +2077,11 @@ function buildMeadowAndFlowerSea(group, uTimeRef) {
     inst.instanceMatrix.needsUpdate = true;
     inst.instanceColor.needsUpdate = true;
     seaGroup.add(inst);
+    scalableInstMeshes.push({ mesh: inst, maxCount: spec.count });
   }
 
   group.add(seaGroup);
+  return scalableInstMeshes;
 }
 
 // ---------------------------------------------------------------------------
@@ -2252,35 +2324,40 @@ function buildDriftingPetals(group) {
   inst.instanceColor.needsUpdate = true;
   group.add(inst);
 
+  const initState = state.map((s) => ({ ...s }));
+  let activeCount = COUNT;
+
   const dummy = new THREE.Object3D();
   const updatePetals = (elapsed, dt) => {
-    for (let i = 0; i < COUNT; i += 1) {
+    for (let i = 0; i < activeCount; i += 1) {
       const p = state[i];
-      if (p.burstT > 0.0) {
-        p.burstT = Math.max(0.0, p.burstT - dt);
-        const swirl = elapsed * 3.8 + p.phase;
-        p.x += (p.vx + Math.cos(swirl) * 1.15) * dt;
-        p.z += (p.vz + Math.sin(swirl) * 1.15) * dt;
-        p.y += p.vy * dt;
-        p.vy -= 0.85 * dt;
-      } else {
-        p.x += (p.vx + 0.28 * Math.sin(elapsed * 0.9 + p.phase)) * dt;
-        p.z += (p.vz + 0.24 * Math.cos(elapsed * 0.75 + p.phase)) * dt;
-        p.y += (p.vy + 0.09 * Math.sin(elapsed * 1.8 + p.phase)) * dt;
-      }
-
-      const insideVillaShell =
-        p.x > -25.6 && p.x < -2.4 && p.z > -11.2 && p.z < 6.8 && p.y < 9.2;
-      const groundY = Math.max(1.2, getWorldTerrainY(p.x, p.z));
-      if (insideVillaShell || p.y < groundY + 0.08 || p.x > 46.0 || Math.abs(p.z) > 95.0) {
-        p.x = i < 160 ? -38.0 + ((i * 0.618) % 1) * 38.0 : -82.0 + ((i * 0.371) % 1) * 104.0;
-        p.z = i < 160 ? -20.0 + ((i * 0.419) % 1) * 36.0 : -68.0 + ((i * 0.731) % 1) * 116.0;
-        if (p.x > -25.6 && p.x < -2.4 && p.z > -11.2 && p.z < 6.8) {
-          p.z = i % 2 === 0 ? 10.2 + (i % 7) * 0.9 : -14.2 - (i % 7) * 1.1;
+      if (dt > 0.0) {
+        if (p.burstT > 0.0) {
+          p.burstT = Math.max(0.0, p.burstT - dt);
+          const swirl = elapsed * 3.8 + p.phase;
+          p.x += (p.vx + Math.cos(swirl) * 1.15) * dt;
+          p.z += (p.vz + Math.sin(swirl) * 1.15) * dt;
+          p.y += p.vy * dt;
+          p.vy -= 0.85 * dt;
+        } else {
+          p.x += (p.vx + 0.28 * Math.sin(elapsed * 0.9 + p.phase)) * dt;
+          p.z += (p.vz + 0.24 * Math.cos(elapsed * 0.75 + p.phase)) * dt;
+          p.y += (p.vy + 0.09 * Math.sin(elapsed * 1.8 + p.phase)) * dt;
         }
-        p.y = Math.max(1.6, getWorldTerrainY(p.x, p.z)) + 3.6 + (i % 7) * 0.45;
-        p.vy = -0.26 - (i % 5) * 0.05;
-        p.burstT = 0.0;
+
+        const insideVillaShell =
+          p.x > -25.6 && p.x < -2.4 && p.z > -11.2 && p.z < 6.8 && p.y < 9.2;
+        const groundY = Math.max(1.2, getWorldTerrainY(p.x, p.z));
+        if (insideVillaShell || p.y < groundY + 0.08 || p.x > 46.0 || Math.abs(p.z) > 95.0) {
+          p.x = i < 160 ? -38.0 + ((i * 0.618) % 1) * 38.0 : -82.0 + ((i * 0.371) % 1) * 104.0;
+          p.z = i < 160 ? -20.0 + ((i * 0.419) % 1) * 36.0 : -68.0 + ((i * 0.731) % 1) * 116.0;
+          if (p.x > -25.6 && p.x < -25.4 + 23.0 && p.z > -11.2 && p.z < 6.8) {
+            p.z = i % 2 === 0 ? 10.2 + (i % 7) * 0.9 : -14.2 - (i % 7) * 1.1;
+          }
+          p.y = Math.max(1.6, getWorldTerrainY(p.x, p.z)) + 3.6 + (i % 7) * 0.45;
+          p.vy = -0.26 - (i % 5) * 0.05;
+          p.burstT = 0.0;
+        }
       }
 
       dummy.position.set(p.x, p.y, p.z);
@@ -2295,11 +2372,24 @@ function buildDriftingPetals(group) {
     inst.instanceMatrix.needsUpdate = true;
   };
 
+  const resetPetals = () => {
+    for (let i = 0; i < COUNT; i += 1) {
+      Object.assign(state[i], initState[i]);
+    }
+    updatePetals(0.0, 0.0);
+  };
+
+  const setPetalRatio = (ratio) => {
+    activeCount = Math.max(60, Math.min(COUNT, Math.round(COUNT * ratio)));
+    inst.count = activeCount;
+  };
+
   const triggerBurst = (origin) => {
     const ox = origin && typeof origin.x === "number" ? origin.x : -14.0;
     const oy = origin && typeof origin.y === "number" ? origin.y : 3.1;
     const oz = origin && typeof origin.z === "number" ? origin.z : 9.6;
-    for (let i = 0; i < 110; i += 1) {
+    const nBurst = Math.min(110, activeCount);
+    for (let i = 0; i < nBurst; i += 1) {
       const p = state[i];
       const ang = (i / 110) * Math.PI * 2.0 * 3.0;
       const rad = 0.25 + (i % 9) * 0.14;
@@ -2313,8 +2403,8 @@ function buildDriftingPetals(group) {
     }
   };
 
-  updatePetals(0.0, 0.016);
-  return { updatePetals, triggerBurst };
+  updatePetals(0.0, 0.0);
+  return { updatePetals, triggerBurst, resetPetals, setPetalRatio };
 }
 
 export function buildBotanicalFlora(opts = {}) {
@@ -2324,7 +2414,7 @@ export function buildBotanicalFlora(opts = {}) {
 
   buildAllBotanicalTrees(group, uTimeRef);
   buildEstateRoseGardens(group, uTimeRef);
-  buildMeadowAndFlowerSea(group, uTimeRef);
+  const scalableMeadowMeshes = buildMeadowAndFlowerSea(group, uTimeRef);
   buildHydrangeaShrubs(group, uTimeRef);
   const petals = buildDriftingPetals(group);
 
@@ -2335,9 +2425,21 @@ export function buildBotanicalFlora(opts = {}) {
   return {
     group,
     update(elapsed = 0.0, dt = 0.016) {
-      const safeDt = typeof dt === "number" && dt > 0.0 ? Math.min(dt, 0.1) : 0.016;
+      const safeDt = typeof dt === "number" && dt >= 0.0 ? Math.min(dt, 0.1) : 0.016;
       uTimeRef.value = elapsed;
       petals.updatePetals(elapsed, safeDt);
+    },
+    setQualityTier(tier) {
+      const ratio = tier === "low" ? 0.34 : tier === "medium" ? 0.64 : 1.0;
+      for (let i = 0; i < scalableMeadowMeshes.length; i += 1) {
+        const item = scalableMeadowMeshes[i];
+        item.mesh.count = Math.max(400, Math.round(item.maxCount * ratio));
+      }
+      petals.setPetalRatio(tier === "low" ? 0.35 : tier === "medium" ? 0.7 : 1.0);
+    },
+    reset() {
+      uTimeRef.value = 0.0;
+      petals.resetPetals();
     },
     burstPetals(origin) {
       petals.triggerBurst(origin);

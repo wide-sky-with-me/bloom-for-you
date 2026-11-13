@@ -592,39 +592,64 @@ export function clearNavigationRegistry() {
   _circleColliders.length = 0;
 }
 
-// fn(x, z) returns a number (floor Y) if inside zone, or null to fall through.
+// fn(x, z, refY) returns a number (floor Y) or an array of numbers if inside zone, or null to fall through.
 export function registerWalkZone(fn) {
   _walkZones.push(fn);
 }
 
-export function registerBoxCollider(xMin, xMax, zMin, zMax) {
-  _boxColliders.push({ xMin, xMax, zMin, zMax });
+export function registerBoxCollider(xMin, xMax, zMin, zMax, yMin = -Infinity, yMax = Infinity) {
+  _boxColliders.push({ xMin, xMax, zMin, zMax, yMin, yMax });
 }
 
-export function registerCircleCollider(cx, cz, radius) {
-  _circleColliders.push({ cx, cz, radius });
+export function registerCircleCollider(cx, cz, radius, yMin = -Infinity, yMax = Infinity) {
+  _circleColliders.push({ cx, cz, radius, yMin, yMax });
 }
 
-export function getWalkSurfaceY(x, z) {
+export function getWalkSurfaceY(x, z, refY = null) {
   let best = null;
+  let bestDiff = Infinity;
   for (let i = 0; i < _walkZones.length; i += 1) {
-    const val = _walkZones[i](x, z);
-    if (typeof val === "number" && (best === null || val > best)) {
-      best = val;
+    const raw = _walkZones[i](x, z, refY);
+    if (raw === null || raw === undefined) continue;
+    if (Array.isArray(raw)) {
+      for (let k = 0; k < raw.length; k += 1) {
+        const val = raw[k];
+        if (typeof val !== "number") continue;
+        if (typeof refY === "number") {
+          const diff = Math.abs(val - refY);
+          if (diff < bestDiff) {
+            bestDiff = diff;
+            best = val;
+          }
+        } else if (best === null || val > best) {
+          best = val;
+        }
+      }
+    } else if (typeof raw === "number") {
+      if (typeof refY === "number") {
+        const diff = Math.abs(raw - refY);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = raw;
+        }
+      } else if (best === null || raw > best) {
+        best = raw;
+      }
     }
   }
   if (best !== null) return best;
   return getWorldTerrainY(x, z);
 }
 
-export function isPositionWalkable(x, z, radius = 0.38) {
+export function isPositionWalkable(x, z, radius = 0.38, refY = null) {
   if (Math.abs(x) > 116 || Math.abs(z) > 116) return false;
-  const surfY = getWalkSurfaceY(x, z);
+  const surfY = getWalkSurfaceY(x, z, refY);
   // Prevent walking off piers or deep into ocean below ankle-deep beach surf (Y < 0.18m)
   if (surfY < 0.18) return false;
 
   for (let i = 0; i < _boxColliders.length; i += 1) {
     const b = _boxColliders[i];
+    if (surfY < b.yMin || surfY > b.yMax) continue;
     if (
       x > b.xMin - radius &&
       x < b.xMax + radius &&
@@ -636,6 +661,7 @@ export function isPositionWalkable(x, z, radius = 0.38) {
   }
   for (let i = 0; i < _circleColliders.length; i += 1) {
     const c = _circleColliders[i];
+    if (surfY < c.yMin || surfY > c.yMax) continue;
     if (Math.hypot(x - c.cx, z - c.cz) < c.radius + radius) {
       return false;
     }
@@ -644,12 +670,12 @@ export function isPositionWalkable(x, z, radius = 0.38) {
 }
 
 // Smooth wall-sliding movement resolver for first-person / click-to-walk exploration
-export function resolveWalkPosition(prevX, prevZ, nextX, nextZ, radius = 0.38) {
-  const prevSurf = getWalkSurfaceY(prevX, prevZ);
+export function resolveWalkPosition(prevX, prevZ, nextX, nextZ, radius = 0.38, prevY = null) {
+  const prevSurf = typeof prevY === "number" ? prevY : getWalkSurfaceY(prevX, prevZ);
   const canStepTo = (tx, tz) => {
-    if (!isPositionWalkable(tx, tz, radius)) return false;
-    const nextSurf = getWalkSurfaceY(tx, tz);
-    // Prevent climbing sheer seawalls (> 1.05m jump in a single micro-step)
+    if (!isPositionWalkable(tx, tz, radius, prevSurf)) return false;
+    const nextSurf = getWalkSurfaceY(tx, tz, prevSurf);
+    // Prevent climbing sheer seawalls or falling off 2nd-floor terraces (> 1.05m jump in a single micro-step)
     return Math.abs(nextSurf - prevSurf) <= 1.05;
   };
 
@@ -679,4 +705,133 @@ export function enablePBRShadows(root, { cast = true, receive = true, minRadius 
       if (r >= minRadius && r <= 32.0) c.castShadow = true;
     }
   });
+}
+
+// Merges static non-interactive single-material child meshes within `rootGroup` by
+// (material, castShadow, receiveShadow, vertexColors, spatialSector) to minimize WebGL draw calls
+// while preserving frustum culling, raycasting, and exact world transforms.
+export function batchStaticMeshesByMaterial(
+  rootGroup,
+  { skipSet = null, spatialBucketSize = 64 } = {}
+) {
+  if (!rootGroup) return 0;
+  rootGroup.updateMatrixWorld(true);
+  const invRoot = rootGroup.matrixWorld.clone().invert();
+  const relMat = new THREE.Matrix4();
+  const posVec = new THREE.Vector3();
+
+  const isSkipped = (obj) => {
+    let cur = obj;
+    while (cur && cur !== rootGroup) {
+      if (skipSet && skipSet.has(cur)) return true;
+      const ud = cur.userData;
+      if (ud && (ud.dynamic || ud.isHeroRoseVase || ud.noBatch)) {
+        return true;
+      }
+      cur = cur.parent;
+    }
+    return false;
+  };
+
+  const getInteractiveMeta = (obj) => {
+    let cur = obj;
+    while (cur) {
+      if (cur.userData && cur.userData.interactive) {
+        return cur.userData.interactive;
+      }
+      if (cur === rootGroup) break;
+      cur = cur.parent;
+    }
+    return null;
+  };
+
+  const buckets = new Map();
+  rootGroup.traverse((obj) => {
+    if (!obj.isMesh || obj.isInstancedMesh || obj.isSkinnedMesh) return;
+    if (obj.visible === false || obj.children.length > 0) return;
+    if (!obj.geometry || !obj.material || Array.isArray(obj.material)) return;
+    if (!obj.geometry.attributes?.position) return;
+    if (isSkipped(obj)) return;
+
+    posVec.setFromMatrixPosition(obj.matrixWorld);
+    const sx = spatialBucketSize > 0 ? Math.floor(posVec.x / spatialBucketSize) : 0;
+    const sz = spatialBucketSize > 0 ? Math.floor(posVec.z / spatialBucketSize) : 0;
+    const hasCol = obj.geometry.attributes.color ? 1 : 0;
+    const interactiveMeta = getInteractiveMeta(obj);
+    const interKey = interactiveMeta ? interactiveMeta.id : "";
+    const key = `${obj.material.uuid}|${obj.castShadow ? 1 : 0}|${obj.receiveShadow ? 1 : 0}|${hasCol}|${interKey}|${sx},${sz}`;
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = {
+        material: obj.material,
+        castShadow: Boolean(obj.castShadow),
+        receiveShadow: Boolean(obj.receiveShadow),
+        hasCol: Boolean(hasCol),
+        interactiveMeta,
+        meshes: [],
+      };
+      buckets.set(key, bucket);
+    }
+    bucket.meshes.push(obj);
+  });
+
+  let mergedRemovedCount = 0;
+  for (const bucket of buckets.values()) {
+    if (bucket.meshes.length < 2) continue;
+    const geos = [];
+    for (let i = 0; i < bucket.meshes.length; i += 1) {
+      const m = bucket.meshes[i];
+      const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+      relMat.multiplyMatrices(invRoot, m.matrixWorld);
+      g.applyMatrix4(relMat);
+      if (!g.attributes.normal) {
+        g.computeVertexNormals();
+      }
+      const vCount = g.attributes.position.count;
+      if (!g.attributes.uv) {
+        g.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(vCount * 2), 2));
+      } else if (g.attributes.uv.itemSize !== 2) {
+        const srcUv = g.attributes.uv;
+        const uv2 = new Float32Array(vCount * 2);
+        for (let k = 0; k < vCount; k += 1) {
+          uv2[k * 2] = srcUv.getX(k);
+          uv2[k * 2 + 1] = srcUv.getY(k);
+        }
+        g.setAttribute("uv", new THREE.BufferAttribute(uv2, 2));
+      }
+      for (const attrName of Object.keys(g.attributes)) {
+        if (
+          attrName !== "position" &&
+          attrName !== "normal" &&
+          attrName !== "uv" &&
+          !(bucket.hasCol && attrName === "color")
+        ) {
+          g.deleteAttribute(attrName);
+        }
+      }
+      geos.push(g);
+    }
+
+    const mergedGeo = mergeGeometries(geos, false);
+    for (let i = 0; i < geos.length; i += 1) geos[i].dispose();
+    if (!mergedGeo) continue;
+
+    mergedGeo.computeBoundingSphere();
+    const mergedMesh = new THREE.Mesh(mergedGeo, bucket.material);
+    mergedMesh.name = "BatchedStaticMesh";
+    mergedMesh.castShadow = bucket.castShadow;
+    mergedMesh.receiveShadow = bucket.receiveShadow;
+    mergedMesh.frustumCulled = true;
+    if (bucket.interactiveMeta) {
+      mergedMesh.userData.interactive = bucket.interactiveMeta;
+    }
+    rootGroup.add(mergedMesh);
+
+    for (let i = 0; i < bucket.meshes.length; i += 1) {
+      const m = bucket.meshes[i];
+      if (m.parent) m.parent.remove(m);
+    }
+    mergedRemovedCount += bucket.meshes.length - 1;
+  }
+  return mergedRemovedCount;
 }

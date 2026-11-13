@@ -1,9 +1,9 @@
 // Layered Realistic Distant Coastal Horizon Subsystem:
-// 1. 3-Tier Tectonic Ridged Multifractal Mountain Amphitheater (540m - 1,260m) with Stratified Cliffs & Alpine Crests
-// 2. Soft Drifting Volumetric-Style Valley & Fjord Sea-Mist Ribbons
-// 3. 6 Sculpted Mid-Bay Archipelago Islands & Sea-Stack Capes (145m - 360m) with Pulsing Surf Foam Rings & Pine Groves
-// 4. Picturesque Across-the-Bay Terraced Mediterranean Harbor Village & Campanile Bell Tower
-// 5. Animated Outer-Bay Cruising Sailboat Fleet & Classic Coastal Steamer with V-Shaped Water Wakes
+// 1. 3-Tier Tectonic Ridged Multifractal Mountain Amphitheater (600m - 1,310m), partitioned into 4 spatial sectors per tier for frustum culling
+// 2. Soft Drifting Valley & Fjord Sea-Mist Ribbons (Golden Hour ivory -> Moonlit indigo-silver)
+// 3. 6 Sculpted Mid-Bay Archipelago Islands (150m - 420m) merged by 3 spatial sectors with Pulsing Surf Foam & Multi-Lobed Pine/Cypress Groves
+// 4. Across-the-Bay Terraced Mediterranean Harbor Village (stepped stone lanes, arched quay, dual-slope terracotta roofs & Campanile Bell Tower)
+// 5. Outer-Bay Cruising Sailboat Fleet (hull, mast, standing rigging stays/shrouds, cambered sails, speed-scaled V-wakes) & Classic Coastal Ferry
 
 import {
   THREE,
@@ -12,7 +12,6 @@ import {
   lerp,
   smoothstep,
   mulberry32,
-  makeCanvasTex,
   makeNormalTex,
 } from "./pbr-kit.js";
 
@@ -28,10 +27,12 @@ function safeMergeHorizon(geos) {
     }
     prepared.push(g);
   }
-  return prepared.length ? mergeGeometries(prepared, false) : new THREE.BufferGeometry();
+  if (!prepared.length) return new THREE.BufferGeometry();
+  const merged = mergeGeometries(prepared, false);
+  merged.computeBoundingSphere();
+  return merged;
 }
 
-// Deterministic 2D value noise + ridged multifractal for tectonic mountain crests & island cliffs
 function hash2(ix, iz) {
   const n = Math.sin(ix * 127.1 + iz * 311.7) * 43758.5453123;
   return n - Math.floor(n);
@@ -76,7 +77,6 @@ function createMountainRockNormalMap() {
       const rng = mulberry32(61403);
       ctx.fillStyle = "#808080";
       ctx.fillRect(0, 0, w, h);
-      // Diagonal tectonic strata + vertical erosion gullies
       for (let i = 0; i < 420; i += 1) {
         const x = rng() * w;
         const y = rng() * h;
@@ -99,14 +99,17 @@ function createMountainRockNormalMap() {
 }
 
 // ---------------------------------------------------------------------------
-// 1. 3-Tier Tectonic Ridged Mountain Amphitheater (540m - 1,260m)
+// 1. 3-Tier Tectonic Ridged Mountain Amphitheater (600m - 1,310m)
+//    Partitioned into 4 azimuthal sectors per tier so frustum culling works!
 // ---------------------------------------------------------------------------
 
 function buildTectonicMountainAmphitheater(parent, rockNormalMap) {
-  const buildTier = ({
+  const SECTORS = 4;
+
+  const buildTierSectors = ({
     innerR,
     outerR,
-    segs,
+    segsPerSector,
     radialSteps,
     maxH,
     seed,
@@ -118,67 +121,13 @@ function buildTectonicMountainAmphitheater(parent, rockNormalMap) {
     channelAz,
     channelDipStrength,
   }) => {
-    const geo = new THREE.BufferGeometry();
-    const positions = [];
-    const uvs = [];
-    const indices = [];
-
-    for (let r = 0; r <= radialSteps; r += 1) {
-      const rt = r / radialSteps;
-      // Asymmetric ridge cross-section: steeper coastal escarpment facing the bay, gentler backslope
-      const crossProfile = Math.pow(Math.sin(rt * Math.PI), 0.72) * (1.08 - 0.22 * rt);
-
-      for (let s = 0; s <= segs; s += 1) {
-        const u = s / segs;
-        const ang = u * Math.PI * 2.0;
-
-        // World-space coherent sampling on unit circle scaled by frequency
-        const cx = Math.cos(ang) * 3.2 + seed;
-        const cz = Math.sin(ang) * 3.2 - seed * 0.7;
-        const ridgePrimary = ridgedFbm2(cx + rt * 1.35, cz - rt * 1.15, 5);
-        const ridgeSpurs = ridgedFbm2(cx * 2.4 - rt * 2.6, cz * 2.4 + rt * 2.2, 4);
-
-        // Open sea horizon strait to East-Southeast (ang ~ 0.16 rad) so sunset/sea horizon breathes
-        const dAng = Math.atan2(Math.sin(ang - channelAz), Math.cos(ang - channelAz));
-        const seaStraitDip = 1.0 - channelDipStrength * Math.exp(-(dAng * dAng) / 0.095);
-        // Secondary scenic fjord pass to South
-        const dSouth = Math.atan2(Math.sin(ang - 1.48), Math.cos(ang - 1.48));
-        const southPassDip = 1.0 - 0.42 * Math.exp(-(dSouth * dSouth) / 0.06);
-
-        const radialWarp =
-          24.0 * (vnoise2(cx * 1.5, cz * 1.5) - 0.5) +
-          14.0 * Math.sin(ang * 9.0 + rt * 3.1 + seed);
-        const radius = lerp(innerR, outerR, rt) + radialWarp;
-
-        const peakEnvelope =
-          maxH * (0.24 + 0.62 * ridgePrimary + 0.26 * ridgeSpurs) * seaStraitDip * southPassDip;
-        const y = -9.0 + (peakEnvelope + 9.0) * crossProfile;
-
-        positions.push(Math.cos(ang) * radius, y, Math.sin(ang) * radius);
-        uvs.push(u * 26.0, rt * 4.0);
-      }
-    }
-
-    const stride = segs + 1;
-    for (let r = 0; r < radialSteps; r += 1) {
-      for (let s = 0; s < segs; s += 1) {
-        const a = r * stride + s;
-        const b = a + 1;
-        const c = (r + 1) * stride + s;
-        const d = c + 1;
-        indices.push(a, c, b, b, c, d);
-      }
-    }
-
-    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-    geo.setIndex(indices);
-    geo.computeVertexNormals();
-
-    // Paint stratified coastal cliff, forest, sunlit limestone & alpine crest vertex colors using slope + altitude
-    const posAttr = geo.attributes.position;
-    const normAttr = geo.attributes.normal;
-    const vColors = new Float32Array(posAttr.count * 3);
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      normalMap: rockNormalMap,
+      normalScale: new THREE.Vector2(0.55, 0.55),
+      roughness: 0.91,
+      metalness: 0.02,
+    });
 
     const cShore = new THREE.Color(0x9a9383);
     const cFoot = new THREE.Color(foothillHex);
@@ -188,107 +137,157 @@ function buildTectonicMountainAmphitheater(parent, rockNormalMap) {
     const cAlpine = new THREE.Color(0xf2efe9);
     const cTmp = new THREE.Color();
 
-    for (let i = 0; i < posAttr.count; i += 1) {
-      const px = posAttr.getX(i);
-      const py = posAttr.getY(i);
-      const pz = posAttr.getZ(i);
-      const ny = clamp(normAttr.getY(i), 0.0, 1.0);
-      const hNorm = clamp(py / Math.max(1.0, maxH), 0.0, 1.0);
-      const mottle = vnoise2(px * 0.025, pz * 0.025);
+    for (let secIdx = 0; secIdx < SECTORS; secIdx += 1) {
+      const uStart = secIdx / SECTORS;
+      const uSpan = 1.0 / SECTORS;
 
-      if (py < 3.8) {
-        cTmp.copy(cShore).lerp(cFoot, smoothstep(-1.0, 3.8, py));
-      } else {
-        cTmp.copy(cFoot).lerp(cForest, smoothstep(0.05, 0.42, hNorm + (mottle - 0.5) * 0.16));
-        cTmp.lerp(cCrest, smoothstep(0.45, 0.86, hNorm));
+      const geo = new THREE.BufferGeometry();
+      const positions = [];
+      const uvs = [];
+      const indices = [];
+
+      for (let r = 0; r <= radialSteps; r += 1) {
+        const rt = r / radialSteps;
+        const crossProfile = Math.pow(Math.sin(rt * Math.PI), 0.72) * (1.08 - 0.22 * rt);
+
+        for (let s = 0; s <= segsPerSector; s += 1) {
+          const u = uStart + (s / segsPerSector) * uSpan;
+          const ang = u * Math.PI * 2.0;
+
+          const cx = Math.cos(ang) * 3.2 + seed;
+          const cz = Math.sin(ang) * 3.2 - seed * 0.7;
+          const ridgePrimary = ridgedFbm2(cx + rt * 1.35, cz - rt * 1.15, 5);
+          const ridgeSpurs = ridgedFbm2(cx * 2.4 - rt * 2.6, cz * 2.4 + rt * 2.2, 4);
+
+          // Open sea outlet corridor to East-Southeast (~0.16 rad)
+          const dAng = Math.atan2(Math.sin(ang - channelAz), Math.cos(ang - channelAz));
+          const seaStraitDip = 1.0 - channelDipStrength * Math.exp(-(dAng * dAng) / 0.095);
+          const dSouth = Math.atan2(Math.sin(ang - 1.48), Math.cos(ang - 1.48));
+          const southPassDip = 1.0 - 0.42 * Math.exp(-(dSouth * dSouth) / 0.06);
+
+          const radialWarp =
+            24.0 * (vnoise2(cx * 1.5, cz * 1.5) - 0.5) +
+            14.0 * Math.sin(ang * 9.0 + rt * 3.1 + seed);
+          const radius = lerp(innerR, outerR, rt) + radialWarp;
+
+          const peakEnvelope =
+            maxH * (0.24 + 0.62 * ridgePrimary + 0.26 * ridgeSpurs) * seaStraitDip * southPassDip;
+          const y = -9.0 + (peakEnvelope + 9.0) * crossProfile;
+
+          positions.push(Math.cos(ang) * radius, y, Math.sin(ang) * radius);
+          uvs.push(u * 26.0, rt * 4.0);
+        }
       }
 
-      // Exposed stratified limestone rock on steeper escarpments
-      const cliffWeight = smoothstep(0.84, 0.46, ny) * smoothstep(2.0, 16.0, py);
-      cTmp.lerp(cCliff, cliffWeight * 0.82);
-
-      // Sun-kissed pale limestone / alpine snow-dusted ridges on highest distant peaks
-      if (snowLineRatio < 1.0 && hNorm > snowLineRatio) {
-        const snowW = smoothstep(snowLineRatio, snowLineRatio + 0.18, hNorm) * smoothstep(0.35, 0.78, ny);
-        cTmp.lerp(cAlpine, snowW * 0.68);
+      const stride = segsPerSector + 1;
+      for (let r = 0; r < radialSteps; r += 1) {
+        for (let s = 0; s < segsPerSector; s += 1) {
+          const a = r * stride + s;
+          const b = a + 1;
+          const c = (r + 1) * stride + s;
+          const d = c + 1;
+          indices.push(a, c, b, b, c, d);
+        }
       }
 
-      vColors[i * 3 + 0] = cTmp.r;
-      vColors[i * 3 + 1] = cTmp.g;
-      vColors[i * 3 + 2] = cTmp.b;
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+      geo.setIndex(indices);
+      geo.computeVertexNormals();
+
+      const posAttr = geo.attributes.position;
+      const normAttr = geo.attributes.normal;
+      const vColors = new Float32Array(posAttr.count * 3);
+
+      for (let i = 0; i < posAttr.count; i += 1) {
+        const px = posAttr.getX(i);
+        const py = posAttr.getY(i);
+        const pz = posAttr.getZ(i);
+        const ny = clamp(normAttr.getY(i), 0.0, 1.0);
+        const hNorm = clamp(py / Math.max(1.0, maxH), 0.0, 1.0);
+        const mottle = vnoise2(px * 0.025, pz * 0.025);
+
+        if (py < 3.8) {
+          cTmp.copy(cShore).lerp(cFoot, smoothstep(-1.0, 3.8, py));
+        } else {
+          cTmp.copy(cFoot).lerp(cForest, smoothstep(0.05, 0.42, hNorm + (mottle - 0.5) * 0.16));
+          cTmp.lerp(cCrest, smoothstep(0.45, 0.86, hNorm));
+        }
+
+        const cliffWeight = smoothstep(0.84, 0.46, ny) * smoothstep(2.0, 16.0, py);
+        cTmp.lerp(cCliff, cliffWeight * 0.82);
+
+        if (snowLineRatio < 1.0 && hNorm > snowLineRatio) {
+          const snowW = smoothstep(snowLineRatio, snowLineRatio + 0.18, hNorm) * smoothstep(0.35, 0.78, ny);
+          cTmp.lerp(cAlpine, snowW * 0.68);
+        }
+
+        vColors[i * 3 + 0] = cTmp.r;
+        vColors[i * 3 + 1] = cTmp.g;
+        vColors[i * 3 + 2] = cTmp.b;
+      }
+      geo.setAttribute("color", new THREE.BufferAttribute(vColors, 3));
+      geo.computeBoundingSphere();
+
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.frustumCulled = true;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      mesh.raycast = () => {};
+      parent.add(mesh);
     }
-    geo.setAttribute("color", new THREE.BufferAttribute(vColors, 3));
-
-    const mat = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      normalMap: rockNormalMap,
-      normalScale: new THREE.Vector2(0.55, 0.55),
-      roughness: 0.91,
-      metalness: 0.02,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    mesh.raycast = () => {};
-    return mesh;
   };
 
-  // Tier 1: Lush Mediterranean Coastal Foothills & Sea Escarpments (600m - 805m)
-  parent.add(
-    buildTier({
-      innerR: 600,
-      outerR: 805,
-      segs: 220,
-      radialSteps: 12,
-      maxH: 78,
-      seed: 1.7,
-      foothillHex: 0x526e52,
-      forestHex: 0x415e49,
-      cliffHex: 0x868176,
-      crestHex: 0x67807a,
-      snowLineRatio: 1.2,
-      channelAz: 0.15,
-      channelDipStrength: 0.82,
-    })
-  );
+  // Tier 1: Forefront Forested Foothills (600m - 805m)
+  buildTierSectors({
+    innerR: 600,
+    outerR: 805,
+    segsPerSector: 56,
+    radialSteps: 12,
+    maxH: 78,
+    seed: 1.7,
+    foothillHex: 0x526e52,
+    forestHex: 0x415e49,
+    cliffHex: 0x868176,
+    crestHex: 0x67807a,
+    snowLineRatio: 1.2,
+    channelAz: 0.15,
+    channelDipStrength: 0.82,
+  });
 
-  // Tier 2: Craggy Coastal Limestone & Pine Mountain Range (780m - 1,040m)
-  parent.add(
-    buildTier({
-      innerR: 780,
-      outerR: 1040,
-      segs: 240,
-      radialSteps: 14,
-      maxH: 156,
-      seed: 5.4,
-      foothillHex: 0x587478,
-      forestHex: 0x4d6973,
-      cliffHex: 0x918d85,
-      crestHex: 0x8097a1,
-      snowLineRatio: 0.80,
-      channelAz: 0.17,
-      channelDipStrength: 0.74,
-    })
-  );
+  // Tier 2: Mid-Layer Craggy Escarpment Ridges (780m - 1,040m)
+  buildTierSectors({
+    innerR: 780,
+    outerR: 1040,
+    segsPerSector: 60,
+    radialSteps: 13,
+    maxH: 156,
+    seed: 5.4,
+    foothillHex: 0x587478,
+    forestHex: 0x4d6973,
+    cliffHex: 0x918d85,
+    crestHex: 0x8097a1,
+    snowLineRatio: 0.80,
+    channelAz: 0.17,
+    channelDipStrength: 0.74,
+  });
 
-  // Tier 3: Towering Distant Azure-Lavender Alpine Crown (1,000m - 1,310m)
-  parent.add(
-    buildTier({
-      innerR: 1000,
-      outerR: 1310,
-      segs: 220,
-      radialSteps: 12,
-      maxH: 242,
-      seed: 11.2,
-      foothillHex: 0x6f8b9a,
-      forestHex: 0x698495,
-      cliffHex: 0x9ca1a8,
-      crestHex: 0x98adbb,
-      snowLineRatio: 0.66,
-      channelAz: 0.16,
-      channelDipStrength: 0.62,
-    })
-  );
+  // Tier 3: Outer Snow-Kissed Alpine Crown (1,000m - 1,310m)
+  buildTierSectors({
+    innerR: 1000,
+    outerR: 1310,
+    segsPerSector: 54,
+    radialSteps: 11,
+    maxH: 242,
+    seed: 11.2,
+    foothillHex: 0x6f8b9a,
+    forestHex: 0x698495,
+    cliffHex: 0x9ca1a8,
+    crestHex: 0x98adbb,
+    snowLineRatio: 0.66,
+    channelAz: 0.16,
+    channelDipStrength: 0.62,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +297,7 @@ function buildTectonicMountainAmphitheater(parent, rockNormalMap) {
 function buildValleyMistRibbons(parent) {
   const mistUniforms = {
     uTime: { value: 0 },
+    uNightMix: { value: 0 },
   };
   const mistMat = new THREE.ShaderMaterial({
     uniforms: mistUniforms,
@@ -310,6 +310,7 @@ function buildValleyMistRibbons(parent) {
     `,
     fragmentShader: /* glsl */ `
       uniform float uTime;
+      uniform float uNightMix;
       varying vec2 vUv;
 
       float hash21(vec2 p) {
@@ -334,12 +335,12 @@ function buildValleyMistRibbons(parent) {
         float n2 = vnoise(vec2(uv.x * 34.0 - uTime * 0.012, uv.y * 7.0 + 3.1));
         float wisp = smoothstep(0.32, 0.78, n1 * 0.68 + n2 * 0.36);
 
-        // Smooth zero-border feathering vertically and horizontally
         float vEnv = pow(sin(clamp(uv.y, 0.0, 1.0) * 3.14159265), 1.9);
         float hEnv = pow(sin(clamp(uv.x, 0.0, 1.0) * 3.14159265), 0.55);
-        float alpha = wisp * vEnv * hEnv * 0.34;
+        float alpha = wisp * vEnv * hEnv * mix(0.32, 0.20, uNightMix);
         if (alpha < 0.002) discard;
-        gl_FragColor = vec4(vec3(0.92, 0.96, 0.99), alpha);
+        vec3 mistCol = mix(vec3(0.98, 0.93, 0.88), vec3(0.24, 0.34, 0.50), uNightMix);
+        gl_FragColor = vec4(mistCol, alpha);
       }
     `,
     transparent: true,
@@ -356,8 +357,10 @@ function buildValleyMistRibbons(parent) {
 
   for (const b of bands) {
     const cyl = new THREE.CylinderGeometry(b.r, b.r * 1.03, b.h, 64, 1, true, b.startAng, b.spanAng);
+    cyl.computeBoundingSphere();
     const m = new THREE.Mesh(cyl, mistMat);
     m.position.y = b.y;
+    m.frustumCulled = true;
     m.raycast = () => {};
     parent.add(m);
   }
@@ -366,12 +369,13 @@ function buildValleyMistRibbons(parent) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Mid-Bay Sculpted Archipelago Islands, Surf Foam Rings & Across-Bay Village
+// 3. Mid-Bay Sculpted Archipelago Islands (3 Spatial Sectors) & Across-Bay Village
 // ---------------------------------------------------------------------------
 
 const ARCHIPELAGO_SPECS = [
-  // 0: East-Northeast Terraced Harbor Village Headland (visible left-of-lighthouse in Harbor view & NE Aerial!)
+  // Sector 0 (East Bay): Islands 0 & 1
   {
+    sector: 0,
     cx: 248.0,
     cz: -74.0,
     rx: 56.0,
@@ -382,8 +386,8 @@ const ARCHIPELAGO_SPECS = [
     hasVillage: true,
     treeCount: 68,
   },
-  // 1: East-Southeast Craggy Pine & Sea-Stack Island framing the Lighthouse Channel (right-of-lighthouse!)
   {
+    sector: 0,
     cx: 318.0,
     cz: 118.0,
     rx: 48.0,
@@ -394,8 +398,9 @@ const ARCHIPELAGO_SPECS = [
     hasVillage: false,
     treeCount: 52,
   },
-  // 2: North-East Emerald Cape Island (fills top-right sea corner of default aerial overlook!)
+  // Sector 1 (North Channel): Islands 2 & 3
   {
+    sector: 1,
     cx: 138.0,
     cz: -168.0,
     rx: 38.0,
@@ -406,8 +411,8 @@ const ARCHIPELAGO_SPECS = [
     hasVillage: false,
     treeCount: 42,
   },
-  // 3: North-West Fjord Blossom Island (fills top-left sea corner of default aerial overlook!)
   {
+    sector: 1,
     cx: -176.0,
     cz: -158.0,
     rx: 44.0,
@@ -418,8 +423,9 @@ const ARCHIPELAGO_SPECS = [
     hasVillage: false,
     treeCount: 48,
   },
-  // 4: South-Southeast Azure Bay Islet (visible from Villa living/master sea windows & Cove Beach)
+  // Sector 2 (South Bay): Islands 4 & 5
   {
+    sector: 2,
     cx: 162.0,
     cz: 228.0,
     rx: 42.0,
@@ -430,8 +436,8 @@ const ARCHIPELAGO_SPECS = [
     hasVillage: false,
     treeCount: 38,
   },
-  // 5: South-West Sunset Cliff Headland (visible beyond Cliffside Marble Gazebo)
   {
+    sector: 2,
     cx: -224.0,
     cz: 186.0,
     rx: 52.0,
@@ -472,12 +478,13 @@ function islandLocalToWorld(spec, lx, lz) {
 }
 
 function buildArchipelagoAndAcrossBayTown(parent, rockNormalMap) {
-  const islandGeos = [];
-  const foamGeos = [];
+  const sectorIslandGeos = [[], [], []];
+  const sectorFoamGeos = [[], [], []];
   const treePlacements = [];
 
   for (let idx = 0; idx < ARCHIPELAGO_SPECS.length; idx += 1) {
     const spec = ARCHIPELAGO_SPECS[idx];
+    const secBucket = spec.sector;
     const segW = 44;
     const segD = 44;
     const spanX = spec.rx * 2.45;
@@ -530,9 +537,9 @@ function buildArchipelagoAndAcrossBayTown(parent, rockNormalMap) {
       cols[i * 3 + 2] = cTmp.b;
     }
     g.setAttribute("color", new THREE.BufferAttribute(cols, 3));
-    islandGeos.push(g);
+    sectorIslandGeos[secBucket].push(g);
 
-    // Craggy low-profile coastal limestone reef boulders around island capes (never smooth tall eggs)
+    // Craggy low-profile coastal limestone reef boulders around island capes
     const rng = mulberry32(spec.seed * 37);
     const cReefBase = new THREE.Color(0x5d584f);
     const cReefTop = new THREE.Color(0x837d72);
@@ -567,7 +574,7 @@ function buildArchipelagoAndAcrossBayTown(parent, rockNormalMap) {
         rCols[k * 3 + 2] = cReefTmp.b;
       }
       rock.setAttribute("color", new THREE.BufferAttribute(rCols, 3));
-      islandGeos.push(rock);
+      sectorIslandGeos[secBucket].push(rock);
     }
 
     // Shoreline white surf-foam skirt hugging exact waterline contour
@@ -582,7 +589,6 @@ function buildArchipelagoAndAcrossBayTown(parent, rockNormalMap) {
         0.16 * Math.sin(ang * 3.0 + spec.seed) +
         0.10 * Math.cos(ang * 5.0 - spec.seed * 0.6) +
         0.06 * Math.sin(ang * 8.0 + 1.4);
-      // Waterline sits near nr ~ 0.95
       const rIn = 0.91 * (1.0 + coastWarp);
       const rOut = 1.08 * (1.0 + coastWarp);
       const pIn = islandLocalToWorld(spec, Math.cos(ang) * spec.rx * rIn, Math.sin(ang) * spec.rz * rIn);
@@ -599,14 +605,13 @@ function buildArchipelagoAndAcrossBayTown(parent, rockNormalMap) {
     fGeo.setAttribute("uv", new THREE.Float32BufferAttribute(foamUv, 2));
     fGeo.setIndex(foamIdx);
     fGeo.computeVertexNormals();
-    foamGeos.push(fGeo);
+    sectorFoamGeos[secBucket].push(fGeo);
 
     // Sample Mediterranean umbrella pines, cypress spires & blossom trees on island upper slopes
     let placed = 0;
     for (let tries = 0; tries < spec.treeCount * 8 && placed < spec.treeCount; tries += 1) {
       const lx = (rng() * 2.0 - 1.0) * spec.rx * 0.78;
       const lz = (rng() * 2.0 - 1.0) * spec.rz * 0.78;
-      // Leave room on South-West bay-facing slope of Island 0 for the terraced coastal village
       if (spec.hasVillage && lx < 8.0 && lz > -12.0 && Math.hypot(lx + 14.0, lz - 10.0) < 25.0) {
         continue;
       }
@@ -626,24 +631,16 @@ function buildArchipelagoAndAcrossBayTown(parent, rockNormalMap) {
     }
   }
 
-  const islandMesh = new THREE.Mesh(
-    safeMergeHorizon(islandGeos),
-    new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      normalMap: rockNormalMap,
-      normalScale: new THREE.Vector2(0.65, 0.65),
-      roughness: 0.88,
-      metalness: 0.02,
-    })
-  );
-  islandMesh.castShadow = false;
-  islandMesh.receiveShadow = false;
-  islandMesh.raycast = () => {};
-  parent.add(islandMesh);
+  const sharedIslandMat = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    normalMap: rockNormalMap,
+    normalScale: new THREE.Vector2(0.65, 0.65),
+    roughness: 0.88,
+    metalness: 0.02,
+  });
 
-  // Animated Surf Foam Shader for all 6 Archipelago Islands
-  const surfUniforms = { uTime: { value: 0 } };
-  const surfMat = new THREE.ShaderMaterial({
+  const surfUniforms = { uTime: { value: 0 }, uNightMix: { value: 0 } };
+  const sharedSurfMat = new THREE.ShaderMaterial({
     uniforms: surfUniforms,
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -654,39 +651,54 @@ function buildArchipelagoAndAcrossBayTown(parent, rockNormalMap) {
     `,
     fragmentShader: /* glsl */ `
       uniform float uTime;
+      uniform float uNightMix;
       varying vec2 vUv;
       void main() {
         float wave1 = sin(vUv.y * 10.0 - uTime * 2.1 + sin(vUv.x * 3.14159) * 1.5) * 0.5 + 0.5;
         float env = pow(sin(clamp(vUv.y, 0.0, 1.0) * 3.14159265), 1.4);
-        float alpha = env * (0.35 + 0.55 * wave1) * 0.72;
+        float alpha = env * (0.35 + 0.55 * wave1) * mix(0.72, 0.45, uNightMix);
         if (alpha < 0.02) discard;
-        gl_FragColor = vec4(vec3(0.95, 0.98, 1.0), alpha);
+        vec3 col = mix(vec3(0.97, 0.96, 0.94), vec3(0.55, 0.66, 0.80), uNightMix);
+        gl_FragColor = vec4(col, alpha);
       }
     `,
     transparent: true,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
-  const surfMesh = new THREE.Mesh(safeMergeHorizon(foamGeos), surfMat);
-  surfMesh.raycast = () => {};
-  parent.add(surfMesh);
 
-  // Instanced Island Groves (Mediterranean Stone Pines + Cypress Spires)
-  buildIslandForestInstances(parent, treePlacements);
+  // Merge per spatial sector (3 sectors) for both low Draw Calls AND effective frustum culling!
+  for (let secIdx = 0; secIdx < 3; secIdx += 1) {
+    if (sectorIslandGeos[secIdx].length) {
+      const m = new THREE.Mesh(safeMergeHorizon(sectorIslandGeos[secIdx]), sharedIslandMat);
+      m.name = `ArchipelagoSector_${secIdx}`;
+      m.frustumCulled = true;
+      m.castShadow = false;
+      m.receiveShadow = false;
+      m.raycast = () => {};
+      parent.add(m);
+    }
+    if (sectorFoamGeos[secIdx].length) {
+      const fm = new THREE.Mesh(safeMergeHorizon(sectorFoamGeos[secIdx]), sharedSurfMat);
+      fm.name = `ArchipelagoSurfSector_${secIdx}`;
+      fm.frustumCulled = true;
+      fm.raycast = () => {};
+      parent.add(fm);
+    }
+  }
 
-  // Across-the-Bay Terraced Mediterranean Harbor Village & Campanile Bell Tower on Island 0
-  buildAcrossBayHarborVillage(parent, ARCHIPELAGO_SPECS[0]);
+  const forestCtrl = buildIslandForestInstances(parent, treePlacements);
+  const villageGlowMat = buildAcrossBayHarborVillage(parent, ARCHIPELAGO_SPECS[0]);
 
-  return surfUniforms;
+  return { surfUniforms, forestCtrl, villageGlowMat };
 }
 
 function buildIslandForestInstances(parent, treePlacements) {
-  if (!treePlacements.length) return;
+  if (!treePlacements.length) return { setQualityRatio: () => {} };
 
   const trunkGeo = new THREE.CylinderGeometry(0.14, 0.28, 2.5, 6);
   trunkGeo.translate(0, 1.25, 0);
 
-  // Multi-lobed organic Mediterranean canopy cluster (6 irregular sub-crowns + internal AO shading)
   const lobeSpecs = [
     [0.0, 3.45, 0.0, 1.65, 0.72, 1.55],
     [-1.05, 3.05, 0.55, 1.25, 0.66, 1.2],
@@ -723,7 +735,6 @@ function buildIslandForestInstances(parent, treePlacements) {
   }
   const pineCrownGeo = safeMergeHorizon(crownParts);
 
-  // Layered tapering Italian Cypress spire with organic foliage tiers
   const cypParts = [];
   for (let t = 0; t < 4; t += 1) {
     const tierR = 0.92 - t * 0.16;
@@ -739,14 +750,17 @@ function buildIslandForestInstances(parent, treePlacements) {
 
   const dummy = new THREE.Object3D();
   const col = new THREE.Color();
+  let trunkInst = null;
+  let crownInst = null;
+  let cypInst = null;
 
   if (pines.length) {
-    const trunkInst = new THREE.InstancedMesh(
+    trunkInst = new THREE.InstancedMesh(
       trunkGeo,
       new THREE.MeshStandardMaterial({ color: 0x584030, roughness: 0.9 }),
       pines.length
     );
-    const crownInst = new THREE.InstancedMesh(
+    crownInst = new THREE.InstancedMesh(
       pineCrownGeo,
       new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.84 }),
       pines.length
@@ -779,7 +793,7 @@ function buildIslandForestInstances(parent, treePlacements) {
   }
 
   if (cypresses.length) {
-    const cypInst = new THREE.InstancedMesh(
+    cypInst = new THREE.InstancedMesh(
       cypressGeo,
       new THREE.MeshStandardMaterial({ color: 0x2d4c33, roughness: 0.86 }),
       cypresses.length
@@ -797,6 +811,15 @@ function buildIslandForestInstances(parent, treePlacements) {
     cypInst.instanceMatrix.needsUpdate = true;
     parent.add(cypInst);
   }
+
+  return {
+    setQualityRatio(ratio) {
+      const r = clamp(ratio, 0.35, 1.0);
+      if (trunkInst) trunkInst.count = Math.max(1, Math.round(pines.length * r));
+      if (crownInst) crownInst.count = Math.max(1, Math.round(pines.length * r));
+      if (cypInst) cypInst.count = Math.max(1, Math.round(cypresses.length * r));
+    },
+  };
 }
 
 function buildAcrossBayHarborVillage(parent, islandSpec) {
@@ -821,7 +844,7 @@ function buildAcrossBayHarborVillage(parent, islandSpec) {
     targetArr.push(g);
   };
 
-  // Seafront stone quay wall & miniature harbor mole facing West-Southwest toward our Villa & Harbor
+  // Seafront stone quay wall & arched boathouse arcade
   const quayCenter = islandLocalToWorld(islandSpec, -28.0, 15.0);
   const quayAng = Math.atan2(-quayCenter.wz, -quayCenter.wx);
   const quayBox = new THREE.BoxGeometry(8.5, 3.2, 38.0);
@@ -829,13 +852,26 @@ function buildAcrossBayHarborVillage(parent, islandSpec) {
   quayBox.translate(quayCenter.wx, 0.35, quayCenter.wz);
   pushColoredGeo(stoneGeos, quayBox, 0xaba293);
 
-  // Dark arched seafront boathouse openings along the stone quay wall
   for (let a = -3; a <= 3; a += 1) {
     const arch = new THREE.BoxGeometry(0.6, 1.75, 2.4);
     arch.translate(-4.1, 0.85, a * 4.6);
     arch.rotateY(-quayAng);
     arch.translate(quayCenter.wx, 0.0, quayCenter.wz);
     pushColoredGeo(shutterGeos, arch, 0x3b3936);
+  }
+
+  // Stepped stone street lanes ("街巷台阶") climbing up from seafront quay to terraced cottages & Campanile
+  for (const laneZ of [6.5, 15.0, 23.5]) {
+    for (let s = 0; s < 14; s += 1) {
+      const lx = -26.5 + s * 1.45;
+      const lz = laneZ + Math.sin(s * 0.45) * 0.9;
+      const gy = Math.max(1.4, evalIslandLocalHeight(islandSpec, lx, lz));
+      const { wx, wz } = islandLocalToWorld(islandSpec, lx, lz);
+      const stepSlab = new THREE.BoxGeometry(1.65, 0.95, 2.25);
+      stepSlab.rotateY(-quayAng);
+      stepSlab.translate(wx, gy - 0.35, wz);
+      pushColoredGeo(stoneGeos, stepSlab, 0xbab1a1);
+    }
   }
 
   // Harbourside warm pier lanterns along the distant village quay
@@ -846,24 +882,24 @@ function buildAcrossBayHarborVillage(parent, islandSpec) {
     glowGeos.push(bulb);
   }
 
-  // 20 Tiered Amalfi/Portofino-style Pastel & Limestone Houses with Two-Slope Terracotta Gable Roofs
+  // 20 Tiered Mediterranean Pastel & Limestone Houses with Dual-Slope Terracotta Gable Roofs
   const wallPalette = [0xefe4d2, 0xead2b5, 0xe5beb2, 0xe6dfd0, 0xecd9ad, 0xdde3d8];
   for (let i = 0; i < 20; i += 1) {
     const tier = Math.floor(i / 7);
     const slot = (i % 7) - 3.0;
-    const lx = -23.5 + tier * 6.4 + (rng() - 0.5) * 2.0;
-    const lz = 14.2 + slot * 5.0 + (rng() - 0.5) * 1.6;
+    const lx = -23.5 + tier * 6.4 + (rng() - 0.5) * 1.6;
+    const lz = 14.2 + slot * 5.0 + (rng() - 0.5) * 1.2;
     const groundY = Math.max(1.8, evalIslandLocalHeight(islandSpec, lx, lz));
     const { wx, wz } = islandLocalToWorld(islandSpec, lx, lz);
 
     const w = 4.0 + rng() * 1.9;
     const d = 4.5 + rng() * 2.1;
     const h = 4.4 + rng() * 3.1;
-    const houseYaw = -quayAng + (rng() - 0.5) * 0.22;
+    const houseYaw = -quayAng + (rng() - 0.5) * 0.20;
 
-    const plinth = new THREE.BoxGeometry(w + 0.55, 3.8, d + 0.55);
+    const plinth = new THREE.BoxGeometry(w + 0.65, 4.2, d + 0.65);
     plinth.rotateY(houseYaw);
-    plinth.translate(wx, groundY - 1.6, wz);
+    plinth.translate(wx, groundY - 1.85, wz);
     pushColoredGeo(stoneGeos, plinth, 0x9b9386);
 
     const body = new THREE.BoxGeometry(w, h, d);
@@ -871,7 +907,6 @@ function buildAcrossBayHarborVillage(parent, islandSpec) {
     body.translate(wx, groundY + h * 0.5, wz);
     pushColoredGeo(wallGeos, body, wallPalette[i % wallPalette.length]);
 
-    // Authentic two-slope terracotta barrel-tile gable roof
     const ridgeRise = 1.18;
     const slopeLen = Math.hypot(d * 0.56, ridgeRise);
     const roofHex = i % 2 === 0 ? 0xc26544 : 0xb3583a;
@@ -884,7 +919,6 @@ function buildAcrossBayHarborVillage(parent, islandSpec) {
       pushColoredGeo(roofGeos, slope, roofHex);
     }
 
-    // Shuttered windows (recessed slate frame + subtle warm golden interior pane)
     for (const wyOff of [h * 0.36, h * 0.72]) {
       for (const wzOff of [-d * 0.24, d * 0.24]) {
         const frame = new THREE.BoxGeometry(0.18, 1.05, 0.92);
@@ -918,7 +952,6 @@ function buildAcrossBayHarborVillage(parent, islandSpec) {
   belfry.translate(bellWorld.wx, bellGroundY + towerH + 0.15, bellWorld.wz);
   pushColoredGeo(stoneGeos, belfry, 0xcac0ae);
 
-  // Dark arched belfry openings on all 4 sides + warm bronze bell lantern inside
   for (const rotB of [0, Math.PI * 0.5]) {
     const archSlot = new THREE.BoxGeometry(3.75, 1.65, 1.15);
     archSlot.rotateY(rotB);
@@ -936,6 +969,7 @@ function buildAcrossBayHarborVillage(parent, islandSpec) {
   const makeMergedMesh = (arr, mat) => {
     if (!arr.length) return;
     const m = new THREE.Mesh(safeMergeHorizon(arr), mat);
+    m.frustumCulled = true;
     m.castShadow = false;
     m.receiveShadow = false;
     m.raycast = () => {};
@@ -946,20 +980,31 @@ function buildAcrossBayHarborVillage(parent, islandSpec) {
   makeMergedMesh(roofGeos, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.76 }));
   makeMergedMesh(stoneGeos, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }));
   makeMergedMesh(shutterGeos, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78 }));
-  makeMergedMesh(
-    glowGeos,
-    new THREE.MeshStandardMaterial({
-      color: 0xffe8be,
-      emissive: 0xffae47,
-      emissiveIntensity: 1.25,
-      roughness: 0.3,
-    })
-  );
+
+  const villageGlowMat = new THREE.MeshStandardMaterial({
+    color: 0xffe8be,
+    emissive: 0xffae47,
+    emissiveIntensity: 0.72,
+    roughness: 0.3,
+  });
+  makeMergedMesh(glowGeos, villageGlowMat);
+  return villageGlowMat;
 }
 
 // ---------------------------------------------------------------------------
-// 4. Animated Outer-Bay Cruising Sailboat Fleet & Classic Coastal Steamer
+// 4. Outer-Bay Cruising Sailboat Fleet (with Standing Rigging) & Coastal Ferry
 // ---------------------------------------------------------------------------
+
+function addStayCable(parent, p1Arr, p2Arr, radius, mat) {
+  const p1 = new THREE.Vector3(p1Arr[0], p1Arr[1], p1Arr[2]);
+  const p2 = new THREE.Vector3(p2Arr[0], p2Arr[1], p2Arr[2]);
+  const dir = p2.clone().sub(p1);
+  const len = dir.length();
+  const wire = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, len, 5), mat);
+  wire.position.copy(p1).addScaledVector(dir, 0.5);
+  wire.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+  parent.add(wire);
+}
 
 function createDistantSailboatMesh({ hullHex = 0xf7f7f5, stripeHex = 0x234469, sailHex = 0xfffaf0, scale = 1.0 }) {
   const root = new THREE.Group();
@@ -968,21 +1013,20 @@ function createDistantSailboatMesh({ hullHex = 0xf7f7f5, stripeHex = 0x234469, s
   const trimMat = new THREE.MeshStandardMaterial({ color: stripeHex, roughness: 0.42 });
   const woodMat = new THREE.MeshStandardMaterial({ color: 0x9e6c43, roughness: 0.52 });
   const mastMat = new THREE.MeshStandardMaterial({ color: 0xe6eaee, roughness: 0.28, metalness: 0.75 });
+  const riggingMat = new THREE.MeshStandardMaterial({ color: 0xd0d7de, roughness: 0.25, metalness: 0.88 });
   const sailMat = new THREE.MeshStandardMaterial({
     color: sailHex,
     roughness: 0.68,
     side: THREE.DoubleSide,
   });
 
-  // Sleek tapered hull along +Z
   const hullGeo = new THREE.CylinderGeometry(1.15, 0.72, 8.8, 12);
   hullGeo.rotateX(Math.PI / 2);
   hullGeo.scale(1.0, 0.58, 1.0);
   const hull = new THREE.Mesh(hullGeo, hullMat);
   hull.position.y = 0.48;
 
-  const stripeGeo = new THREE.BoxGeometry(2.36, 0.22, 8.2);
-  const stripe = new THREE.Mesh(stripeGeo, trimMat);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.36, 0.22, 8.2), trimMat);
   stripe.position.y = 0.66;
 
   const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.48, 0.62, 2.8), hullMat);
@@ -996,25 +1040,59 @@ function createDistantSailboatMesh({ hullHex = 0xf7f7f5, stripeHex = 0x234469, s
   const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 4.4, 6), mastMat);
   boom.rotation.x = Math.PI / 2;
   boom.position.set(0, 2.05, -1.55);
+  const spreader = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.75, 6), mastMat);
+  spreader.rotation.z = Math.PI / 2;
+  spreader.position.set(0, 6.8, 0.65);
 
-  // Billowed triangular mainsail (extending aft -Z) + headsail jib (extending forward +Z)
-  const makeCamberedSail = (zBase, zTip, yBot, yTop, camber) => {
+  const boatRig = new THREE.Group();
+  boatRig.add(hull, stripe, deck, cabin, mast, boom, spreader);
+
+  // Standing rigging stays & shrouds ("帆船包含船体、桅杆、索具与具有弧度的帆面")
+  const mastTop = [0, 12.15, 0.65];
+  addStayCable(boatRig, mastTop, [0, 0.92, 4.45], 0.016, riggingMat); // Forestay to bow
+  addStayCable(boatRig, mastTop, [0, 0.92, -4.35], 0.016, riggingMat); // Backstay to stern
+  addStayCable(boatRig, mastTop, [-0.88, 6.8, 0.65], 0.014, riggingMat); // Port upper shroud
+  addStayCable(boatRig, [-0.88, 6.8, 0.65], [-0.96, 0.88, 0.55], 0.014, riggingMat); // Port lower shroud
+  addStayCable(boatRig, mastTop, [0.88, 6.8, 0.65], 0.014, riggingMat); // Starboard upper shroud
+  addStayCable(boatRig, [0.88, 6.8, 0.65], [0.96, 0.88, 0.55], 0.014, riggingMat); // Starboard lower shroud
+
+  // Cambered mainsail & headsail jib (curved 3x4 grid surface with genuine aerodynamic belly!)
+  const makeCurvedSailMesh = (zFootA, zFootB, yBot, yTop, camber) => {
+    const uSegs = 5;
+    const vSegs = 6;
+    const positions = [];
+    const indices = [];
+    for (let iv = 0; iv <= vSegs; iv += 1) {
+      const v = iv / vSegs; // 0 bottom -> 1 top masthead
+      const y = lerp(yBot, yTop, v);
+      const zSpan = 1.0 - v;
+      for (let iu = 0; iu <= uSegs; iu += 1) {
+        const u = iu / uSegs; // 0 luff -> 1 leech
+        const z = lerp(zFootA, zFootA + (zFootB - zFootA) * zSpan, u);
+        const belly = camber * Math.sin(u * Math.PI) * Math.sin((1.0 - v * 0.72) * Math.PI * 0.85);
+        positions.push(belly, y, z);
+      }
+    }
+    const stride = uSegs + 1;
+    for (let iv = 0; iv < vSegs; iv += 1) {
+      for (let iu = 0; iu < uSegs; iu += 1) {
+        const a = iv * stride + iu;
+        const b = a + 1;
+        const c = (iv + 1) * stride + iu;
+        const d = c + 1;
+        indices.push(a, b, c, b, d, c);
+      }
+    }
     const g = new THREE.BufferGeometry();
-    const pos = [
-      0, yBot, zBase,
-      camber, (yBot + yTop) * 0.45, (zBase + zTip) * 0.5,
-      0, yBot + 0.15, zTip,
-      0, yTop, zBase,
-    ];
-    const idx = [0, 1, 3, 1, 2, 3];
-    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-    g.setIndex(idx);
+    g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    g.setIndex(indices);
     g.computeVertexNormals();
     return new THREE.Mesh(g, sailMat);
   };
 
-  const mainSail = makeCamberedSail(0.55, -3.75, 2.12, 11.8, 0.52);
-  const jibSail = makeCamberedSail(0.75, 4.35, 1.55, 10.2, 0.44);
+  const mainSail = makeCurvedSailMesh(0.55, -3.75, 2.12, 11.85, 0.56);
+  const jibSail = makeCurvedSailMesh(0.75, 4.38, 1.48, 10.35, 0.46);
+  boatRig.add(mainSail, jibSail);
 
   // V-shaped foamy stern wake ribbon trailing behind (-Z)
   const wakeGeo = new THREE.BufferGeometry();
@@ -1036,14 +1114,12 @@ function createDistantSailboatMesh({ hullHex = 0xf7f7f5, stripeHex = 0x234469, s
   const wakeMat = new THREE.MeshBasicMaterial({
     color: 0xf4fafe,
     transparent: true,
-    opacity: 0.42,
+    opacity: 0.40,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
   const wake = new THREE.Mesh(wakeGeo, wakeMat);
 
-  const boatRig = new THREE.Group();
-  boatRig.add(hull, stripe, deck, cabin, mast, boom, mainSail, jibSail);
   root.add(boatRig, wake);
   root.scale.setScalar(scale);
   root.traverse((c) => {
@@ -1054,7 +1130,7 @@ function createDistantSailboatMesh({ hullHex = 0xf7f7f5, stripeHex = 0x234469, s
     }
   });
 
-  return { root, boatRig };
+  return { root, boatRig, wake, wakeMat };
 }
 
 function createCoastalSteamerMesh() {
@@ -1066,7 +1142,7 @@ function createCoastalSteamerMesh() {
   const glowMat = new THREE.MeshStandardMaterial({
     color: 0xfff3d4,
     emissive: 0xffb85c,
-    emissiveIntensity: 1.9,
+    emissiveIntensity: 0.95,
     roughness: 0.2,
   });
 
@@ -1082,8 +1158,13 @@ function createCoastalSteamerMesh() {
 
   const deck2 = new THREE.Mesh(new THREE.BoxGeometry(3.6, 1.45, 10.4), whiteMat);
   deck2.position.set(0, 3.85, 0.4);
+  const winStrip2 = new THREE.Mesh(new THREE.BoxGeometry(3.72, 0.42, 8.8), glowMat);
+  winStrip2.position.set(0, 3.92, 0.4);
+
   const bridge = new THREE.Mesh(new THREE.BoxGeometry(3.9, 1.1, 3.2), whiteMat);
   bridge.position.set(0, 5.0, 3.4);
+  const bridgeGlow = new THREE.Mesh(new THREE.BoxGeometry(3.98, 0.38, 2.6), glowMat);
+  bridgeGlow.position.set(0, 5.08, 3.5);
   const sunDeck = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.14, 10.8), teakMat);
   sunDeck.position.set(0, 4.62, 0.4);
 
@@ -1094,18 +1175,16 @@ function createCoastalSteamerMesh() {
   const wakeGeo = new THREE.PlaneGeometry(7.2, 28.0);
   wakeGeo.rotateX(-Math.PI / 2);
   wakeGeo.translate(0, 0.06, -22.0);
-  const wake = new THREE.Mesh(
-    wakeGeo,
-    new THREE.MeshBasicMaterial({
-      color: 0xf2f9fd,
-      transparent: true,
-      opacity: 0.36,
-      depthWrite: false,
-    })
-  );
+  const wakeMat = new THREE.MeshBasicMaterial({
+    color: 0xf2f9fd,
+    transparent: true,
+    opacity: 0.36,
+    depthWrite: false,
+  });
+  const wake = new THREE.Mesh(wakeGeo, wakeMat);
 
   const boatRig = new THREE.Group();
-  boatRig.add(hull, deck1, winStrip, deck2, bridge, sunDeck, funnel);
+  boatRig.add(hull, deck1, winStrip, deck2, winStrip2, bridge, bridgeGlow, sunDeck, funnel);
   root.add(boatRig, wake);
   root.traverse((c) => {
     if (c.isMesh) {
@@ -1114,13 +1193,12 @@ function createCoastalSteamerMesh() {
       c.raycast = () => {};
     }
   });
-  return { root, boatRig };
+  return { root, boatRig, wake, wakeMat, glowMat };
 }
 
 function buildOuterBayFleet(parent) {
   const vessels = [];
 
-  // Curated collision-free outer-bay shipping orbits framing Harbor, Aerial Overlook, and South Bay
   const sailboatRoutes = [
     { cx: 182, cz: -12, rx: 42, rz: 58, speed: 0.048, phase: 0.2, dir: 1, scale: 1.05, sailHex: 0xfffaf0, stripeHex: 0x234469 },
     { cx: 265, cz: 46, rx: 48, rz: 62, speed: 0.036, phase: 1.9, dir: -1, scale: 1.18, sailHex: 0xfdf4e3, stripeHex: 0x8e3b2e },
@@ -1134,10 +1212,10 @@ function buildOuterBayFleet(parent) {
   for (const r of sailboatRoutes) {
     const sb = createDistantSailboatMesh(r);
     parent.add(sb.root);
-    vessels.push({ ...r, ...sb, heelBase: 0.11 * r.dir });
+    const meanSpeed = 0.5 * (r.rx + r.rz) * r.speed;
+    vessels.push({ ...r, ...sb, meanSpeed, heelBase: 0.11 * r.dir });
   }
 
-  // 1 Classic Mediterranean Coastal Passenger Ferry gliding across the outer eastern channel
   const steamer = createCoastalSteamerMesh();
   parent.add(steamer.root);
   vessels.push({
@@ -1146,13 +1224,14 @@ function buildOuterBayFleet(parent) {
     rx: 38,
     rz: 125,
     speed: 0.021,
+    meanSpeed: 0.5 * (38 + 125) * 0.021,
     phase: 1.35,
     dir: 1,
     heelBase: 0.0,
     ...steamer,
   });
 
-  return vessels;
+  return { vessels, steamerGlowMat: steamer.glowMat };
 }
 
 // ---------------------------------------------------------------------------
@@ -1166,8 +1245,31 @@ export function buildDistantHorizon() {
   const rockNormalMap = createMountainRockNormalMap();
   buildTectonicMountainAmphitheater(group, rockNormalMap);
   const mistUniforms = buildValleyMistRibbons(group);
-  const surfUniforms = buildArchipelagoAndAcrossBayTown(group, rockNormalMap);
-  const vessels = buildOuterBayFleet(group);
+  const { surfUniforms, forestCtrl, villageGlowMat } = buildArchipelagoAndAcrossBayTown(
+    group,
+    rockNormalMap
+  );
+  const { vessels, steamerGlowMat } = buildOuterBayFleet(group);
+
+  let nightMix = 0;
+
+  function setNightMix(mix) {
+    nightMix = clamp(mix, 0, 1);
+    mistUniforms.uNightMix.value = nightMix;
+    surfUniforms.uNightMix.value = nightMix;
+    if (villageGlowMat) {
+      villageGlowMat.emissiveIntensity = lerp(0.72, 3.25, nightMix);
+    }
+    if (steamerGlowMat) {
+      steamerGlowMat.emissiveIntensity = lerp(0.95, 3.4, nightMix);
+    }
+  }
+
+  function setQualityTier(tier) {
+    if (tier === "low") forestCtrl.setQualityRatio(0.45);
+    else if (tier === "medium") forestCtrl.setQualityRatio(0.75);
+    else forestCtrl.setQualityRatio(1.0);
+  }
 
   function update(elapsed) {
     mistUniforms.uTime.value = elapsed;
@@ -1181,11 +1283,24 @@ export function buildDistantHorizon() {
       const tx = -Math.sin(a) * v.rx * v.dir;
       const tz = Math.cos(a) * v.rz * v.dir;
 
+      // Instantaneous orbital speed modulates V-wake length & opacity ("随速度变化的尾迹")
+      const instSpeed = Math.hypot(tx * v.speed, tz * v.speed);
+      const speedRatio = clamp(instSpeed / Math.max(0.2, v.meanSpeed), 0.65, 1.45);
+
       v.root.position.set(wx, Math.sin(elapsed * 1.15 + v.phase) * 0.08, wz);
       v.root.rotation.y = Math.atan2(tx, tz);
-      v.boatRig.rotation.z = v.heelBase + Math.sin(elapsed * 0.9 + v.phase) * 0.035;
+      v.boatRig.rotation.z = v.heelBase * speedRatio + Math.sin(elapsed * 0.9 + v.phase) * 0.035;
       v.boatRig.rotation.x = Math.cos(elapsed * 0.78 + v.phase) * 0.022;
+      if (v.wake) {
+        v.wake.scale.z = 0.72 + speedRatio * 0.36;
+        v.wakeMat.opacity = clamp((0.22 + speedRatio * 0.18) * lerp(1.0, 0.58, nightMix), 0.12, 0.52);
+      }
     }
+  }
+
+  function reset() {
+    setNightMix(0);
+    update(0);
   }
 
   update(0);
@@ -1193,5 +1308,8 @@ export function buildDistantHorizon() {
   return {
     group,
     update,
+    reset,
+    setNightMix,
+    setQualityTier,
   };
 }

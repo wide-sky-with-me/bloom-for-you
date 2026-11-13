@@ -26,6 +26,7 @@ import {
   registerCircleCollider,
   tagInteractive,
   enablePBRShadows,
+  batchStaticMeshesByMaterial,
 } from "./pbr-kit.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
@@ -46,6 +47,7 @@ const MODEL_MANIFEST = {
 function tuneMaterialForPBR(mat, { isAquatic = false, isFoliage = false, tintable = false } = {}) {
   if (!mat) return mat;
   const m = mat.clone();
+  if ("transmission" in m) m.transmission = 0;
   if (m.map) {
     m.map.colorSpace = THREE.SRGBColorSpace;
     m.map.anisotropy = 4;
@@ -130,25 +132,63 @@ function extractNormalizedParts(gltf, { alignY = "min", filterFn = null, isAquat
   return { parts, size };
 }
 
-async function loadAllGardenModels() {
+async function decodeInlineGzipBase64ToArrayBuffer(b64) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  if (typeof DecompressionStream !== "undefined") {
+    const ds = new DecompressionStream("gzip");
+    const stream = new Blob([bytes]).stream().pipeThrough(ds);
+    return await new Response(stream).arrayBuffer();
+  }
+  return bytes.buffer;
+}
+
+async function loadAllGardenModels(onProgress) {
   const loader = new GLTFLoader();
   const entries = Object.entries(MODEL_MANIFEST);
+  const total = Math.max(1, entries.length);
+  let completed = 0;
   const results = {};
+  const inlineStore =
+    typeof window !== "undefined" && window.__INLINE_GLB_GZIP_B64__
+      ? window.__INLINE_GLB_GZIP_B64__
+      : null;
+
   await Promise.all(
     entries.map(
       ([key, url]) =>
         new Promise((resolve) => {
+          const finish = (gltf) => {
+            results[key] = gltf;
+            completed += 1;
+            if (typeof onProgress === "function") {
+              onProgress(completed / total, key);
+            }
+            resolve();
+          };
+
+          if (inlineStore && inlineStore[key]) {
+            decodeInlineGzipBase64ToArrayBuffer(inlineStore[key])
+              .then((ab) => {
+                loader.parse(
+                  ab,
+                  "",
+                  (gltf) => finish(gltf),
+                  () => finish(null)
+                );
+              })
+              .catch(() => finish(null));
+            return;
+          }
+
           loader.load(
             url,
-            (gltf) => {
-              results[key] = gltf;
-              resolve();
-            },
+            (gltf) => finish(gltf),
             undefined,
-            () => {
-              results[key] = null;
-              resolve();
-            }
+            () => finish(null)
           );
         })
     )
@@ -300,20 +340,53 @@ function createPebblePathMat() {
 }
 
 function createSculptedRockGeo(rx, ry, rz, seed) {
+  // Smooth river-worn stratified garden limestone boulder (26x18 segments — zero low-poly facets up close!)
   const rng = mulberry32(seed);
-  const geo = new THREE.IcosahedronGeometry(1.0, 2);
+  const phaseA = rng() * Math.PI * 2;
+  const phaseB = rng() * Math.PI * 2;
+  const geo = new THREE.SphereGeometry(1.0, 26, 18);
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i += 1) {
     const vx = pos.getX(i);
     const vy = pos.getY(i);
     const vz = pos.getZ(i);
+    const ang = Math.atan2(vz, vx);
     const strata =
-      0.86 +
-      0.14 * Math.sin(vy * 5.2 + seed * 0.7) +
-      0.11 * Math.cos(vx * 3.7 - vz * 4.1 + seed) +
-      (rng() - 0.5) * 0.04;
-    const flatTop = vy > 0.35 ? lerp(vy, 0.42 + (vy - 0.35) * 0.35, 0.65) : vy;
-    pos.setXYZ(i, vx * rx * strata, flatTop * ry, vz * rz * strata);
+      0.88 +
+      0.085 * Math.sin(vy * 6.4 + seed * 0.7) +
+      0.075 * Math.cos(ang * 3.0 + phaseA) +
+      0.045 * Math.sin(ang * 5.0 - vy * 3.2 + phaseB) +
+      0.025 * Math.cos(vx * 7.5 + vz * 6.8 + seed);
+    const flatTop = vy > 0.34 ? lerp(vy, 0.40 + (vy - 0.34) * 0.36, 0.68) : vy;
+    const baseFlare = vy < -0.15 ? 1.0 + (-0.15 - vy) * 0.22 : 1.0;
+    pos.setXYZ(i, vx * rx * strata * baseFlare, flatTop * ry, vz * rz * strata * baseFlare);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function createNaturalLimestoneSlabGeo(rx, rz, h, seed) {
+  // Smooth water-worn organic limestone flagstone / underwater ledge (32 radial segments + beveled rim)
+  const rng = mulberry32(seed);
+  const p1 = rng() * Math.PI * 2;
+  const p2 = rng() * Math.PI * 2;
+  const geo = new THREE.CylinderGeometry(1.0, 1.09, h, 32, 3);
+  const pos = geo.attributes.position;
+  const halfH = h * 0.5;
+  for (let i = 0; i < pos.count; i += 1) {
+    const vx = pos.getX(i);
+    const vy = pos.getY(i);
+    const vz = pos.getZ(i);
+    const r = Math.hypot(vx, vz);
+    const ang = Math.atan2(vz, vx);
+    const contour =
+      1.0 +
+      0.11 * Math.sin(ang * 2.0 + p1) +
+      0.07 * Math.cos(ang * 3.0 + p2) +
+      0.04 * Math.sin(ang * 5.0 - p1);
+    const rimBevel = r > 0.72 && vy > 0 ? -0.024 * h * ((r - 0.72) / 0.38) : 0.0;
+    const microTop = vy > halfH * 0.4 ? 0.006 * Math.sin(vx * 5.0 + vz * 4.5 + p1) : 0.0;
+    pos.setXYZ(i, vx * rx * contour, vy + rimBevel + microTop, vz * rz * contour);
   }
   geo.computeVertexNormals();
   return geo;
@@ -623,6 +696,7 @@ function buildMonetPondZone(parent, models, extracted, animState) {
   }
 
   pondRoot.add(cliffGroup);
+  animState.pondGlow = pondGlow;
   animState.waterfallMap = waterfallMap;
   animState.foamRings = foamRings;
 
@@ -650,14 +724,18 @@ function buildMonetPondZone(parent, models, extracted, animState) {
   }
 
   // Broad flat Waterside Viewing Stones on South-West bank so visitor stands comfortably
-  for (const [vx, vz, vr] of [
+  const viewStones = [
     [cx - 0.2, cz + rz + 0.55, 0.95],
     [cx - 1.9, cz + rz + 0.25, 0.85],
     [cx + 1.6, cz + rz + 0.32, 0.82],
     [cx - 3.6, cz + rz - 0.55, 0.78],
-  ]) {
-    const slab = new THREE.Mesh(new THREE.CylinderGeometry(vr, vr * 1.06, 0.12, 9), shelfStoneMat);
-    slab.scale.set(1.15, 1.0, 0.78);
+  ];
+  for (let vi = 0; vi < viewStones.length; vi += 1) {
+    const [vx, vz, vr] = viewStones[vi];
+    const slab = new THREE.Mesh(
+      createNaturalLimestoneSlabGeo(vr * 1.15, vr * 0.78, 0.12, 810 + vi * 17),
+      shelfStoneMat
+    );
     slab.position.set(vx, 2.19, vz);
     slab.receiveShadow = true;
     pondRoot.add(slab);
@@ -705,10 +783,9 @@ function buildMonetPondZone(parent, models, extracted, animState) {
     const sh = shrimpShelves[i];
     const h = sh.y - bedY + 0.18;
     const shelf = new THREE.Mesh(
-      new THREE.CylinderGeometry(sh.rx, sh.rx * 1.14, h, 9),
+      createNaturalLimestoneSlabGeo(sh.rx, sh.rz, h, 920 + i * 23),
       shelfStoneMat
     );
-    shelf.scale.set(1.0, 1.0, sh.rz / sh.rx);
     shelf.position.set(sh.x, sh.y - h * 0.5, sh.z);
     shelf.receiveShadow = true;
     pondRoot.add(shelf);
@@ -839,17 +916,19 @@ function buildMonetPondZone(parent, models, extracted, animState) {
           c.material.color.setHex(tintHex);
           c.material.emissive = new THREE.Color(0x3a1206);
           c.material.emissiveIntensity = 0.14;
+          c.userData.noCastShadow = true;
           c.raycast = () => {};
         }
       });
 
       let mixer = null;
+      const initMixT = 0.05 + i * 0.73;
       if (gltf.animations?.length) {
         mixer = new THREE.AnimationMixer(clone);
         const action = mixer.clipAction(gltf.animations[0]);
         action.timeScale = 1.15 + (i % 4) * 0.15;
         action.play();
-        mixer.update(0.05 + i * 0.73);
+        mixer.update(initMixT);
       }
       clone.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(clone);
@@ -867,6 +946,7 @@ function buildMonetPondZone(parent, models, extracted, animState) {
       swimmers.push({
         wrapper,
         mixer,
+        initMixT,
         orbitRx: 1.15 + (i % 5) * 0.56,
         orbitRz: 0.85 + ((i + 2) % 4) * 0.48,
         centerX: cx + ((i % 3) - 1) * 0.85,
@@ -937,12 +1017,13 @@ function buildMonetPondZone(parent, models, extracted, animState) {
       });
 
       let mixer = null;
+      const initMixT = 0.05 + i * 0.67;
       if (gltf.animations?.length) {
         mixer = new THREE.AnimationMixer(clone);
         const action = mixer.clipAction(gltf.animations[0]);
         action.timeScale = 1.1 + (i % 5) * 0.14;
         action.play();
-        mixer.update(0.05 + i * 0.67);
+        mixer.update(initMixT);
       }
 
       // Raw shrimp head & antennae point along -Z; rotate clone by PI so head points along +Z!
@@ -970,6 +1051,7 @@ function buildMonetPondZone(parent, models, extracted, animState) {
         shrimpActors.push({
           wrapper,
           mixer,
+          initMixT,
           mode: "shelf",
           baseX,
           baseY: sh.y + 0.005,
@@ -984,6 +1066,7 @@ function buildMonetPondZone(parent, models, extracted, animState) {
         shrimpActors.push({
           wrapper,
           mixer,
+          initMixT,
           mode: "swim",
           centerX: cx + ((idx % 3) - 1) * 1.15,
           centerZ: cz + 0.8 + (idx % 2) * 0.85,
@@ -1506,8 +1589,10 @@ function buildAllGLBFlora(parent, extracted) {
   ];
   for (let i = 0; i < walkSegments.length; i += 1) {
     const [sx, sz] = walkSegments[i];
-    const slab = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.72, 0.08, 8), monetStoneMat);
-    slab.scale.set(1.18, 1.0, 0.82);
+    const slab = new THREE.Mesh(
+      createNaturalLimestoneSlabGeo(0.80, 0.56, 0.08, 1200 + i * 19),
+      monetStoneMat
+    );
     slab.rotation.y = i * 0.45;
     slab.position.set(sx, 2.20, sz);
     slab.receiveShadow = true;
@@ -1631,56 +1716,505 @@ function buildAllGLBFlora(parent, extracted) {
     }
   }
 
-  floraRoot.add(
-    buildInstancedGLBBatch(extracted.rose_bush, rosePlacements, { castShadow: false, receiveShadow: true })
-  );
-  floraRoot.add(
-    buildInstancedGLBBatch(extracted.margarita_bush, daisyPlacements, { castShadow: false, receiveShadow: true })
-  );
-  floraRoot.add(
-    buildInstancedGLBBatch(extracted.wisteria_cascade, wisteriaPlacements, { castShadow: false, receiveShadow: true })
-  );
-  floraRoot.add(
-    buildInstancedGLBBatch(extracted.ph_fern, fernPlacements, { castShadow: false, receiveShadow: true })
-  );
-  floraRoot.add(
-    buildInstancedGLBBatch(extracted.ph_periwinkle, periwinklePlacements, { castShadow: false, receiveShadow: true })
-  );
+  const glbBatchGroups = [
+    buildInstancedGLBBatch(extracted.rose_bush, rosePlacements, { castShadow: false, receiveShadow: true }),
+    buildInstancedGLBBatch(extracted.margarita_bush, daisyPlacements, { castShadow: false, receiveShadow: true }),
+    buildInstancedGLBBatch(extracted.wisteria_cascade, wisteriaPlacements, { castShadow: false, receiveShadow: true }),
+    buildInstancedGLBBatch(extracted.ph_fern, fernPlacements, { castShadow: false, receiveShadow: true }),
+    buildInstancedGLBBatch(extracted.ph_periwinkle, periwinklePlacements, { castShadow: false, receiveShadow: true }),
+  ];
+  const glbInstRecords = [];
+  for (let i = 0; i < glbBatchGroups.length; i += 1) {
+    const bg = glbBatchGroups[i];
+    floraRoot.add(bg);
+    bg.traverse((c) => {
+      if (c.isInstancedMesh) {
+        glbInstRecords.push({ mesh: c, maxCount: c.count });
+      }
+    });
+  }
+
+  // --- ZONE D: Sculpted 3D Bearded Irises ("鸢尾花": sword-leaf fans + 3 standards + 3 bearded falls + buds) ---
+  const irisCtrl = buildBeardedIrisClumps(floraRoot);
 
   parent.add(floraRoot);
+  return {
+    setQualityRatio(ratio) {
+      const r = clamp(ratio, 0.45, 1.0);
+      irisCtrl.setQualityRatio(r);
+      for (let i = 0; i < glbInstRecords.length; i += 1) {
+        const rec = glbInstRecords[i];
+        rec.mesh.count = Math.max(8, Math.round(rec.maxCount * r));
+      }
+    },
+  };
 }
 
-// Mounts ultra-high-detail velvet 3D Hero Roses (hero_rose.glb) into Villa indoor vases!
+function buildBeardedIrisClumps(parent) {
+  // 1) Sword-leaf fan + stems + spathe calyx geometry (sage-emerald botanical green)
+  const leafGeos = [];
+  for (let l = 0; l < 7; l += 1) {
+    const az = ((l - 3) / 3.2) * 1.18 + (l % 2 === 0 ? 0.06 : -0.06);
+    const len = 0.42 + (3 - Math.abs(l - 3)) * 0.055;
+    const arch = 0.10 + Math.abs(l - 3) * 0.045;
+    const blade = new THREE.PlaneGeometry(0.046, len, 2, 6);
+    const bp = blade.attributes.position;
+    for (let v = 0; v < bp.count; v += 1) {
+      const x = bp.getX(v);
+      const u = (bp.getY(v) + len * 0.5) / len; // 0 base -> 1 pointed tip
+      const widthTaper = Math.sin(Math.pow(clamp(u, 0.02, 0.99), 0.68) * Math.PI);
+      const keel = Math.abs(x) * 0.35; // V-folded iris sword leaf midrib
+      bp.setXYZ(
+        v,
+        x * widthTaper,
+        u * len * (1.0 - arch * u * 0.35),
+        arch * u * u + keel
+      );
+    }
+    blade.computeVertexNormals();
+    const g = blade.toNonIndexed();
+    g.rotateY(az);
+    leafGeos.push(g);
+  }
+
+  // Two flowering stalks + green spathe calyx sheaths
+  for (const [sx, sz, sh] of [
+    [-0.035, 0.02, 0.62],
+    [0.045, -0.025, 0.54],
+    [0.01, 0.045, 0.46],
+  ]) {
+    const stalk = new THREE.CylinderGeometry(0.006, 0.009, sh, 6).toNonIndexed();
+    stalk.translate(sx, sh * 0.5, sz);
+    leafGeos.push(stalk);
+    const calyx = new THREE.ConeGeometry(0.018, 0.055, 6).toNonIndexed();
+    calyx.translate(sx, sh, sz);
+    leafGeos.push(calyx);
+  }
+  const irisFoliageGeo = mergeGeometries(leafGeos, false);
+  irisFoliageGeo.computeBoundingSphere();
+
+  // 2) Sculpted Bearded Iris Blooms (3 domed upright standards + 3 recurving drooping falls + golden beard + 1 bud)
+  const petalGeos = [];
+  const pushPetalGeo = (geo, rMul, gMul, bMul) => {
+    const g = geo.index ? geo.toNonIndexed() : geo.clone();
+    const cnt = g.attributes.position.count;
+    const cols = new Float32Array(cnt * 3);
+    for (let i = 0; i < cnt; i += 1) {
+      cols[i * 3 + 0] = rMul;
+      cols[i * 3 + 1] = gMul;
+      cols[i * 3 + 2] = bMul;
+    }
+    g.setAttribute("color", new THREE.BufferAttribute(cols, 3));
+    petalGeos.push(g);
+  };
+
+  const addOpenIrisHead = (hx, hy, hz, rotY, sc) => {
+    for (let p = 0; p < 3; p += 1) {
+      const a = rotY + (p / 3) * Math.PI * 2;
+      // Upright domed standard petal ("旗瓣")
+      const std = new THREE.PlaneGeometry(0.058 * sc, 0.088 * sc, 3, 5);
+      const sp = std.attributes.position;
+      for (let i = 0; i < sp.count; i += 1) {
+        const x = sp.getX(i);
+        const u = (sp.getY(i) + 0.044 * sc) / (0.088 * sc);
+        const env = Math.sin(clamp(u, 0.04, 0.98) * Math.PI);
+        const domeOut = Math.sin(u * Math.PI) * 0.028 * sc;
+        const cup = -Math.abs(x) * 0.35;
+        sp.setXYZ(i, x * (0.25 + 0.85 * env), u * 0.082 * sc, 0.012 * sc + domeOut + cup);
+      }
+      std.computeVertexNormals();
+      std.rotateY(a);
+      std.translate(hx, hy + 0.018 * sc, hz);
+      pushPetalGeo(std, 1.06, 1.05, 1.08);
+
+      // Drooping recurved fall petal ("垂瓣")
+      const fallAng = a + Math.PI / 3;
+      const fall = new THREE.PlaneGeometry(0.068 * sc, 0.098 * sc, 3, 6);
+      const fp = fall.attributes.position;
+      for (let i = 0; i < fp.count; i += 1) {
+        const x = fp.getX(i);
+        const u = (fp.getY(i) + 0.049 * sc) / (0.098 * sc);
+        const env = Math.sin(Math.pow(clamp(u, 0.04, 0.98), 0.8) * Math.PI);
+        const outZ = (0.015 + u * 0.078) * sc;
+        const dropY = (0.012 * u - 0.072 * u * u) * sc;
+        fp.setXYZ(i, x * (0.28 + 0.88 * env), dropY, outZ - Math.abs(x) * 0.22);
+      }
+      fall.computeVertexNormals();
+      fall.rotateY(fallAng);
+      fall.translate(hx, hy + 0.016 * sc, hz);
+      pushPetalGeo(fall, 0.90, 0.88, 0.96);
+
+      // Golden-amber iris beard ("金黄花须") sitting on throat of each fall
+      const beard = new THREE.BoxGeometry(0.011 * sc, 0.008 * sc, 0.032 * sc);
+      beard.rotateX(0.28);
+      beard.translate(0, 0.005 * sc, 0.030 * sc);
+      beard.rotateY(fallAng);
+      beard.translate(hx, hy + 0.016 * sc, hz);
+      pushPetalGeo(beard, 1.45, 1.18, 0.42);
+    }
+  };
+
+  addOpenIrisHead(-0.035, 0.62, 0.02, 0.15, 1.05);
+  addOpenIrisHead(0.045, 0.54, -0.025, 1.25, 0.92);
+
+  // Unopened spiraled iris bud on 3rd stalk
+  const bud = new THREE.ConeGeometry(0.019, 0.068, 7);
+  bud.translate(0.01, 0.495, 0.045);
+  pushPetalGeo(bud, 0.92, 0.90, 0.98);
+
+  const irisBloomGeo = mergeGeometries(petalGeos, false);
+  irisBloomGeo.computeBoundingSphere();
+
+  const foliageMat = new THREE.MeshStandardMaterial({
+    color: 0x557d58,
+    roughness: 0.62,
+    metalness: 0.0,
+    side: THREE.DoubleSide,
+  });
+  const bloomMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    vertexColors: true,
+    roughness: 0.44,
+    metalness: 0.0,
+    emissive: 0x160c24,
+    emissiveIntensity: 0.08,
+    side: THREE.DoubleSide,
+  });
+
+  // Curated Bearded Iris placements around Monet Pond, Giverny Walk, Swing Garden & Beach Boardwalk
+  const rng = mulberry32(99173);
+  const { cx: pcx, cz: pcz } = POND_CONFIG;
+  const { cx: scx, cz: scz, groundY: sy } = SWING_CONFIG;
+  const irisSpots = [];
+
+  // 1) Waterside Bearded Irises framing the Monet Lily & Fish/Shrimp Pond!
+  for (let i = 0; i < 64; i += 1) {
+    const ang = (i / 64) * Math.PI * 2 + (rng() - 0.5) * 0.08;
+    // Leave south viewing stones & waterfall plunge clear
+    if (Math.sin(ang) > 0.52 && Math.abs(Math.cos(ang)) < 0.58) continue;
+    if (Math.sin(ang) < -0.82 && Math.abs(Math.cos(ang)) < 0.42) continue;
+    const rScale = 1.06 + (i % 3) * 0.09 + rng() * 0.08;
+    const ix = pcx + Math.cos(ang) * POND_CONFIG.rx * rScale;
+    const iz = pcz + Math.sin(ang) * POND_CONFIG.rz * rScale;
+    irisSpots.push({ x: ix, y: Math.max(2.14, getWorldTerrainY(ix, iz)), z: iz });
+  }
+
+  // 2) Monet's Giverny Iris Allee along Central Flagstone Walk & Connecting Garden Ribbons
+  for (let i = 0; i < 62; i += 1) {
+    const side = i % 2 === 0 ? -1 : 1;
+    const iz = 11.6 + (i / 62) * 11.4 + (rng() - 0.5) * 0.28;
+    const ix = -14.0 + side * (1.32 + (i % 2) * 0.48 + rng() * 0.32);
+    irisSpots.push({ x: ix, y: 2.18, z: iz });
+  }
+
+  // 3) Swing Garden & Coastal Beach Boardwalk Terrace Borders
+  for (let i = 0; i < 46; i += 1) {
+    if (i < 24) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const iz = scz + 1.2 + (i / 24) * 5.8;
+      const ix = scx + side * (1.52 + rng() * 0.65);
+      irisSpots.push({ x: ix, y: sy - 0.01, z: iz });
+    } else {
+      const k = i - 24;
+      const ix = -26.0 + (k / 22) * 30.0 + (rng() - 0.5) * 0.8;
+      const iz = 22.8 + Math.sin(k * 0.6) * 0.9;
+      irisSpots.push({ x: ix, y: getWorldTerrainY(ix, iz), z: iz });
+    }
+  }
+
+  // Monet Garden Iris Palette: Iris Violet, Mist Blue, Soft Lavender, Rose Pink & Apricot-Amber
+  const irisPalette = [
+    0x6c4ac9, // Classic Monet Iris Violet
+    0x5882e6, // Mist Blue Iris
+    0x9f7eed, // Soft Lavender Iris
+    0xe582aa, // Rose-Pink Iris
+    0xf2a158, // Golden-Apricot Iris
+    0x563bb5, // Deep Royal Iris
+  ];
+
+  const count = irisSpots.length;
+  const foliageInst = new THREE.InstancedMesh(irisFoliageGeo, foliageMat, count);
+  const bloomInst = new THREE.InstancedMesh(irisBloomGeo, bloomMat, count);
+  foliageInst.name = "BeardedIrisFoliage";
+  bloomInst.name = "BeardedIrisBlooms";
+  foliageInst.castShadow = false;
+  foliageInst.receiveShadow = true;
+  bloomInst.castShadow = false;
+  bloomInst.receiveShadow = true;
+  foliageInst.raycast = () => {};
+  bloomInst.raycast = () => {};
+
+  const dummy = new THREE.Object3D();
+  const cTmp = new THREE.Color();
+  for (let i = 0; i < count; i += 1) {
+    const sp = irisSpots[i];
+    const sc = 0.92 + rng() * 0.36;
+    dummy.position.set(sp.x, sp.y - 0.02, sp.z);
+    dummy.rotation.set((rng() - 0.5) * 0.12, rng() * Math.PI * 2, (rng() - 0.5) * 0.12);
+    dummy.scale.setScalar(sc);
+    dummy.updateMatrix();
+    foliageInst.setMatrixAt(i, dummy.matrix);
+    bloomInst.setMatrixAt(i, dummy.matrix);
+
+    cTmp.setHex(irisPalette[i % irisPalette.length]);
+    cTmp.offsetHSL((rng() - 0.5) * 0.02, (rng() - 0.5) * 0.04, (rng() - 0.5) * 0.04);
+    bloomInst.setColorAt(i, cTmp);
+  }
+  foliageInst.instanceMatrix.needsUpdate = true;
+  bloomInst.instanceMatrix.needsUpdate = true;
+  if (bloomInst.instanceColor) bloomInst.instanceColor.needsUpdate = true;
+
+  parent.add(foliageInst, bloomInst);
+
+  return {
+    setQualityRatio(ratio) {
+      const n = Math.max(24, Math.round(count * clamp(ratio, 0.4, 1.0)));
+      foliageInst.count = n;
+      bloomInst.count = n;
+    },
+  };
+}
+
+// Mounts ultra-high-detail velvet 3D Hero Roses (hero_rose.glb) with delicate stem thorns ("少量花刺") into Villa indoor vases via GPU Instancing!
 function upgradeIndoorVasesWithHeroRoses(villaGroup, heroRoseExtracted) {
   if (!villaGroup || !heroRoseExtracted.parts.length) return;
 
-  const buildStem = (scale, rotX, rotY, rotZ) => {
-    const g = new THREE.Group();
-    for (const p of heroRoseExtracted.parts) {
-      g.add(new THREE.Mesh(p.geometry, p.material));
-    }
-    g.scale.setScalar(scale);
-    g.rotation.set(rotX, rotY, rotZ);
-    return g;
-  };
+  villaGroup.updateMatrixWorld(true);
+  const invVilla = villaGroup.matrixWorld.clone().invert();
+  const vaseMatrices = [];
+  const localOffset = new THREE.Matrix4();
+  const rotEuler = new THREE.Euler(0.06, 0.4, -0.05);
+  const scaleVec = new THREE.Vector3(0.29, 0.29, 0.29);
+  localOffset.compose(
+    new THREE.Vector3(0, 0.09, 0),
+    new THREE.Quaternion().setFromEuler(rotEuler),
+    scaleVec
+  );
 
   villaGroup.traverse((obj) => {
     if (!obj.userData?.isHeroRoseVase) return;
-    const stem = buildStem(0.29, 0.06, 0.4, -0.05);
-    stem.position.y = 0.09;
-    obj.add(stem);
+    const m = invVilla.clone().multiply(obj.matrixWorld).multiply(localOffset);
+    vaseMatrices.push(m);
   });
+  if (!vaseMatrices.length) return;
+
+  const instRoot = new THREE.Group();
+  instRoot.name = "InstancedIndoorHeroRoses";
+  for (const p of heroRoseExtracted.parts) {
+    const inst = new THREE.InstancedMesh(p.geometry, p.material, vaseMatrices.length);
+    inst.castShadow = false;
+    inst.receiveShadow = true;
+    inst.raycast = () => {};
+    for (let i = 0; i < vaseMatrices.length; i += 1) {
+      inst.setMatrixAt(i, vaseMatrices[i]);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    instRoot.add(inst);
+  }
+
+  // Merge 5 botanical rose thorns spiraling along the lower-mid woody stem into a single instanced geometry
+  const thornGeos = [];
+  const baseThorn = new THREE.ConeGeometry(0.011, 0.042, 6);
+  baseThorn.rotateZ(-Math.PI * 0.42);
+  const hMax = Math.max(0.4, heroRoseExtracted.size.y);
+  for (let t = 0; t < 5; t += 1) {
+    const tg = baseThorn.index ? baseThorn.toNonIndexed() : baseThorn.clone();
+    const ty = hMax * (0.18 + t * 0.13);
+    const tang = t * 2.15;
+    tg.rotateY(-tang);
+    tg.translate(Math.cos(tang) * 0.018, ty, Math.sin(tang) * 0.018);
+    thornGeos.push(tg);
+  }
+  baseThorn.dispose();
+  const mergedThornsGeo = mergeGeometries(thornGeos, false);
+  for (let i = 0; i < thornGeos.length; i += 1) thornGeos[i].dispose();
+
+  const thornMat = new THREE.MeshStandardMaterial({
+    color: 0x4b6438,
+    roughness: 0.62,
+    metalness: 0.0,
+  });
+  const thornInst = new THREE.InstancedMesh(mergedThornsGeo, thornMat, vaseMatrices.length);
+  thornInst.castShadow = false;
+  thornInst.receiveShadow = true;
+  thornInst.raycast = () => {};
+  for (let i = 0; i < vaseMatrices.length; i += 1) {
+    thornInst.setMatrixAt(i, vaseMatrices[i]);
+  }
+  thornInst.instanceMatrix.needsUpdate = true;
+  instRoot.add(thornInst);
+  villaGroup.add(instRoot);
+}
+
+// Mounts GPU-Instanced PBR GLB Potted Roses, Margaritas, Ferns, Periwinkles & Wisteria Cascades into the Petite Villa!
+function upgradeIndoorPlantersWithGLBFlora(villaGroup, extracted) {
+  if (!villaGroup || !extracted) return;
+  villaGroup.updateMatrixWorld(true);
+  const invVilla = villaGroup.matrixWorld.clone().invert();
+
+  const specs = [
+    { flag: "isIndoorGLBRosePot", ext: extracted.rose_bush, scale: 0.32, yOff: 0.02 },
+    { flag: "isIndoorGLBMargaritaPot", ext: extracted.margarita_bush, scale: 0.30, yOff: 0.02 },
+    { flag: "isIndoorGLBFernPot", ext: extracted.ph_fern, scale: 0.42, yOff: 0.01 },
+    { flag: "isIndoorGLBPeriwinklePot", ext: extracted.ph_periwinkle, scale: 0.38, yOff: 0.01 },
+    { flag: "isIndoorGLBWisteria", ext: extracted.wisteria_cascade, scale: 0.48, yOff: 0.0 },
+  ];
+
+  const instRoot = new THREE.Group();
+  instRoot.name = "InstancedVillaGLBBotanicals";
+  const scaleVec = new THREE.Vector3();
+  const posVec = new THREE.Vector3();
+  const rotQuat = new THREE.Quaternion();
+  const localMat = new THREE.Matrix4();
+
+  for (let s = 0; s < specs.length; s += 1) {
+    const { flag, ext, scale, yOff } = specs[s];
+    if (!ext?.parts?.length) continue;
+    const matrices = [];
+    let seed = s * 17 + 1;
+    villaGroup.traverse((obj) => {
+      if (!obj.userData?.[flag]) return;
+      seed += 1;
+      posVec.set(0, yOff, 0);
+      rotQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), (seed * 1.93) % (Math.PI * 2));
+      scaleVec.setScalar(scale);
+      localMat.compose(posVec, rotQuat, scaleVec);
+      matrices.push(invVilla.clone().multiply(obj.matrixWorld).multiply(localMat));
+    });
+    if (!matrices.length) continue;
+
+    for (const p of ext.parts) {
+      const inst = new THREE.InstancedMesh(p.geometry, p.material, matrices.length);
+      inst.castShadow = false;
+      inst.receiveShadow = true;
+      inst.raycast = () => {};
+      for (let i = 0; i < matrices.length; i += 1) {
+        inst.setMatrixAt(i, matrices[i]);
+      }
+      inst.instanceMatrix.needsUpdate = true;
+      instRoot.add(inst);
+    }
+  }
+
+  if (instRoot.children.length > 0) {
+    villaGroup.add(instRoot);
+  }
+}
+
+// Subtle Night-Mode Courtyard & Pond Fireflies ("庭院可加入少量萤火虫，避免密集发光粒子淹没建筑和花园")
+function buildGardenFireflies(parent) {
+  const COUNT = 44;
+  const rng = mulberry32(74129);
+  const positions = new Float32Array(COUNT * 3);
+  const phases = new Float32Array(COUNT);
+  const baseData = [];
+
+  for (let i = 0; i < COUNT; i += 1) {
+    let bx;
+    let bz;
+    if (i < 18) {
+      // Around Monet Lily Pond
+      const a = (i / 18) * Math.PI * 2;
+      bx = POND_CONFIG.cx + Math.cos(a) * (POND_CONFIG.rx * (0.85 + rng() * 0.45));
+      bz = POND_CONFIG.cz + Math.sin(a) * (POND_CONFIG.rz * (0.85 + rng() * 0.45));
+    } else if (i < 32) {
+      // Along Monet Giverny Central Flower Path
+      bx = -14.0 + (rng() - 0.5) * 6.5;
+      bz = 11.5 + rng() * 11.0;
+    } else {
+      // Around Two-Person Swing Garden
+      bx = SWING_CONFIG.cx + (rng() - 0.5) * 6.5;
+      bz = SWING_CONFIG.cz + (rng() - 0.5) * 6.0;
+    }
+    const by = Math.max(2.15, getWorldTerrainY(bx, bz)) + 0.45 + rng() * 1.45;
+    baseData.push({ bx, by, bz, phase: rng() * Math.PI * 2, speed: 0.45 + rng() * 0.45 });
+    positions[i * 3 + 0] = bx;
+    positions[i * 3 + 1] = by;
+    positions[i * 3 + 2] = bz;
+    phases[i] = baseData[i].phase;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute("aPhase", new THREE.BufferAttribute(phases, 1));
+
+  const uniforms = {
+    uTime: { value: 0 },
+    uNightMix: { value: 0 },
+  };
+  const mat = new THREE.ShaderMaterial({
+    uniforms,
+    vertexShader: /* glsl */ `
+      uniform float uTime;
+      uniform float uNightMix;
+      attribute float aPhase;
+      varying float vPulse;
+      void main() {
+        vPulse = 0.35 + 0.65 * pow(0.5 + 0.5 * sin(uTime * 2.1 + aPhase), 2.2);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = clamp((34.0 / max(1.5, -mvPosition.z)) * (0.75 + 0.45 * vPulse), 2.5, 14.0);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uNightMix;
+      varying float vPulse;
+      void main() {
+        float d = length(gl_PointCoord - vec2(0.5));
+        if (d > 0.5) discard;
+        float core = exp(-d * d * 22.0);
+        float halo = pow(max(0.0, 1.0 - d * 2.0), 2.4) * 0.48;
+        float alpha = (core + halo) * vPulse * smoothstep(0.18, 0.85, uNightMix) * 0.82;
+        if (alpha < 0.005) discard;
+        vec3 col = mix(vec3(0.95, 0.86, 0.42), vec3(1.0, 0.97, 0.76), core);
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const points = new THREE.Points(geo, mat);
+  points.name = "NightGardenFireflies";
+  points.visible = false;
+  points.frustumCulled = false;
+  points.raycast = () => {};
+  parent.add(points);
+
+  return {
+    points,
+    uniforms,
+    update(elapsed, nightMix) {
+      uniforms.uTime.value = elapsed;
+      uniforms.uNightMix.value = nightMix;
+      points.visible = nightMix > 0.16;
+      if (!points.visible) return;
+      const posAttr = geo.attributes.position;
+      for (let i = 0; i < COUNT; i += 1) {
+        const b = baseData[i];
+        const t = elapsed * b.speed + b.phase;
+        posAttr.setXYZ(
+          i,
+          b.bx + Math.sin(t) * 0.55,
+          b.by + Math.sin(t * 1.4 + 0.7) * 0.24,
+          b.bz + Math.cos(t * 0.85) * 0.55
+        );
+      }
+      posAttr.needsUpdate = true;
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Public Builder Entrypoint
 // ---------------------------------------------------------------------------
 
-export async function buildSecretGardensAndPond({ villaGroup = null } = {}) {
+export async function buildSecretGardensAndPond({ villaGroup = null, onProgress = null } = {}) {
   const group = new THREE.Group();
   group.name = "SecretGardensAndCrystalPond";
 
-  const models = await loadAllGardenModels();
+  const models = await loadAllGardenModels(onProgress);
 
   const extracted = {
     rose_bush: extractNormalizedParts(models.rose_bush, { alignY: "min", isFoliage: true }),
@@ -1703,6 +2237,7 @@ export async function buildSecretGardensAndPond({ villaGroup = null } = {}) {
   };
 
   const animState = {
+    pondGlow: null,
     waterfallMap: null,
     pondNormal: null,
     foamRings: [],
@@ -1716,12 +2251,28 @@ export async function buildSecretGardensAndPond({ villaGroup = null } = {}) {
 
   buildMonetPondZone(group, models, extracted, animState);
   buildTwoPersonSwingZone(group, animState);
-  buildAllGLBFlora(group, extracted);
+  const irisCtrl = buildAllGLBFlora(group, extracted);
+  const fireflies = buildGardenFireflies(group);
   upgradeIndoorVasesWithHeroRoses(villaGroup, extracted.hero_rose);
+  upgradeIndoorPlantersWithGLBFlora(villaGroup, extracted);
 
   enablePBRShadows(group, { cast: true, receive: true, minRadius: 0.14 });
+  const gardenSkip = new Set([
+    ...animState.foamRings.map((f) => f.mesh),
+    ...animState.lilyClusters.map((l) => l.group),
+    ...animState.swimmers.map((s) => s.wrapper),
+    ...animState.shrimpActors.map((sh) => sh.wrapper),
+  ]);
+  if (animState.swingPivot) gardenSkip.add(animState.swingPivot);
+  for (let i = 0; i < group.children.length; i += 1) {
+    const child = group.children[i];
+    if (child.isGroup) {
+      batchStaticMeshesByMaterial(child, { skipSet: gardenSkip, spatialBucketSize: 48 });
+    }
+  }
 
   const lookTarget = new THREE.Vector3();
+  let nightMix = 0;
 
   function evalFishPos(s, t, outVec) {
     const a = t * s.speed + s.phase;
@@ -1738,6 +2289,20 @@ export async function buildSecretGardensAndPond({ villaGroup = null } = {}) {
       z = POND_CONFIG.cz + (z - POND_CONFIG.cz) * pull;
     }
     return outVec.set(x, s.swimY + oy, z);
+  }
+
+  function setNightMix(mix) {
+    nightMix = clamp(mix, 0, 1);
+    if (animState.pondGlow) {
+      animState.pondGlow.intensity = lerp(2.2, 1.35, nightMix);
+    }
+  }
+
+  function setQualityTier(tier) {
+    if (!irisCtrl) return;
+    if (tier === "low") irisCtrl.setQualityRatio(0.5);
+    else if (tier === "medium") irisCtrl.setQualityRatio(0.8);
+    else irisCtrl.setQualityRatio(1.0);
   }
 
   function update(elapsed, dt) {
@@ -1771,7 +2336,7 @@ export async function buildSecretGardensAndPond({ villaGroup = null } = {}) {
     const effectiveT = elapsed + animState.pondExcite * 0.4;
     for (let i = 0; i < animState.swimmers.length; i += 1) {
       const s = animState.swimmers[i];
-      if (s.mixer) s.mixer.update(dt * speedMult);
+      if (s.mixer && dt > 0) s.mixer.update(dt * speedMult);
       evalFishPos(s, effectiveT, s.wrapper.position);
       evalFishPos(s, effectiveT + 0.08, lookTarget);
       if (lookTarget.distanceToSquared(s.wrapper.position) > 1e-6) {
@@ -1785,7 +2350,7 @@ export async function buildSecretGardensAndPond({ villaGroup = null } = {}) {
     // 4. Foraging & Swimming Giant Freshwater River Shrimp
     for (let i = 0; i < animState.shrimpActors.length; i += 1) {
       const sh = animState.shrimpActors[i];
-      if (sh.mixer) sh.mixer.update(dt * (1.0 + animState.pondExcite * 0.9));
+      if (sh.mixer && dt > 0) sh.mixer.update(dt * (1.0 + animState.pondExcite * 0.9));
 
       if (sh.mode === "shelf") {
         const a = elapsed * sh.speed + sh.phase;
@@ -1819,14 +2384,41 @@ export async function buildSecretGardensAndPond({ villaGroup = null } = {}) {
       const amp = 0.068 + animState.swingBoost * 0.22;
       animState.swingPivot.rotation.x = Math.sin(elapsed * 1.48) * amp;
     }
+
+    // 6. Subtle Night Fireflies
+    fireflies.update(elapsed, nightMix);
   }
 
-  // Advance once at boot so every fish & shrimp starts in a natural swimming pose!
-  update(0.25, 0.05);
+  function reset() {
+    animState.swingBoost = 0;
+    animState.pondExcite = 0;
+    if (animState.waterfallMap) animState.waterfallMap.offset.set(0, 0);
+    if (animState.pondNormal) animState.pondNormal.offset.set(0, 0);
+    for (let i = 0; i < animState.swimmers.length; i += 1) {
+      const s = animState.swimmers[i];
+      if (s.mixer && typeof s.initMixT === "number") {
+        s.mixer.setTime(s.initMixT);
+      }
+    }
+    for (let i = 0; i < animState.shrimpActors.length; i += 1) {
+      const sh = animState.shrimpActors[i];
+      if (sh.mixer && typeof sh.initMixT === "number") {
+        sh.mixer.setTime(sh.initMixT);
+      }
+    }
+    setNightMix(0);
+    update(0, 0);
+  }
+
+  // Deterministic initial pose at simTime = 0
+  update(0, 0);
 
   return {
     group,
     update,
+    reset,
+    setNightMix,
+    setQualityTier,
     boostSwing() {
       animState.swingBoost = 1.0;
     },

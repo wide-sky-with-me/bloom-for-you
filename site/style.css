@@ -7,10 +7,10 @@
 }
 
 :root {
-  --sky-zenith: #d8eef2;
-  --sky-mid: #ebf6f5;
-  --sky-horizon: #f8f7ed;
-  --ink-main: #253642;
+  --sky-zenith: #c8dae8;
+  --sky-mid: #ecd8c2;
+  --sky-horizon: #f9e4c4;
+  --ink-main: #253440;
   --font-display: "FlowerSong", ui-rounded, "SF Pro Rounded", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
   --font-body: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Segoe UI", system-ui, sans-serif;
 }
@@ -29,8 +29,8 @@ body {
   height: 100%;
   overflow: hidden;
   background:
-    radial-gradient(68% 54% at 72% 18%, rgba(255, 250, 224, 0.72) 0%, rgba(255, 250, 224, 0) 70%),
-    linear-gradient(180deg, var(--sky-zenith) 0%, var(--sky-mid) 56%, var(--sky-horizon) 100%);
+    radial-gradient(68% 54% at 72% 24%, rgba(255, 232, 192, 0.78) 0%, rgba(255, 232, 192, 0) 70%),
+    linear-gradient(180deg, var(--sky-zenith) 0%, var(--sky-mid) 58%, var(--sky-horizon) 100%);
   font-family: var(--font-body);
   color: var(--ink-main);
   -webkit-font-smoothing: antialiased;
@@ -58,18 +58,151 @@ body {
   cursor: pointer;
 }
 
-/* Tactile Cotton-Paper Love Letter Sheet (only revealed when clicking the 3D Mailbox or Wax-Sealed Letter) */
+/* Concise Loading Progress Overlay */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(60% 50% at 68% 28%, rgba(255, 234, 196, 0.92) 0%, rgba(246, 224, 196, 0) 72%),
+    linear-gradient(180deg, #cbdde9 0%, #efdcca 58%, #f8e9d2 100%);
+  transition: opacity 0.42s ease;
+}
+
+.loading-overlay.is-fading {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loading-overlay[hidden] {
+  display: none !important;
+}
+
+.loading-card {
+  width: min(88vw, 340px);
+  padding: 24px 26px;
+  border-radius: 20px;
+  background: rgba(255, 251, 244, 0.82);
+  border: 1px solid rgba(196, 152, 112, 0.28);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 18px 44px rgba(38, 48, 58, 0.14);
+  text-align: center;
+}
+
+.loading-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.38rem;
+  letter-spacing: 0.08em;
+  color: #2b3844;
+}
+
+.loading-sub {
+  margin: 8px 0 14px;
+  font-size: 0.78rem;
+  color: #626e78;
+}
+
+.loading-bar-track {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(164, 134, 108, 0.2);
+  overflow: hidden;
+}
+
+.loading-bar-fill {
+  width: 8%;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #c98566 0%, #dfab6d 52%, #8e7cc3 100%);
+  transition: width 0.22s ease;
+}
+
+.loading-pct {
+  display: inline-block;
+  margin-top: 7px;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: #7c6b5e;
+}
+
+/* Default-Hidden Performance & Quality Debug HUD (Toggled via ` or F3 or ?debug=1) */
+.debug-hud {
+  position: fixed;
+  top: max(14px, env(safe-area-inset-top, 14px));
+  right: max(14px, env(safe-area-inset-right, 14px));
+  z-index: 35;
+  min-width: 186px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(16, 24, 32, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #f4f1ea;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 10px 26px rgba(8, 14, 22, 0.28);
+}
+
+.debug-hud[hidden] {
+  display: none !important;
+}
+
+.debug-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 2px 0;
+}
+
+.debug-row span {
+  color: rgba(244, 241, 234, 0.72);
+}
+
+.debug-tier-bar {
+  display: flex;
+  gap: 4px;
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.debug-tier-btn {
+  flex: 1;
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 252, 246, 0.88);
+  border-radius: 6px;
+  padding: 3px 5px;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.debug-tier-btn.is-active {
+  background: rgba(255, 242, 218, 0.92);
+  color: #1c2832;
+  border-color: #fff6e6;
+}
+
+/* Tactile Cotton-Paper Keepsake Letter Sheet */
 .letter-backdrop {
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: rgba(34, 54, 66, 0.28);
+  background: rgba(26, 38, 48, 0.34);
   backdrop-filter: blur(7px);
   -webkit-backdrop-filter: blur(7px);
   display: grid;
   place-items: center;
   padding: 20px;
-  animation: letter-fade-in 0.28s ease-out;
+  animation: letter-fade-in 0.26s ease-out;
 }
 
 .letter-backdrop[hidden] {
@@ -78,16 +211,18 @@ body {
 
 .letter-sheet {
   position: relative;
-  width: min(100%, 520px);
-  max-height: min(86vh, 700px);
+  width: min(100%, 530px);
+  max-height: min(86vh, 720px);
   overflow-y: auto;
-  background: linear-gradient(180deg, #fffcf6 0%, #f8f0e3 100%);
-  border: 1px solid rgba(212, 122, 134, 0.28);
+  background:
+    repeating-linear-gradient(0deg, rgba(186, 158, 122, 0.03) 0px, rgba(186, 158, 122, 0.03) 1px, transparent 1px, transparent 28px),
+    linear-gradient(180deg, #fffcf6 0%, #f7efe0 100%);
+  border: 1px solid rgba(196, 122, 118, 0.3);
   border-radius: 22px;
-  padding: clamp(26px, 5vw, 44px) clamp(24px, 5vw, 42px);
+  padding: clamp(26px, 5vw, 42px) clamp(24px, 5vw, 42px);
   box-shadow:
-    0 24px 56px rgba(31, 52, 64, 0.20),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    0 24px 56px rgba(24, 38, 50, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
   color: #2c3842;
   user-select: text;
   -webkit-user-select: text;
@@ -101,7 +236,7 @@ body {
   height: 34px;
   border-radius: 50%;
   border: 1px solid rgba(44, 56, 66, 0.14);
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.82);
   color: #2c3842;
   font-size: 1.2rem;
   line-height: 1;
@@ -118,20 +253,21 @@ body {
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #e47886, #ad3f50 86%);
-  color: #fff8f0;
+  background: radial-gradient(circle at 35% 30%, #d4656e, #942934 86%);
+  border: 1.5px solid rgba(218, 178, 108, 0.72);
+  color: #fff6e6;
   display: grid;
   place-items: center;
-  font-size: 1.06rem;
-  box-shadow: 0 6px 15px rgba(173, 63, 80, 0.26);
+  font-size: 1.04rem;
+  box-shadow: 0 6px 15px rgba(148, 41, 52, 0.28);
 }
 
 .letter-eyebrow {
-  margin: 15px 0 0;
+  margin: 14px 0 0;
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.15em;
-  color: #bf6172;
+  color: #b25564;
 }
 
 .letter-salutation {
@@ -150,11 +286,19 @@ body {
 }
 
 .letter-signature {
-  margin: 24px 0 0;
+  margin: 22px 0 0;
   text-align: right;
   font-family: var(--font-display);
   font-size: 1.14rem;
-  color: #9e4b5c;
+  color: #984554;
+}
+
+.letter-date {
+  margin: 6px 0 0;
+  text-align: right;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  color: #8a7868;
 }
 
 @keyframes letter-fade-in {
@@ -168,8 +312,7 @@ body {
   }
 }
 
-
-/* Subtle Frosted-Glass Free-Exploration Waypoint Capsule */
+/* Minimalist Translucent Bottom Navigation & State Capsule */
 .explore-capsule {
   position: fixed;
   left: 50%;
@@ -179,12 +322,12 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   max-width: calc(100vw - 20px);
-  padding: 7px 11px;
+  padding: 7px 12px;
   border-radius: 999px;
-  background: rgba(20, 30, 38, 0.42);
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(20, 29, 38, 0.44);
+  border: 1px solid rgba(255, 248, 236, 0.24);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   box-shadow: 0 10px 30px rgba(10, 18, 26, 0.22);
@@ -192,7 +335,7 @@ body {
 }
 
 .explore-capsule.is-idle {
-  opacity: 0.38;
+  opacity: 0.42;
 }
 
 .explore-capsule:hover {
@@ -200,9 +343,9 @@ body {
 }
 
 .explore-hint {
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
-  color: rgba(255, 252, 246, 0.86);
+  font-size: 0.71rem;
+  letter-spacing: 0.05em;
+  color: rgba(255, 250, 242, 0.86);
   padding: 0 8px;
   white-space: nowrap;
 }
@@ -220,15 +363,23 @@ body {
   display: none;
 }
 
+.explore-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  flex-shrink: 0;
+  background: rgba(255, 248, 236, 0.26);
+}
+
 .explore-pill {
   appearance: none;
   border: 1px solid transparent;
-  background: rgba(255, 255, 255, 0.10);
-  color: rgba(255, 252, 246, 0.92);
+  background: rgba(255, 255, 255, 0.11);
+  color: rgba(255, 251, 244, 0.93);
   font-family: var(--font-body);
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   font-weight: 500;
-  padding: 5px 11px;
+  padding: 5px 10px;
   border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
@@ -236,25 +387,31 @@ body {
 }
 
 .explore-pill:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.23);
 }
 
-.explore-pill.is-active {
-  background: rgba(255, 248, 238, 0.92);
-  color: #1f2e3a;
-  border-color: rgba(255, 255, 255, 0.95);
+.explore-pill.explore-action {
+  background: rgba(255, 236, 208, 0.16);
+  border-color: rgba(255, 236, 208, 0.22);
 }
 
-@media (max-width: 640px) {
+.explore-pill.is-active,
+.explore-pill[aria-pressed="true"] {
+  background: rgba(255, 246, 232, 0.94);
+  color: #1f2d38;
+  border-color: rgba(255, 255, 255, 0.96);
+}
+
+@media (max-width: 680px) {
   .explore-capsule {
     border-radius: 18px;
     padding: 6px 9px;
   }
   .explore-hint {
-    font-size: 0.67rem;
+    font-size: 0.66rem;
   }
   .explore-pill {
-    font-size: 0.72rem;
-    padding: 4px 9px;
+    font-size: 0.71rem;
+    padding: 4px 8px;
   }
 }

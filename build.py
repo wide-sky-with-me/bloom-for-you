@@ -19,6 +19,7 @@ REQUIRED_SITE_FILES = (
     "audio.js",
     "gift.json",
     "modules/pbr-kit.js",
+    "modules/gift-config.js",
     "modules/exploration-controls.js",
     "modules/realistic-ocean-sky.js",
     "modules/harbor-and-estate.js",
@@ -111,8 +112,9 @@ def build(output: Path) -> Path:
             file_hashes[rel] = _sha256(file_path)
 
     release = {
-        "schema": 8,
-        "style": "realistic-coastal-villa-pond-swing-horizon-estate-v5",
+        "schema": 9,
+        "title": "鸢尾湾·花与海之约",
+        "style": "iris-bay-monet-garden-coastal-estate-v6",
         "worldSizeMeters": 260,
         "renderer": "three-0.186.1",
         "navigation": "default-aerial-overlook-click-to-dive-and-walk-inside",

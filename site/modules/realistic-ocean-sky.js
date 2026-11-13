@@ -1,9 +1,11 @@
-// Physically-Based Atmospheric Sky Scattering, HDRI Environment Map,
-// Soft Sunlit Cumulus Cloud Deck, Realistic Fresnel/Beer-Lambert Ocean Shader & Coastal Gulls.
+// Physically-Based Golden Hour & Moonlit Night Atmospheric Sky Scattering,
+// HDRI Environment Map, Golden-Rimmed Horizon Cumulus Deck, Beer-Lambert Ocean Shader & Coastal Gulls.
 
-import { THREE, clamp, lerp, smoothstep, mulberry32, getWorldTerrainY } from "./pbr-kit.js";
+import { THREE, clamp, lerp, mulberry32, getWorldTerrainY } from "./pbr-kit.js";
 
-export const SUN_DIRECTION = new THREE.Vector3(0.56, 0.46, 0.69).normalize();
+// Warm angled Golden Hour sunlight ("晴朗傍晚的 Golden Hour：暖金色斜阳")
+export const SUN_DIRECTION = new THREE.Vector3(0.62, 0.28, 0.73).normalize();
+export const MOON_DIRECTION = new THREE.Vector3(-0.46, 0.44, 0.77).normalize();
 
 const SKY_VERTEX = /* glsl */ `
   varying vec3 vWorldDir;
@@ -16,7 +18,9 @@ const SKY_VERTEX = /* glsl */ `
 
 const SKY_FRAGMENT = /* glsl */ `
   uniform vec3 uSunDir;
+  uniform vec3 uMoonDir;
   uniform float uTime;
+  uniform float uNightMix;
   varying vec3 vWorldDir;
 
   float hash21(vec2 p) {
@@ -52,57 +56,99 @@ const SKY_FRAGMENT = /* glsl */ `
     vec3 dir = normalize(vWorldDir);
     float y = clamp(dir.y, -0.15, 1.0);
     float up = max(y, 0.0);
+    float dayMix = 1.0 - uNightMix;
 
-    // Rayleigh + Mie coastal daylight sky gradient with warm golden-apricot horizon glow
-    vec3 zenithCol  = vec3(0.180, 0.410, 0.695);
-    vec3 midSkyCol  = vec3(0.435, 0.680, 0.885);
-    vec3 horizonCol = vec3(0.865, 0.910, 0.945);
+    // 1. Golden Hour Sky Gradient vs Luminous Moonlit Twilight-Indigo Night Gradient
+    vec3 dayZenith  = vec3(0.185, 0.375, 0.675);
+    vec3 dayMid     = vec3(0.560, 0.665, 0.845);
+    vec3 dayHorizon = vec3(0.965, 0.845, 0.715);
 
-    vec3 sky = mix(horizonCol, midSkyCol, pow(up, 0.36));
+    vec3 nightZenith  = vec3(0.032, 0.062, 0.135);
+    vec3 nightMid     = vec3(0.068, 0.122, 0.228);
+    vec3 nightHorizon = vec3(0.118, 0.185, 0.305);
+
+    vec3 zenithCol  = mix(dayZenith, nightZenith, uNightMix);
+    vec3 midSkyCol  = mix(dayMid, nightMid, uNightMix);
+    vec3 horizonCol = mix(dayHorizon, nightHorizon, uNightMix);
+
+    vec3 sky = mix(horizonCol, midSkyCol, pow(up, 0.38));
     sky = mix(sky, zenithCol, pow(up, 0.88));
 
-    // Solar Mie aureole, warm horizon band & crisp sun disc
+    // 2. Golden Hour Solar Mie Aureole, Apricot Horizon Glow & Sun Disc
     float mu = max(dot(dir, normalize(uSunDir)), 0.0);
-    float horizonGlow = exp(-abs(dir.y - 0.02) * 9.5) * (0.28 + 0.72 * pow(mu, 2.2));
-    sky += vec3(1.0, 0.86, 0.68) * horizonGlow * 0.22;
-    sky += vec3(1.0, 0.91, 0.72) * pow(mu, 7.0) * 0.26;
-    sky += vec3(1.0, 0.96, 0.86) * pow(mu, 96.0) * 0.58;
-    sky += vec3(1.0, 0.99, 0.94) * smoothstep(0.99935, 0.99985, mu) * 2.2;
+    float horizonGlow = exp(-abs(dir.y - 0.025) * 8.2) * (0.34 + 0.66 * pow(mu, 1.9));
+    sky += vec3(1.00, 0.72, 0.44) * horizonGlow * 0.34 * dayMix;
+    sky += vec3(1.00, 0.80, 0.54) * pow(mu, 5.5) * 0.34 * dayMix;
+    sky += vec3(1.00, 0.91, 0.74) * pow(mu, 84.0) * 0.64 * dayMix;
+    sky += vec3(1.00, 0.97, 0.88) * smoothstep(0.99925, 0.99982, mu) * 2.15 * dayMix;
 
-    // Distant sunlit coastal horizon cumulus banks sitting above mountain crests
+    // 3. Night Stars & Soft Silver Crescent Moon Aura
+    float moonMu = max(dot(dir, normalize(uMoonDir)), 0.0);
+    if (uNightMix > 0.01 && dir.y > 0.06) {
+      vec2 starUv = vec2(atan(dir.z, dir.x) * 38.0, dir.y * 92.0);
+      vec2 starCell = floor(starUv);
+      vec2 starFract = fract(starUv) - 0.5;
+      float starSeed = hash21(starCell);
+      if (starSeed > 0.965) {
+        float distC = length(starFract);
+        float twinkle = 0.68 + 0.32 * sin(uTime * 1.9 + starSeed * 62.0);
+        float starBright = smoothstep(0.19, 0.02, distC) * twinkle * smoothstep(0.06, 0.24, dir.y);
+        sky += vec3(0.84, 0.90, 1.00) * starBright * 0.78 * uNightMix;
+      }
+    }
+    sky += vec3(0.45, 0.60, 0.84) * pow(moonMu, 9.0) * 0.22 * uNightMix;
+    sky += vec3(0.82, 0.90, 1.00) * pow(moonMu, 160.0) * 0.48 * uNightMix;
+    sky += vec3(0.94, 0.97, 1.00) * smoothstep(0.99945, 0.99986, moonMu) * 1.35 * uNightMix;
+
+    // 4. Low-Altitude Golden-Rimmed Coastal Stratocumulus Banks above Mountain Crests
     if (dir.y > 0.008 && dir.y < 0.26) {
       float az = atan(dir.z, dir.x);
       vec2 bankUV = vec2(az * 2.8 + uTime * 0.0014, (dir.y - 0.01) * 11.5);
       float bankShape = fbmCloud(bankUV * vec2(1.15, 0.85)) * 0.72 + fbmCloud(bankUV * 2.7 + 4.1) * 0.28;
       float verticalEnv = smoothstep(0.008, 0.042, dir.y) * (1.0 - smoothstep(0.11, 0.24, dir.y));
-      float bankMask = smoothstep(0.46, 0.74, bankShape) * verticalEnv * 0.78;
+      float bankMask = smoothstep(0.46, 0.74, bankShape) * verticalEnv * mix(0.82, 0.46, uNightMix);
       float rim = clamp((fbmCloud(bankUV + vec2(0.0, 0.16)) - bankShape) * -2.6 + 0.68, 0.0, 1.0);
-      vec3 bankShadow = mix(vec3(0.73, 0.81, 0.89), vec3(0.82, 0.84, 0.90), pow(mu, 2.0));
-      vec3 bankLit = mix(vec3(0.98, 0.98, 0.99), vec3(1.0, 0.93, 0.82), 0.35 + 0.55 * pow(mu, 2.4));
+
+      vec3 dayBankShadow = mix(vec3(0.68, 0.69, 0.80), vec3(0.84, 0.74, 0.76), pow(mu, 1.8));
+      vec3 dayBankLit    = mix(vec3(0.99, 0.94, 0.88), vec3(1.00, 0.84, 0.62), 0.48 + 0.52 * pow(mu, 2.0));
+      vec3 nightBankShadow = vec3(0.07, 0.11, 0.20);
+      vec3 nightBankLit    = vec3(0.20, 0.29, 0.44);
+
+      vec3 bankShadow = mix(dayBankShadow, nightBankShadow, uNightMix);
+      vec3 bankLit    = mix(dayBankLit, nightBankLit, uNightMix);
       sky = mix(sky, mix(bankShadow, bankLit, rim), bankMask);
     }
 
-    // Soft sunlit overhead coastal cumulus clouds projected onto sky dome
+    // 5. Overhead Drifting Cumulus Clouds with Golden-Apricot Rim & Cool Lavender Belly
     if (dir.y > 0.025) {
-      vec2 cloudUV = dir.xz / (dir.y + 0.16) * 1.18 + vec2(uTime * 0.0045, uTime * 0.0022);
+      vec2 cloudUV = dir.xz / (dir.y + 0.16) * 1.18 + vec2(uTime * 0.0042, uTime * 0.0020);
       float cBase = fbmCloud(cloudUV);
-      float cDetail = fbmCloud(cloudUV * 2.6 - vec2(uTime * 0.003, 0.0));
-      float density = smoothstep(0.50, 0.78, cBase * 0.78 + cDetail * 0.28);
+      float cDetail = fbmCloud(cloudUV * 2.6 - vec2(uTime * 0.0028, 0.0));
+      float density = smoothstep(0.51, 0.79, cBase * 0.78 + cDetail * 0.28);
       float horizonFade = smoothstep(0.025, 0.20, dir.y);
-      density *= horizonFade * 0.86;
+      density *= horizonFade * mix(0.78, 0.36, uNightMix);
 
-      // Lit cloud top vs cool shadow belly
-      float lightSample = fbmCloud(cloudUV + normalize(uSunDir.xz) * 0.06);
+      vec2 lightDir2D = normalize(mix(uSunDir.xz, uMoonDir.xz, uNightMix));
+      float lightSample = fbmCloud(cloudUV + lightDir2D * 0.06);
       float selfShadow = clamp((cBase - lightSample) * 2.8 + 0.62, 0.0, 1.0);
-      vec3 cloudShadowCol = vec3(0.70, 0.78, 0.86);
-      vec3 cloudLitCol = mix(vec3(0.97, 0.98, 0.99), vec3(1.0, 0.96, 0.89), pow(mu, 3.0) * 0.55);
-      vec3 cloudCol = mix(cloudShadowCol, cloudLitCol, selfShadow);
+
+      vec3 dayCloudShadow = vec3(0.68, 0.71, 0.82);
+      vec3 dayCloudLit    = mix(vec3(0.99, 0.95, 0.90), vec3(1.00, 0.86, 0.68), 0.35 + 0.60 * pow(mu, 2.2));
+      vec3 nightCloudShadow = vec3(0.06, 0.10, 0.18);
+      vec3 nightCloudLit    = vec3(0.18, 0.27, 0.42);
+
+      vec3 cloudCol = mix(
+        mix(dayCloudShadow, nightCloudShadow, uNightMix),
+        mix(dayCloudLit, nightCloudLit, uNightMix),
+        selfShadow
+      );
       sky = mix(sky, cloudCol, density);
     }
 
     // Below-horizon sea bounce
     if (dir.y < 0.0) {
-      sky = mix(horizonCol, vec3(0.24, 0.44, 0.56), clamp(-dir.y * 5.0, 0.0, 1.0));
+      vec3 seaBounceCol = mix(vec3(0.24, 0.44, 0.56), vec3(0.04, 0.09, 0.16), uNightMix);
+      sky = mix(horizonCol, seaBounceCol, clamp(-dir.y * 5.0, 0.0, 1.0));
     }
 
     gl_FragColor = vec4(sky, 1.0);
@@ -123,9 +169,9 @@ const OCEAN_VERTEX = /* glsl */ `
     float distCalm = 1.0 - smoothstep(140.0, 680.0, length(wp.xz));
 
     // Gentle multi-directional physical ocean swell
-    float w1 = sin(dot(wp.xz, vec2(0.19, 0.14)) + uTime * 1.25) * 0.095;
-    float w2 = sin(dot(wp.xz, vec2(-0.13, 0.22)) - uTime * 1.05 + 1.4) * 0.065;
-    float w3 = cos(dot(wp.xz, vec2(0.31, -0.24)) + uTime * 1.75) * 0.032;
+    float w1 = sin(dot(wp.xz, vec2(0.19, 0.14)) + uTime * 1.22) * 0.092;
+    float w2 = sin(dot(wp.xz, vec2(-0.13, 0.22)) - uTime * 1.02 + 1.4) * 0.062;
+    float w3 = cos(dot(wp.xz, vec2(0.31, -0.24)) + uTime * 1.70) * 0.030;
     float h = (w1 + w2 + w3) * deepFactor * distCalm;
 
     wp.y += h;
@@ -139,6 +185,9 @@ const OCEAN_VERTEX = /* glsl */ `
 const OCEAN_FRAGMENT = /* glsl */ `
   uniform float uTime;
   uniform vec3 uSunDir;
+  uniform vec3 uMoonDir;
+  uniform float uNightMix;
+  uniform float uDetailScale;
   uniform vec3 uFogColor;
   uniform float uFogDensity;
   varying vec3 vWorldPos;
@@ -162,31 +211,36 @@ const OCEAN_FRAGMENT = /* glsl */ `
     );
   }
 
-  float waveHeightField(vec2 p, float t) {
+  float waveHeightField(vec2 p, float t, float detail) {
     float h = 0.0;
-    h += sin(dot(p, vec2(0.72, 0.54)) + t * 1.65) * 0.28;
-    h += sin(dot(p, vec2(-0.61, 0.83)) - t * 1.42) * 0.22;
-    h += (vnoise(p * 1.15 + vec2(t * 0.52, -t * 0.38)) - 0.5) * 0.36;
-    h += (vnoise(p * 2.85 - vec2(t * 0.78, t * 0.64)) - 0.5) * 0.18;
+    h += sin(dot(p, vec2(0.72, 0.54)) + t * 1.60) * 0.28;
+    h += sin(dot(p, vec2(-0.61, 0.83)) - t * 1.38) * 0.22;
+    if (detail > 0.35) {
+      h += (vnoise(p * 1.15 + vec2(t * 0.50, -t * 0.36)) - 0.5) * 0.36;
+    }
+    if (detail > 0.75) {
+      h += (vnoise(p * 2.85 - vec2(t * 0.76, t * 0.62)) - 0.5) * 0.18;
+    }
     return h;
   }
 
   void main() {
     vec3 V = normalize(cameraPosition - vWorldPos);
     float dist = length(cameraPosition - vWorldPos);
+    float dayMix = 1.0 - uNightMix;
 
     // Analytical multi-octave capillary + swell surface normal
     float eps = 0.16;
-    float normalFade = 1.0 - smoothstep(95.0, 520.0, dist);
-    float hC = waveHeightField(vWorldPos.xz, uTime);
-    float hX = waveHeightField(vWorldPos.xz + vec2(eps, 0.0), uTime);
-    float hZ = waveHeightField(vWorldPos.xz + vec2(0.0, eps), uTime);
+    float normalFade = (1.0 - smoothstep(95.0, 520.0, dist));
+    float hC = waveHeightField(vWorldPos.xz, uTime, uDetailScale);
+    float hX = waveHeightField(vWorldPos.xz + vec2(eps, 0.0), uTime, uDetailScale);
+    float hZ = waveHeightField(vWorldPos.xz + vec2(0.0, eps), uTime, uDetailScale);
     vec3 N = normalize(vec3((hC - hX) * 0.34 * normalFade, 1.0, (hC - hZ) * 0.34 * normalFade));
 
-    // Beer-Lambert coastal depth absorption: sandy turquoise shallows -> emerald -> deep sapphire
-    vec3 shallowTurquoise = vec3(0.24, 0.71, 0.72);
-    vec3 midEmerald       = vec3(0.08, 0.43, 0.53);
-    vec3 deepSapphire     = vec3(0.035, 0.195, 0.345);
+    // Beer-Lambert coastal depth absorption: turquoise-emerald by day -> deep moonlit sapphire at night
+    vec3 shallowTurquoise = mix(vec3(0.22, 0.70, 0.71), vec3(0.06, 0.22, 0.30), uNightMix);
+    vec3 midEmerald       = mix(vec3(0.07, 0.43, 0.54), vec3(0.028, 0.125, 0.225), uNightMix);
+    vec3 deepSapphire     = mix(vec3(0.032, 0.195, 0.350), vec3(0.015, 0.065, 0.145), uNightMix);
 
     float tMid  = 1.0 - exp(-max(vDepth, 0.0) * 0.58);
     float tDeep = 1.0 - exp(-max(vDepth - 1.4, 0.0) * 0.28);
@@ -194,31 +248,41 @@ const OCEAN_FRAGMENT = /* glsl */ `
     waterBody = mix(waterBody, deepSapphire, tDeep);
 
     // Subsurface turquoise scatter in sunlit wave crests
-    vec3 L = normalize(uSunDir);
+    vec3 L = normalize(mix(uSunDir, uMoonDir, uNightMix));
     float sss = clamp(dot(L, -V + N * 0.65), 0.0, 1.0);
-    waterBody += vec3(0.06, 0.24, 0.22) * pow(sss, 3.0) * (0.4 + 0.6 * normalFade);
+    waterBody += mix(vec3(0.07, 0.24, 0.22), vec3(0.02, 0.08, 0.12), uNightMix) * pow(sss, 3.0) * (0.4 + 0.6 * normalFade);
 
-    // Schlick Fresnel sky reflection
+    // Schlick Fresnel sky reflection (Golden Hour apricot-lavender vs Moonlit silver-indigo)
     float NdotV = max(dot(N, V), 0.02);
     float fresnel = 0.025 + 0.975 * pow(1.0 - NdotV, 4.6);
     vec3 R = reflect(-V, N);
-    vec3 reflSky = mix(vec3(0.78, 0.87, 0.93), vec3(0.27, 0.53, 0.79), clamp(R.y * 1.4, 0.0, 1.0));
-    vec3 col = mix(waterBody, reflSky, clamp(fresnel * 0.86, 0.0, 0.88));
+    vec3 dayReflHorizon = vec3(0.93, 0.83, 0.74);
+    vec3 dayReflZenith  = vec3(0.28, 0.50, 0.78);
+    vec3 nightReflHorizon = vec3(0.14, 0.22, 0.36);
+    vec3 nightReflZenith  = vec3(0.04, 0.09, 0.19);
+    vec3 reflSky = mix(
+      mix(dayReflHorizon, nightReflHorizon, uNightMix),
+      mix(dayReflZenith, nightReflZenith, uNightMix),
+      clamp(R.y * 1.4, 0.0, 1.0)
+    );
+    vec3 col = mix(waterBody, reflSky, clamp(fresnel * 0.85, 0.0, 0.87));
 
-    // Crisp sun specular glitter path + warm broad sun sheen
+    // Fine Golden Hour sun glitter path + gentle silver moon shimmer at night
     vec3 H = normalize(L + V);
     float NdotH = max(dot(N, H), 0.0);
-    float specSharp = pow(NdotH, 340.0) * 3.8;
-    float specSoft  = pow(NdotH, 28.0) * 0.16;
-    col += vec3(1.0, 0.95, 0.82) * (specSharp + specSoft);
+    float specSharp = pow(NdotH, 320.0) * mix(3.4, 1.85, uNightMix);
+    float specSoft  = pow(NdotH, 26.0) * mix(0.18, 0.09, uNightMix);
+    vec3 specCol = mix(vec3(1.00, 0.88, 0.66), vec3(0.76, 0.86, 1.00), uNightMix);
+    col += specCol * (specSharp + specSoft);
 
     // Organic aerated shoreline & reef surf foam where vDepth is shallow
     if (vDepth < 1.35) {
-      float shoreWave = sin(vDepth * 9.5 - uTime * 2.35) * 0.5 + 0.5;
+      float shoreWave = sin(vDepth * 9.5 - uTime * 2.30) * 0.5 + 0.5;
       float lace = vnoise(vWorldPos.xz * 2.4 + vec2(uTime * 0.25, -uTime * 0.18));
       float foamBand = (1.0 - smoothstep(0.02, 1.15, vDepth)) * (0.48 + 0.52 * shoreWave);
       float foamMask = smoothstep(0.36, 0.68, foamBand * (0.55 + 0.65 * lace));
-      col = mix(col, vec3(0.95, 0.98, 0.99), foamMask * 0.88);
+      vec3 foamCol = mix(vec3(0.98, 0.96, 0.93), vec3(0.55, 0.66, 0.80), uNightMix);
+      col = mix(col, foamCol, foamMask * mix(0.88, 0.62, uNightMix));
     }
 
     // Translucent alpha right at the wet-sand / submerged-step waterline
@@ -233,7 +297,7 @@ const OCEAN_FRAGMENT = /* glsl */ `
   }
 `;
 
-export function createRealisticSkyEnvironment(renderer) {
+export function createRealisticSkyEnvironment(renderer, nightMix = 0.0) {
   const pmrem = new THREE.PMREMGenerator(renderer);
   const envScene = new THREE.Scene();
 
@@ -242,7 +306,9 @@ export function createRealisticSkyEnvironment(renderer) {
     new THREE.ShaderMaterial({
       uniforms: {
         uSunDir: { value: SUN_DIRECTION.clone() },
+        uMoonDir: { value: MOON_DIRECTION.clone() },
         uTime: { value: 0 },
+        uNightMix: { value: nightMix },
       },
       vertexShader: SKY_VERTEX,
       fragmentShader: SKY_FRAGMENT,
@@ -252,10 +318,13 @@ export function createRealisticSkyEnvironment(renderer) {
   );
   envScene.add(dome);
 
-  // Warm ground/sea bounce hemisphere inside PMREM for natural interior & underside PBR fill
+  // Warm coastal ground/sea bounce hemisphere inside PMREM for natural PBR underside fill
   const seaBounce = new THREE.Mesh(
     new THREE.PlaneGeometry(110, 110),
-    new THREE.MeshBasicMaterial({ color: 0x5c8b92, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({
+      color: nightMix > 0.5 ? 0x1e3048 : 0x709294,
+      side: THREE.DoubleSide,
+    })
   );
   seaBounce.rotation.x = -Math.PI / 2;
   seaBounce.position.y = -4.0;
@@ -324,13 +393,17 @@ export function buildRealisticOceanAndSky(opts = {}) {
   const group = new THREE.Group();
   group.name = "RealisticOceanAndSky";
 
-  const fogColor = new THREE.Color(opts.fogColor !== undefined ? opts.fogColor : 0xdce9f2);
-  const fogDensity = opts.fogDensity !== undefined ? opts.fogDensity : 0.00072;
+  const dayFogColor = new THREE.Color(opts.fogColor !== undefined ? opts.fogColor : 0xeadfce);
+  const nightFogColor = new THREE.Color(opts.nightFogColor !== undefined ? opts.nightFogColor : 0x16243b);
+  const currentFogColor = dayFogColor.clone();
+  const fogDensity = opts.fogDensity !== undefined ? opts.fogDensity : 0.00062;
 
   // 1. Atmospheric Sky Dome (radius 1,450m)
   const skyUniforms = {
     uSunDir: { value: SUN_DIRECTION.clone() },
+    uMoonDir: { value: MOON_DIRECTION.clone() },
     uTime: { value: 0 },
+    uNightMix: { value: 0 },
   };
   const skyDome = new THREE.Mesh(
     new THREE.SphereGeometry(1450, 48, 28),
@@ -345,11 +418,14 @@ export function buildRealisticOceanAndSky(opts = {}) {
   skyDome.raycast = () => {};
   group.add(skyDome);
 
-  // 2. Physical Ocean Surface: high-detail coastal sheet (320m x 320m) + outer horizon sea ring
+  // 2. Physical Ocean Surface: high-detail coastal sheet (340m x 340m) + outer horizon sea ring
   const oceanUniforms = {
     uTime: { value: 0 },
     uSunDir: { value: SUN_DIRECTION.clone() },
-    uFogColor: { value: fogColor },
+    uMoonDir: { value: MOON_DIRECTION.clone() },
+    uNightMix: { value: 0 },
+    uDetailScale: { value: 1.0 },
+    uFogColor: { value: currentFogColor },
     uFogDensity: { value: fogDensity },
   };
   const oceanMat = new THREE.ShaderMaterial({
@@ -367,7 +443,6 @@ export function buildRealisticOceanAndSky(opts = {}) {
   for (let i = 0; i < posAttr.count; i += 1) {
     const wx = posAttr.getX(i);
     const wz = posAttr.getZ(i);
-    // Account for solid Granite Breakwater Mole X in [46, 82.8], Z in [7.2, 12.8]
     const inBreakwater =
       (wx >= 45.8 && wx <= 78.2 && wz >= 7.4 && wz <= 12.6) ||
       Math.hypot(wx - 78.0, wz - 10.0) < 5.0;
@@ -380,7 +455,6 @@ export function buildRealisticOceanAndSky(opts = {}) {
   nearOcean.raycast = () => {};
   group.add(nearOcean);
 
-  // Outer horizon sea skirt (inner 168m -> outer 1,420m) so ocean extends endlessly to horizon
   const farOceanGeo = new THREE.RingGeometry(168, 1420, 96, 6);
   farOceanGeo.rotateX(-Math.PI / 2);
   const farCount = farOceanGeo.attributes.position.count;
@@ -391,7 +465,7 @@ export function buildRealisticOceanAndSky(opts = {}) {
   farOcean.raycast = () => {};
   group.add(farOcean);
 
-  // 3. Subtle Realistic Sunshower Mist Rainbow Arc over the Bay (edge-feathered spectral shader, zero quad borders)
+  // 3. Subtle Sunshower Mist Rainbow Arc over the Bay
   const rainbowGeo = new THREE.RingGeometry(88, 108, 96, 8, 0.10 * Math.PI, 0.80 * Math.PI);
   const rainbowUniforms = {
     uOpacity: { value: 0.0 },
@@ -401,7 +475,6 @@ export function buildRealisticOceanAndSky(opts = {}) {
     vertexShader: /* glsl */ `
       varying vec2 vRingUv;
       void main() {
-        // RingGeometry radial r in [88, 108], angle theta in [0.10*PI, 0.90*PI]
         float r = length(position.xy);
         float ang = atan(position.y, position.x);
         vRingUv = vec2(
@@ -415,7 +488,6 @@ export function buildRealisticOceanAndSky(opts = {}) {
       uniform float uOpacity;
       varying vec2 vRingUv;
       void main() {
-        // Smooth spectral dispersion across radial coordinate vRingUv.y
         float t = vRingUv.y;
         vec3 cRed    = vec3(1.00, 0.38, 0.32);
         vec3 cYellow = vec3(1.00, 0.88, 0.42);
@@ -427,7 +499,6 @@ export function buildRealisticOceanAndSky(opts = {}) {
         spec = mix(spec, cYellow, smoothstep(0.52, 0.70, t));
         spec = mix(spec, cRed, smoothstep(0.70, 0.88, t));
 
-        // Feather smoothly to 0.0 well inside all 4 boundaries
         float radialEnv = pow(sin(clamp(t, 0.0, 1.0) * 3.14159265), 2.4);
         float arcEnv = pow(sin(clamp(vRingUv.x, 0.0, 1.0) * 3.14159265), 1.8);
         float alpha = radialEnv * arcEnv * uOpacity;
@@ -468,24 +539,54 @@ export function buildRealisticOceanAndSky(opts = {}) {
   }
 
   let rainbowTimer = 0;
+  let nightMix = 0;
+  let activeGullCount = gullFlock.length;
 
   function triggerRainbow() {
     rainbowTimer = 9.0;
+  }
+
+  function setNightMix(mix) {
+    nightMix = clamp(mix, 0, 1);
+    skyUniforms.uNightMix.value = nightMix;
+    oceanUniforms.uNightMix.value = nightMix;
+    currentFogColor.copy(dayFogColor).lerp(nightFogColor, nightMix);
+  }
+
+  function setQualityTier(tier) {
+    if (tier === "low") {
+      oceanUniforms.uDetailScale.value = 0.25;
+      activeGullCount = 4;
+    } else if (tier === "medium") {
+      oceanUniforms.uDetailScale.value = 0.6;
+      activeGullCount = 7;
+    } else {
+      oceanUniforms.uDetailScale.value = 1.0;
+      activeGullCount = 10;
+    }
+    for (let i = 0; i < gullFlock.length; i += 1) {
+      gullFlock[i].rig.root.visible = i < activeGullCount && nightMix < 0.85;
+    }
   }
 
   function update(elapsed, dt) {
     skyUniforms.uTime.value = elapsed;
     oceanUniforms.uTime.value = elapsed;
 
-    if (rainbowTimer > 0) {
+    if (rainbowTimer > 0 && nightMix < 0.5) {
       rainbowTimer = Math.max(0, rainbowTimer - dt);
-      rainbowUniforms.uOpacity.value = lerp(rainbowUniforms.uOpacity.value, 0.22, 0.08);
+      rainbowUniforms.uOpacity.value = lerp(rainbowUniforms.uOpacity.value, 0.22 * (1 - nightMix), 0.08);
     } else {
-      rainbowUniforms.uOpacity.value = lerp(rainbowUniforms.uOpacity.value, 0.0, 0.05);
+      rainbowUniforms.uOpacity.value = lerp(rainbowUniforms.uOpacity.value, 0.0, 0.06);
     }
 
+    const gullsActive = nightMix < 0.85;
     for (let i = 0; i < gullFlock.length; i += 1) {
       const g = gullFlock[i];
+      const vis = i < activeGullCount && gullsActive;
+      g.rig.root.visible = vis;
+      if (!vis) continue;
+
       const a = g.phase + elapsed * g.speed * g.dir;
       const nx = g.cx + Math.cos(a) * g.rx;
       const nz = g.cz + Math.sin(a) * g.rz;
@@ -506,12 +607,23 @@ export function buildRealisticOceanAndSky(opts = {}) {
     }
   }
 
+  function reset() {
+    rainbowTimer = 0;
+    rainbowUniforms.uOpacity.value = 0;
+    setNightMix(0);
+    update(0, 0);
+  }
+
   update(0, 0.016);
 
   return {
     group,
     update,
+    reset,
+    setNightMix,
+    setQualityTier,
     triggerRainbow,
+    getFogColor: () => currentFogColor,
     isRainbowActive: () => rainbowUniforms.uOpacity.value > 0.02,
   };
 }

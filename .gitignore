@@ -18,3 +18,5 @@ site/assets/calla.svg
 site/assets/closeup-*.svg
 .DS_Store
 node_modules/
+dist-vite/
+.vite/

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>予你花开 · 海景花墅与漫山花海自由漫游</title>
-  <meta name="description" content="献给最爱的老婆：写实风格 3D 漫山花海半岛、海港游艇与可自由步入探索的两室一厅海景花墅。" />
+  <title>《鸢尾湾·花与海之约》 · 海景花墅、莫奈花园与群岛海湾庄园</title>
+  <meta name="description" content="《鸢尾湾·花与海之约》：写实自然主义与莫奈花园配色的海景花墅、睡莲鱼虾池、双人秋千与群岛海湾 3D 互动庄园。" />
   <link rel="icon" href="./assets/flower.svg" type="image/svg+xml" />
   <link rel="preload" href="./assets/flower-song.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="./style.css" />
@@ -18,29 +18,60 @@
   </script>
 </head>
 <body>
-  <canvas id="diorama-canvas" aria-label="写实海景两室一厅花墅与海岸花海自由探索世界"></canvas>
+  <canvas id="diorama-canvas" aria-label="鸢尾湾·花与海之约 3D 互动海岸庄园"></canvas>
 
-  <nav class="explore-capsule" id="explore-bar" aria-label="自由探索视角切换">
-    <span class="explore-hint" id="explore-hint">点击任意景致深入探索 · 拖拽旋转俯瞰</span>
+  <div class="loading-overlay" id="loading-overlay" role="status" aria-live="polite">
+    <div class="loading-card">
+      <p class="loading-title" id="loading-title">鸢尾湾 · 花与海之约</p>
+      <p class="loading-sub" id="loading-status">正在展开海景花墅与莫奈花园…</p>
+      <div class="loading-bar-track">
+        <div class="loading-bar-fill" id="loading-bar-fill"></div>
+      </div>
+      <span class="loading-pct" id="loading-pct">8%</span>
+    </div>
+  </div>
+
+  <aside class="debug-hud" id="debug-hud" aria-label="性能与画质调试统计" hidden>
+    <div class="debug-row"><span>FPS</span><strong id="dbg-fps">--</strong></div>
+    <div class="debug-row"><span>Draw Calls</span><strong id="dbg-calls">--</strong></div>
+    <div class="debug-row"><span>Triangles</span><strong id="dbg-tris">--</strong></div>
+    <div class="debug-row"><span>画质级别</span><strong id="dbg-tier">高 (自动)</strong></div>
+    <div class="debug-tier-bar" role="group" aria-label="手动切换画质级别">
+      <button type="button" class="debug-tier-btn is-active" data-quality="auto">自动</button>
+      <button type="button" class="debug-tier-btn" data-quality="high">高</button>
+      <button type="button" class="debug-tier-btn" data-quality="medium">中</button>
+      <button type="button" class="debug-tier-btn" data-quality="low">低</button>
+    </div>
+  </aside>
+
+  <nav class="explore-capsule" id="explore-bar" aria-label="庄园探索与状态控制">
+    <span class="explore-hint" id="explore-hint">点击任意景致深入探索 · 拖拽旋转俯瞰 · 按 ` 查看性能统计</span>
     <div class="explore-pills">
       <button type="button" class="explore-pill is-active" data-preset="aerialOverlook">俯瞰全景</button>
       <button type="button" class="explore-pill" data-preset="pondWaterfallWalk">睡莲鱼虾池</button>
       <button type="button" class="explore-pill" data-preset="coupleSwingWalk">繁花双人秋千</button>
-      <button type="button" class="explore-pill" data-preset="villaLivingWalk">走进客厅</button>
+      <button type="button" class="explore-pill" data-preset="beachBoardwalkWalk">亲水木栈道</button>
+      <button type="button" class="explore-pill" data-preset="villaLivingWalk">步入花墅</button>
       <button type="button" class="explore-pill" data-preset="villaMasterWalk">海景主卧</button>
-      <button type="button" class="explore-pill" data-preset="villaStudyWalk">书房信笺</button>
       <button type="button" class="explore-pill" data-preset="harborPierWalk">海港游艇</button>
+      <button type="button" class="explore-pill" data-preset="creekBridgeWalk">溪桥风车</button>
+      <span class="explore-divider" aria-hidden="true"></span>
+      <button type="button" class="explore-pill explore-action" id="btn-letter">纪念信笺</button>
+      <button type="button" class="explore-pill explore-action" id="btn-pause" aria-pressed="false">暂停</button>
+      <button type="button" class="explore-pill explore-action" id="btn-daynight" aria-pressed="false">夜景</button>
+      <button type="button" class="explore-pill explore-action" id="btn-reset">复位</button>
     </div>
   </nav>
 
   <div class="letter-backdrop" id="letter-modal" role="dialog" aria-modal="true" aria-labelledby="letter-salutation" hidden>
     <article class="letter-sheet">
-      <button type="button" class="letter-close" id="letter-close" aria-label="收起情书">×</button>
+      <button type="button" class="letter-close" id="letter-close" aria-label="收起纪念信笺">×</button>
       <div class="letter-seal" aria-hidden="true"><span>✿</span></div>
       <p class="letter-eyebrow" id="letter-recipient">致我最爱的老婆</p>
       <h2 class="letter-salutation" id="letter-salutation">亲爱的老婆：</h2>
       <div class="letter-body" id="letter-body"></div>
       <p class="letter-signature" id="letter-signature">永远偏爱你的，老公</p>
+      <p class="letter-date" id="letter-date">花与海之约 · 岁岁常相见</p>
     </article>
   </div>
 

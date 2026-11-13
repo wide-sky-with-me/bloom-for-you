@@ -1,0 +1,21 @@
+{
+  "name": "iris-bay-bloom-for-you",
+  "version": "2.0.0",
+  "private": true,
+  "description": "《鸢尾湾·花与海之约》 — 海景花墅、莫奈花园与群岛海湾庄园 (Three.js 3D 互动礼赠场景与离线单文件工程)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/build-single-html.mjs",
+    "build:web": "vite build",
+    "build:single": "node scripts/build-single-html.mjs",
+    "preview": "vite preview --port 4173",
+    "test": "python3 -m unittest discover -s tests -v"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "vite": "^6.2.0"
+  }
+}
