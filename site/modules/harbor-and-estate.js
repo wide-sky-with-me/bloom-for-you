@@ -31,6 +31,13 @@ import {
   batchStaticMeshesByMaterial,
 } from "./pbr-kit.js";
 import { createRoseBouquet } from "./botanical-flora.js";
+import {
+  createPillowedCushionGeo,
+  createPlumpPillowGeo,
+  buildTeakSteamerDeckLounger,
+  buildResortMarketParasol,
+  buildItalianLeverEspressoMachine,
+} from "./vintage-craft-props.js";
 
 function safeMerge(geos) {
   const prepared = [];
@@ -680,129 +687,259 @@ function buildCourtyardAndTrails(parent, waterAnimList) {
 }
 
 function buildCourtyardProps(sec, { limestoneMat, cedarMat, brassMat, chromeMat }) {
-  // Interactive Handcrafted Timber & Brushed-Brass Rose Mailbox at (-10.8, 2.20, +9.4)
+  // Interactive Handcrafted Timber, Verdigris-Copper & Brushed-Brass Rose Mailbox at (-10.8, 2.20, +9.4)
   const mailbox = new THREE.Group();
   mailbox.position.set(-10.8, 2.2, 9.4);
   mailbox.rotation.y = 0.18;
   registerCircleCollider(-10.8, 9.4, 0.42);
 
-  const copperMat = pbrMetalMat(0x5b7d72, { roughness: 0.42, metalness: 0.72 });
-  const darkWood = pbrWoodMat(0x6e472b, { roughness: 0.44 });
-  const roseReliefMat = pbrMetalMat(0xd69a8e, { roughness: 0.36, metalness: 0.68 });
+  const copperMat = pbrMetalMat(0x5b7d72, { roughness: 0.38, metalness: 0.76 });
+  const darkWood = pbrWoodMat(0x6e472b, { roughness: 0.40 });
+  const roseReliefMat = pbrMetalMat(0xd69a8e, { roughness: 0.32, metalness: 0.72 });
+  const flagCrimsonMat = pbrMetalMat(0xb63b3e, { roughness: 0.34, metalness: 0.45 });
+  const creamEnvMat = pbrFabricMat(0xf9f2e6, { roughness: 0.82 });
 
-  const mbBase = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.16, 10), limestoneMat);
+  // Stepped octagonal limestone plinth + chamfered cedar post + S-scroll wrought-iron bracket
+  const mbBase = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.27, 0.16, 8), limestoneMat);
   mbBase.position.y = 0.08;
+  const mbCollar = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.06, 0.16), limestoneMat);
+  mbCollar.position.y = 0.18;
   const mbPost = new THREE.Mesh(new THREE.BoxGeometry(0.11, 1.06, 0.11), cedarMat);
-  mbPost.position.y = 0.62;
-  const mbBrace = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.32, 0.07), cedarMat);
-  mbBrace.position.set(0, 0.96, 0.11);
-  mbBrace.rotation.x = -Math.PI / 4;
+  mbPost.position.y = 0.64;
+  const scrollCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0.82, 0.06),
+    new THREE.Vector3(0, 0.96, 0.16),
+    new THREE.Vector3(0, 1.09, 0.14),
+    new THREE.Vector3(0, 1.12, 0.24),
+  ]);
+  const mbScroll = new THREE.Mesh(new THREE.TubeGeometry(scrollCurve, 16, 0.012, 8, false), brassMat);
 
-  const mbBody = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.26, 0.48), darkWood);
-  mbBody.position.set(0, 1.24, 0.04);
-  const mbVault = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.48, 14), copperMat);
-  mbVault.rotation.x = Math.PI / 2;
-  mbVault.position.set(0, 1.37, 0.04);
-  const mbSlot = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.045, 0.02), brassMat);
-  mbSlot.position.set(0, 1.31, 0.29);
-  const mbPlate = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.065, 0.015), brassMat);
-  mbPlate.position.set(0, 1.19, 0.29);
-  const mbRose = new THREE.Mesh(new THREE.TorusKnotGeometry(0.032, 0.011, 28, 6), roseReliefMat);
-  mbRose.position.set(0.175, 1.25, 0.06);
+  // Molded walnut letterbox body + overhanging verdigris-copper barrel vault hood + brass mail flap
+  const mbPlinth = new THREE.Mesh(createPillowedCushionGeo(0.38, 0.035, 0.54, 0.02, 0), darkWood);
+  mbPlinth.position.set(0, 1.13, 0.05);
+  const mbBody = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.24, 0.48), darkWood);
+  mbBody.position.set(0, 1.26, 0.05);
+  const mbVault = new THREE.Mesh(new THREE.CylinderGeometry(0.178, 0.178, 0.52, 20, 1, false, -Math.PI * 0.52, Math.PI * 1.04), copperMat);
+  mbVault.rotation.z = Math.PI * 0.5;
+  mbVault.rotation.y = Math.PI * 0.5;
+  mbVault.position.set(0, 1.37, 0.05);
+  const mbSlotHood = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.052, 0.032), brassMat);
+  mbSlotHood.position.set(0, 1.32, 0.30);
+  mbSlotHood.rotation.x = 0.18;
+  const mbPlate = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.068, 0.016), brassMat);
+  mbPlate.position.set(0, 1.20, 0.296);
+  // Peeking cream letter corner in slot + raised crimson postal flag + sculpted side rose relief
+  const peekEnv = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.008, 0.09), creamEnvMat);
+  peekEnv.position.set(-0.02, 1.305, 0.31);
+  peekEnv.rotation.set(0.22, 0.14, 0.05);
+  const flagStem = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.21, 0.018), flagCrimsonMat);
+  flagStem.position.set(0.182, 1.37, 0.16);
+  const flagBanner = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.065, 0.095), flagCrimsonMat);
+  flagBanner.position.set(0.182, 1.455, 0.198);
+  const mbRose = new THREE.Mesh(new THREE.TorusKnotGeometry(0.032, 0.010, 32, 8), roseReliefMat);
+  mbRose.position.set(-0.176, 1.26, 0.05);
   mbRose.rotation.y = Math.PI / 2;
-  mailbox.add(mbBase, mbPost, mbBrace, mbBody, mbVault, mbSlot, mbPlate, mbRose);
+
+  mailbox.add(
+    mbBase,
+    mbCollar,
+    mbPost,
+    mbScroll,
+    mbPlinth,
+    mbBody,
+    mbVault,
+    mbSlotHood,
+    mbPlate,
+    peekEnv,
+    flagStem,
+    flagBanner,
+    mbRose
+  );
   tagInteractive(mailbox, "mailbox", "庭院玫瑰信箱");
   sec.add(mailbox);
 
-  // Interactive Vintage Pastel-Mint Touring Bicycle at (-18.6, 2.20, +9.6)
+  // Interactive French Col-de-Cygne Vintage Pastel-Mint Touring Bicycle at (-18.6, 2.20, +9.6)
   const bikeHolder = new THREE.Group();
   bikeHolder.position.set(-18.6, 2.2, 9.6);
   bikeHolder.rotation.y = 0.48;
   registerCircleCollider(-18.6, 9.6, 0.65);
 
   const bike = new THREE.Group();
-  bike.rotation.z = 0.11; // Leaned naturally onto kickstand
+  bike.rotation.z = 0.10; // Leaned naturally onto kickstand
   const mintPaint = new THREE.MeshPhysicalMaterial({
-    color: 0x97cabd,
-    roughness: 0.24,
-    metalness: 0.18,
-    clearcoat: 0.85,
-    clearcoatRoughness: 0.14,
+    color: 0x8ec4b5,
+    roughness: 0.20,
+    metalness: 0.16,
+    clearcoat: 0.88,
+    clearcoatRoughness: 0.12,
   });
-  const creamTireMat = new THREE.MeshStandardMaterial({ color: 0xebe3d1, roughness: 0.84 });
-  const saddleLeather = pbrWoodMat(0x7c4522, { roughness: 0.42 });
+  const creamTireMat = new THREE.MeshStandardMaterial({ color: 0xefe7d6, roughness: 0.80 });
+  const saddleLeather = pbrWoodMat(0x7c4522, { roughness: 0.38 });
+  const lampLensMat = new THREE.MeshStandardMaterial({
+    color: 0xfff8e6,
+    emissive: new THREE.Color(0xffd996),
+    emissiveIntensity: 0.65,
+    roughness: 0.15,
+  });
   const wickerMat = createWickerMat();
 
-  const buildSpokedWheel = (wx) => {
+  const buildSpokedWheel = (wx, isRear = false) => {
     const wg = new THREE.Group();
     wg.position.set(wx, 0.34, 0);
-    const tire = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.028, 12, 28), creamTireMat);
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.295, 0.012, 8, 28), chromeMat);
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.07, 10), chromeMat);
+    const tire = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.029, 14, 32), creamTireMat);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.294, 0.012, 10, 32), chromeMat);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.075, 12), chromeMat);
     hub.rotation.x = Math.PI / 2;
     wg.add(tire, rim, hub);
-    for (let s = 0; s < 12; s += 1) {
-      const spoke = new THREE.Mesh(new THREE.CylinderGeometry(0.0025, 0.0025, 0.58, 4), chromeMat);
-      spoke.rotation.z = (s / 12) * Math.PI;
+    for (let s = 0; s < 16; s += 1) {
+      const spoke = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, 0.58, 4), chromeMat);
+      spoke.rotation.z = (s / 16) * Math.PI;
+      spoke.rotation.x = (s % 2 === 0 ? 1 : -1) * 0.045;
       wg.add(spoke);
     }
-    const fender = new THREE.Mesh(
-      new THREE.TorusGeometry(0.355, 0.022, 8, 20, Math.PI * 0.92),
-      mintPaint
-    );
-    fender.rotation.z = Math.PI * 0.04;
+    const fenderArc = isRear ? Math.PI * 1.05 : Math.PI * 0.88;
+    const fender = new THREE.Mesh(new THREE.TorusGeometry(0.352, 0.023, 10, 24, fenderArc), mintPaint);
+    fender.rotation.z = isRear ? -0.02 : Math.PI * 0.08;
     wg.add(fender);
+    // Fender wire stays
+    for (const sa of [0.35, 1.15]) {
+      const stay = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.35, 4), chromeMat);
+      stay.position.set(Math.cos(sa) * 0.17, Math.sin(sa) * 0.17, 0);
+      stay.rotation.z = sa - Math.PI * 0.5;
+      wg.add(stay);
+    }
     return wg;
   };
-  bike.add(buildSpokedWheel(-0.54), buildSpokedWheel(0.54));
+  bike.add(buildSpokedWheel(-0.55, true), buildSpokedWheel(0.55, false));
 
   const addTube = (x1, y1, z1, x2, y2, z2, r, mat) => {
     const p1 = new THREE.Vector3(x1, y1, z1);
     const p2 = new THREE.Vector3(x2, y2, z2);
     const dir = p2.clone().sub(p1);
     const len = dir.length();
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 8), mat);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 10), mat);
     m.position.copy(p1).addScaledVector(dir, 0.5);
     m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
     bike.add(m);
   };
 
-  addTube(-0.1, 0.33, 0, -0.24, 0.78, 0, 0.016, mintPaint); // Seat tube
-  addTube(0.41, 0.78, 0, 0.54, 0.34, 0, 0.014, mintPaint); // Fork + head
-  addTube(-0.1, 0.33, 0, 0.44, 0.68, 0, 0.017, mintPaint); // Down tube
-  addTube(-0.21, 0.68, 0, 0.43, 0.72, 0, 0.014, mintPaint); // Step-through top tube
-  addTube(-0.54, 0.34, -0.04, -0.1, 0.33, -0.02, 0.01, mintPaint);
-  addTube(-0.54, 0.34, 0.04, -0.1, 0.33, 0.02, 0.01, mintPaint);
-  addTube(-0.54, 0.34, 0, -0.22, 0.72, 0, 0.01, mintPaint);
-  addTube(-0.08, 0.32, 0.04, -0.12, 0.01, 0.14, 0.008, chromeMat); // Kickstand
+  // Classic Col-de-Cygne Curved Step-Through Frame + Twin Fork Blades + Rear Pannier Rack
+  addTube(-0.10, 0.33, 0, -0.24, 0.78, 0, 0.016, mintPaint); // Seat tube
+  addTube(0.39, 0.80, 0, 0.44, 0.65, 0, 0.018, mintPaint); // Head tube
+  for (const fz of [-0.036, 0.036]) {
+    addTube(0.44, 0.65, fz, 0.55, 0.34, fz, 0.011, mintPaint); // Twin fork blades
+    addTube(-0.55, 0.34, fz, -0.10, 0.33, fz * 0.65, 0.010, mintPaint); // Chainstays
+    addTube(-0.55, 0.34, fz, -0.22, 0.73, fz * 0.5, 0.009, mintPaint); // Seatstays
+  }
+  const swanDown = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0.42, 0.69, 0),
+    new THREE.Vector3(0.20, 0.50, 0),
+    new THREE.Vector3(-0.02, 0.35, 0),
+    new THREE.Vector3(-0.10, 0.33, 0),
+  ]);
+  const swanTop = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0.40, 0.76, 0),
+    new THREE.Vector3(0.16, 0.58, 0),
+    new THREE.Vector3(-0.06, 0.49, 0),
+    new THREE.Vector3(-0.19, 0.58, 0),
+  ]);
+  bike.add(
+    new THREE.Mesh(new THREE.TubeGeometry(swanDown, 20, 0.015, 10, false), mintPaint),
+    new THREE.Mesh(new THREE.TubeGeometry(swanTop, 20, 0.014, 10, false), mintPaint)
+  );
+  addTube(-0.08, 0.32, 0.04, -0.13, 0.01, 0.15, 0.008, chromeMat); // Kickstand
 
-  // Chainring, saddle, swept handlebars & wicker flower basket
-  const chainring = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.012, 16), chromeMat);
+  // Sculpted Chain-Guard, Crankset, Pedals, Rear Pannier Rack & Vintage Bullet Headlamp
+  const chainGuard = new THREE.Mesh(createPillowedCushionGeo(0.46, 0.11, 0.028, 0.04, 0.004), mintPaint);
+  chainGuard.position.set(-0.28, 0.36, 0.042);
+  chainGuard.rotation.z = -0.05;
+  const chainring = new THREE.Mesh(new THREE.CylinderGeometry(0.088, 0.088, 0.010, 20), chromeMat);
   chainring.rotation.x = Math.PI / 2;
-  chainring.position.set(-0.1, 0.33, 0.035);
-  const saddle = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.055, 0.16), saddleLeather);
-  saddle.position.set(-0.26, 0.86, 0);
+  chainring.position.set(-0.10, 0.33, 0.036);
+  // Crank arms + pedals
+  addTube(-0.10, 0.33, 0.05, -0.04, 0.19, 0.055, 0.008, chromeMat);
+  addTube(-0.10, 0.33, -0.05, -0.16, 0.47, -0.055, 0.008, chromeMat);
+  const pedR = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.018, 0.055), saddleLeather);
+  pedR.position.set(-0.04, 0.19, 0.085);
+  const pedL = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.018, 0.055), saddleLeather);
+  pedL.position.set(-0.16, 0.47, -0.085);
+
+  // Brooks-Style Contoured Leather Saddle on Twin Coil Springs
   addTube(-0.24, 0.78, 0, -0.26, 0.85, 0, 0.012, chromeMat);
-  addTube(0.41, 0.78, 0, 0.38, 0.94, 0, 0.012, chromeMat);
-  const hBar = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.48, 8), chromeMat);
-  hBar.rotation.x = Math.PI / 2;
-  hBar.position.set(0.36, 0.94, 0);
-  for (const sz of [-0.21, 0.21]) {
-    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.1, 8), saddleLeather);
-    grip.rotation.z = Math.PI / 2;
-    grip.position.set(0.31, 0.93, sz);
+  const saddle = new THREE.Mesh(createPillowedCushionGeo(0.26, 0.048, 0.18, 0.055, 0.012), saddleLeather);
+  saddle.position.set(-0.26, 0.875, 0);
+  for (const sz of [-0.05, 0.05]) {
+    const spr = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.042, 8), chromeMat);
+    spr.position.set(-0.33, 0.84, sz);
+    bike.add(spr);
+  }
+
+  // Rear Pannier Rack over Rear Fender
+  const rackDeck = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.014, 0.14), chromeMat);
+  rackDeck.position.set(-0.52, 0.72, 0);
+  addTube(-0.55, 0.35, -0.05, -0.64, 0.72, -0.06, 0.005, chromeMat);
+  addTube(-0.55, 0.35, 0.05, -0.64, 0.72, 0.06, 0.005, chromeMat);
+
+  // Swept-Back North-Road Promenade Handlebars + Stitched Leather Grips + Brass Bell + Headlamp
+  addTube(0.39, 0.80, 0, 0.36, 0.94, 0, 0.012, chromeMat);
+  const barCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0.22, 0.93, -0.24),
+    new THREE.Vector3(0.34, 0.95, -0.15),
+    new THREE.Vector3(0.37, 0.95, 0),
+    new THREE.Vector3(0.34, 0.95, 0.15),
+    new THREE.Vector3(0.22, 0.93, 0.24),
+  ]);
+  const hBar = new THREE.Mesh(new THREE.TubeGeometry(barCurve, 22, 0.010, 8, false), chromeMat);
+  for (const sz of [-1, 1]) {
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.11, 10), saddleLeather);
+    grip.position.set(0.25, 0.935, sz * 0.21);
+    grip.rotation.set(sz * 0.55, 0, Math.PI * 0.45);
     bike.add(grip);
   }
-  const bell = new THREE.Mesh(new THREE.SphereGeometry(0.024, 10, 8), brassMat);
-  bell.position.set(0.36, 0.965, 0.11);
+  const bell = new THREE.Mesh(new THREE.SphereGeometry(0.024, 12, 10), brassMat);
+  bell.scale.set(1, 0.72, 1);
+  bell.position.set(0.34, 0.972, 0.12);
 
-  const basket = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.12, 0.22, 12), wickerMat);
-  basket.scale.set(0.85, 1.0, 1.25);
-  basket.position.set(0.53, 0.79, 0);
-  const basketBouquet = createRoseBouquet({ count: 7, scale: 0.72 });
-  basketBouquet.position.set(0.53, 0.74, 0);
+  // Chrome Vintage Headlamp on Front Fork Crown
+  const headlamp = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.022, 0.068, 14), chromeMat);
+  headlamp.rotation.z = Math.PI * 0.5;
+  headlamp.position.set(0.49, 0.69, 0);
+  const lampLens = new THREE.Mesh(new THREE.CylinderGeometry(0.029, 0.029, 0.008, 14), lampLensMat);
+  lampLens.rotation.z = Math.PI * 0.5;
+  lampLens.position.set(0.525, 0.69, 0);
 
-  bike.add(chainring, saddle, hBar, bell, basket, basketBouquet);
+  // Handwoven Rattan Front Flower Basket with Leather Straps & Fresh Rose Bouquet
+  const basketPts = [
+    new THREE.Vector2(0.001, 0),
+    new THREE.Vector2(0.11, 0),
+    new THREE.Vector2(0.15, 0.21),
+    new THREE.Vector2(0.16, 0.225),
+  ];
+  const basket = new THREE.Mesh(new THREE.LatheGeometry(basketPts, 18), wickerMat);
+  basket.scale.set(0.86, 1.0, 1.28);
+  basket.position.set(0.53, 0.74, 0);
+  const bRim = new THREE.Mesh(new THREE.TorusGeometry(0.155, 0.012, 8, 20), wickerMat);
+  bRim.rotation.x = Math.PI * 0.5;
+  bRim.scale.set(0.86, 1.28, 1.0);
+  bRim.position.set(0.53, 0.96, 0);
+  const basketBouquet = createRoseBouquet({ count: 8, scale: 0.76 });
+  basketBouquet.position.set(0.53, 0.80, 0);
+
+  bike.add(
+    chainGuard,
+    chainring,
+    pedR,
+    pedL,
+    saddle,
+    rackDeck,
+    hBar,
+    bell,
+    headlamp,
+    lampLens,
+    basket,
+    bRim,
+    basketBouquet
+  );
   bikeHolder.add(bike);
   tagInteractive(bikeHolder, "bicycle", "庭院复古单车");
   sec.add(bikeHolder);
@@ -1006,26 +1143,56 @@ function buildQuayDetailsLandingAndCafe(
     }
   }
 
-  // Interactive Acoustic Guitar Hardcase ("instruments") & Clear Rain-Umbrella ("umbrella")
+  // Interactive Contoured Figure-8 Archtop Guitar Hardcase ("instruments") & Clear Rain-Umbrella ("umbrella")
   const gCase = new THREE.Group();
   gCase.position.set(27.25, 0.45, 23.35);
   gCase.rotation.y = 0.36;
-  const caseLeather = pbrWoodMat(0x52311d, { roughness: 0.46 });
-  const silverLatch = pbrMetalMat(0xd9e0e6, { roughness: 0.2, metalness: 0.9 });
-  const lowerBout = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.14, 18), caseLeather);
-  lowerBout.position.set(-0.24, 0.07, 0);
-  const upperBout = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.14, 16), caseLeather);
-  upperBout.position.set(0.06, 0.07, 0);
-  const neckCase = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.12, 0.13), caseLeather);
-  neckCase.position.set(0.38, 0.065, 0);
-  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.065, 0.014, 8, 12, Math.PI), caseLeather);
-  handle.position.set(0.04, 0.08, 0.185);
-  handle.rotation.y = Math.PI / 2;
-  gCase.add(lowerBout, upperBout, neckCase, handle);
-  for (const lx of [-0.32, -0.05, 0.26]) {
-    const latch = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.045, 0.02), silverLatch);
-    latch.position.set(lx, 0.08, 0.235);
-    gCase.add(latch);
+  const caseLeather = pbrWoodMat(0x52311d, { roughness: 0.42 });
+  const silverLatch = pbrMetalMat(0xd9e0e6, { roughness: 0.18, metalness: 0.92 });
+  const brassTrimMat = pbrMetalMat(0xcfa658, { roughness: 0.26, metalness: 0.88 });
+
+  // True figure-8 contoured guitar hardcase silhouette + beveled archtop lid
+  const caseShape = new THREE.Shape();
+  caseShape.moveTo(-0.48, 0);
+  caseShape.bezierCurveTo(-0.48, 0.25, -0.18, 0.26, -0.08, 0.13);
+  caseShape.bezierCurveTo(-0.02, 0.08, 0.08, 0.19, 0.18, 0.17);
+  caseShape.bezierCurveTo(0.24, 0.15, 0.26, 0.06, 0.28, 0.055);
+  caseShape.lineTo(0.68, 0.052);
+  caseShape.lineTo(0.74, 0.065);
+  caseShape.lineTo(0.76, 0.0);
+  caseShape.lineTo(0.74, -0.065);
+  caseShape.lineTo(0.68, -0.052);
+  caseShape.lineTo(0.28, -0.055);
+  caseShape.bezierCurveTo(0.26, -0.06, 0.24, -0.15, 0.18, -0.17);
+  caseShape.bezierCurveTo(0.08, -0.19, -0.02, -0.08, -0.08, -0.13);
+  caseShape.bezierCurveTo(-0.18, -0.26, -0.48, -0.25, -0.48, 0);
+
+  const caseGeo = new THREE.ExtrudeGeometry(caseShape, {
+    depth: 0.105,
+    bevelEnabled: true,
+    bevelThickness: 0.018,
+    bevelSize: 0.016,
+    bevelSegments: 3,
+    curveSegments: 20,
+  });
+  caseGeo.rotateX(-Math.PI * 0.5);
+  const caseBody = new THREE.Mesh(caseGeo, caseLeather);
+  caseBody.position.y = 0.022;
+  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.068, 0.013, 8, 14, Math.PI), caseLeather);
+  handle.position.set(0.02, 0.085, 0.165);
+  handle.rotation.x = Math.PI * 0.35;
+  gCase.add(caseBody, handle);
+  for (const [lx, lz] of [
+    [-0.32, 0.228],
+    [-0.04, 0.152],
+    [0.16, 0.172],
+    [0.52, 0.066],
+  ]) {
+    const latch = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.042, 0.018), silverLatch);
+    latch.position.set(lx, 0.082, lz);
+    const rivet = new THREE.Mesh(new THREE.SphereGeometry(0.008, 6, 6), brassTrimMat);
+    rivet.position.set(lx, 0.105, lz);
+    gCase.add(latch, rivet);
   }
   tagInteractive(gCase, "instruments", "栈桥边的琴盒");
   sec.add(gCase);
@@ -1033,30 +1200,38 @@ function buildQuayDetailsLandingAndCafe(
   const umbrella = new THREE.Group();
   umbrella.position.set(28.35, 0.45, 23.55);
   umbrella.rotation.set(0.32, -0.45, 0.18);
-  const clearVinyl = pbrGlassMat({ color: 0xf0f8fc, opacity: 0.32 });
-  const whiteTrim = pbrFabricMat(0xf5f5f2, { roughness: 0.7 });
-  const mapleMat = pbrWoodMat(0xb87b44, { roughness: 0.35 });
+  const clearVinyl = pbrGlassMat({ color: 0xf0f8fc, opacity: 0.34 });
+  const whiteTrim = pbrFabricMat(0xf7f5ef, { roughness: 0.68 });
+  const mapleMat = pbrWoodMat(0xb87b44, { roughness: 0.32 });
   const uDome = new THREE.Mesh(
-    new THREE.SphereGeometry(0.52, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.46),
+    new THREE.SphereGeometry(0.52, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.47),
     clearVinyl
   );
   uDome.position.y = 0.18;
-  const uTrim = new THREE.Mesh(new THREE.TorusGeometry(0.515, 0.012, 8, 24), whiteTrim);
+  const uTrim = new THREE.Mesh(new THREE.TorusGeometry(0.515, 0.011, 8, 24), whiteTrim);
   uTrim.rotation.x = Math.PI / 2;
-  uTrim.position.y = 0.24;
-  const uShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.82, 8), silverLatch);
-  uShaft.position.y = 0.36;
-  const uHook = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.012, 8, 14, Math.PI), mapleMat);
-  uHook.position.set(0.055, -0.05, 0);
-  uHook.rotation.z = Math.PI;
-  umbrella.add(uDome, uTrim, uShaft, uHook);
+  uTrim.position.y = 0.235;
+  const uFerrule = new THREE.Mesh(new THREE.ConeGeometry(0.014, 0.085, 10), silverLatch);
+  uFerrule.position.y = 0.74;
+  const uShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0075, 0.80, 10), silverLatch);
+  uShaft.position.y = 0.34;
+  const hookCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, -0.04, 0),
+    new THREE.Vector3(0.005, -0.10, 0),
+    new THREE.Vector3(0.055, -0.125, 0),
+    new THREE.Vector3(0.105, -0.095, 0),
+    new THREE.Vector3(0.108, -0.045, 0),
+  ]);
+  const uHook = new THREE.Mesh(new THREE.TubeGeometry(hookCurve, 16, 0.012, 8, false), mapleMat);
+  umbrella.add(uDome, uTrim, uFerrule, uShaft, uHook);
   for (let r = 0; r < 8; r += 1) {
-    const rib = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.53, 4), silverLatch);
     const a = (r / 8) * Math.PI * 2;
-    rib.position.set(Math.cos(a) * 0.24, 0.46, Math.sin(a) * 0.24);
-    rib.lookAt(0, 0.7, 0);
-    rib.rotateX(Math.PI / 2);
-    umbrella.add(rib);
+    const ribCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0.695, 0),
+      new THREE.Vector3(Math.cos(a) * 0.34, 0.56, Math.sin(a) * 0.34),
+      new THREE.Vector3(Math.cos(a) * 0.515, 0.235, Math.sin(a) * 0.515),
+    ]);
+    umbrella.add(new THREE.Mesh(new THREE.TubeGeometry(ribCurve, 10, 0.003, 6, false), whiteTrim));
   }
   tagInteractive(umbrella, "umbrella", "栈桥边的透明雨伞");
   sec.add(umbrella);
@@ -1101,29 +1276,59 @@ function buildQuayDetailsLandingAndCafe(
     const bistro = new THREE.Group();
     bistro.position.set(tx, 1.36, tz);
 
-    const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.28, 0.74, 12), castIronMat);
-    ped.position.y = 0.37;
-    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.66, 0.045, 20), copingMat);
+    // Fluted Cast-Iron Bistro Pedestal + Brass-Rimmed Limestone Tabletop + Ribbed Valanced Resort Parasol
+    const ped = new THREE.Mesh(
+      new THREE.LatheGeometry(
+        [
+          new THREE.Vector2(0.28, 0),
+          new THREE.Vector2(0.25, 0.04),
+          new THREE.Vector2(0.075, 0.14),
+          new THREE.Vector2(0.052, 0.64),
+          new THREE.Vector2(0.14, 0.74),
+        ],
+        16
+      ),
+      castIronMat
+    );
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.67, 0.042, 24), copingMat);
     top.position.y = 0.76;
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 2.48, 10), teakMat);
-    pole.position.y = 1.24;
-    const canopy = new THREE.Mesh(new THREE.ConeGeometry(1.52, 0.48, 8, 1, true), creamCanvas);
-    canopy.position.y = 2.34;
-    const finial = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), brassMat);
-    finial.position.y = 2.61;
-    bistro.add(ped, top, pole, canopy, finial);
+    const brassEdge = new THREE.Mesh(new THREE.TorusGeometry(0.678, 0.008, 8, 28), brassMat);
+    brassEdge.rotation.x = Math.PI * 0.5;
+    brassEdge.position.y = 0.762;
+    const parasol = buildResortMarketParasol({
+      teakMat,
+      canvasMat: creamCanvas,
+      brassMat,
+      radius: 1.54,
+      height: 2.52,
+    });
+    bistro.add(ped, top, brassEdge, parasol);
 
+    // 3 Sculpted French Wrought-Iron & Slatted Teak Café Chairs
     for (const ca of [0.4, 2.5, 4.5]) {
-      const cx = Math.cos(ca) * 0.96;
-      const cz = Math.sin(ca) * 0.96;
-      const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.21, 0.035, 12), teakMat);
-      seat.position.set(cx, 0.45, cz);
-      const cStem = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.14, 0.44, 8), castIronMat);
-      cStem.position.set(cx, 0.22, cz);
-      bistro.add(seat, cStem);
+      const ch = new THREE.Group();
+      ch.position.set(Math.cos(ca) * 0.96, 0, Math.sin(ca) * 0.96);
+      ch.rotation.y = Math.atan2(-Math.cos(ca), -Math.sin(ca));
+      const seat = new THREE.Mesh(createPillowedCushionGeo(0.42, 0.045, 0.42, 0.05, 0.008), teakMat);
+      seat.position.y = 0.45;
+      ch.add(seat);
+      for (const [lx, lz] of [[-0.17, -0.17], [0.17, -0.17], [-0.17, 0.17], [0.17, 0.17]]) {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.009, 0.45, 8), castIronMat);
+        leg.position.set(lx, 0.225, lz);
+        ch.add(leg);
+      }
+      const backHoops = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-0.18, 0.45, -0.18),
+        new THREE.Vector3(-0.19, 0.76, -0.22),
+        new THREE.Vector3(0, 0.85, -0.23),
+        new THREE.Vector3(0.19, 0.76, -0.22),
+        new THREE.Vector3(0.18, 0.45, -0.18),
+      ]);
+      ch.add(new THREE.Mesh(new THREE.TubeGeometry(backHoops, 16, 0.011, 8, false), castIronMat));
+      bistro.add(ch);
     }
     const centerpiece = createRoseBouquet({ count: 3, scale: 0.48 });
-    centerpiece.position.y = 0.78;
+    centerpiece.position.set(0.12, 0.78, -0.08);
     bistro.add(centerpiece);
     sec.add(bistro);
   }
@@ -1243,19 +1448,36 @@ function buildBoathouseEspressoPergola(
   chartBoard.position.set(3.2, 1.95, -4.52);
   cafe.add(chartBoard);
 
-  // Espresso Bar Counter, Lever Machine, Lifebuoys, Oak Tables & Warm Pendant Lamps
+  // Paneled Cedar Espresso Bar Counter, Victoria Arduino Lever Espresso Machine, Brass Footrail & Burr Grinder
   registerBoxCollider(16.9, 21.6, -14.8, -13.5);
-  const barFront = new THREE.Mesh(new THREE.BoxGeometry(4.5, 1.06, 0.85), cedarMat);
-  barFront.position.set(-2.75, 0.55, -3.15);
-  const barTop = new THREE.Mesh(new THREE.BoxGeometry(4.7, 0.08, 1.02), oakMat);
-  barTop.position.set(-2.75, 1.11, -3.15);
-  const espressoBody = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.44, 0.42), chromeMat);
-  espressoBody.position.set(-3.4, 1.36, -3.18);
-  const espressoTrim = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.12, 14), brassMat);
-  espressoTrim.position.set(-3.4, 1.62, -3.18);
-  const grinder = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.42, 12), castIronMat);
-  grinder.position.set(-2.5, 1.35, -3.2);
-  cafe.add(barFront, barTop, espressoBody, espressoTrim, grinder);
+  const barFront = new THREE.Mesh(new THREE.BoxGeometry(4.5, 1.04, 0.84), cedarMat);
+  barFront.position.set(-2.75, 0.54, -3.15);
+  const barTop = new THREE.Mesh(createPillowedCushionGeo(4.74, 0.075, 1.04, 0.035, 0), oakMat);
+  barTop.position.set(-2.75, 1.10, -3.15);
+  // Wainscot panels + brass footrail along bar front
+  for (let p = 0; p < 5; p += 1) {
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.74, 0.025), oakMat);
+    panel.position.set(-4.47 + p * 0.86, 0.56, -2.72);
+    cafe.add(panel);
+  }
+  const footRail = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 4.35, 10), brassMat);
+  footRail.rotation.z = Math.PI * 0.5;
+  footRail.position.set(-2.75, 0.16, -2.58);
+  const porcelainCupMat = new THREE.MeshStandardMaterial({ color: 0xf7f2ea, roughness: 0.2 });
+  const leverEspresso = buildItalianLeverEspressoMachine({
+    chromeMat,
+    brassMat,
+    walnutMat: cedarMat,
+    porcelainMat: porcelainCupMat,
+  });
+  leverEspresso.position.set(-3.45, 1.138, -3.16);
+  const grinder = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.115, 0.28, 14), castIronMat);
+  grinder.position.set(-2.52, 1.28, -3.20);
+  const hopper = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.055, 0.18, 14), windGlass);
+  hopper.position.set(-2.52, 1.50, -3.20);
+  const hopperLid = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.115, 0.02, 14), brassMat);
+  hopperLid.position.set(-2.52, 1.60, -3.20);
+  cafe.add(barFront, barTop, footRail, leverEspresso, grinder, hopper, hopperLid);
 
   // 2 Coastal Lifebuoys on pillars
   const buoyWhite = pbrFabricMat(0xf5f2eb, { roughness: 0.76 });
@@ -1992,22 +2214,31 @@ function buildCliffsideGazebo(parent) {
   }
 
   const seatY = -chainLen;
-  const seatFrame = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.07, 1.86), cedarMat);
+  const seatFrame = new THREE.Mesh(createPillowedCushionGeo(0.66, 0.06, 1.88, 0.03, 0), cedarMat);
   seatFrame.position.set(0, seatY, 0);
-  const backRest = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.56, 1.84), cedarMat);
-  backRest.position.set(-0.29, seatY + 0.29, 0);
-  backRest.rotation.z = 0.14;
-  const seatCushion = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.1, 1.72), linenMat);
-  seatCushion.position.set(0.02, seatY + 0.08, 0);
-  for (const sz of [-0.62, 0.62]) {
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.055, 0.07), cedarMat);
-    arm.position.set(0, seatY + 0.28, sz * 1.44);
-    const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.34, 0.36), blushPillow);
-    pillow.position.set(-0.14, seatY + 0.28, sz);
-    pillow.rotation.set(0.1, 0.18 * Math.sign(sz), 0.16);
-    swingPivot.add(arm, pillow);
+  // Slatted Cedar Backrest + Curved Armrests + Piped Linen Cushion & Plump Blush Pillows
+  for (let s = -5; s <= 5; s += 1) {
+    const slat = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.54, 0.12), cedarMat);
+    slat.position.set(-0.29, seatY + 0.30, s * 0.155);
+    slat.rotation.z = 0.14;
+    swingPivot.add(slat);
   }
-  swingPivot.add(seatFrame, backRest, seatCushion);
+  const topRail = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 1.88), cedarMat);
+  topRail.position.set(-0.33, seatY + 0.57, 0);
+  const seatCushion = new THREE.Mesh(createPillowedCushionGeo(0.58, 0.10, 1.74, 0.045, 0.02), linenMat);
+  seatCushion.position.set(0.02, seatY + 0.08, 0);
+  const pillGeo = createPlumpPillowGeo(0.38, 0.34, 0.15);
+  for (const sz of [-0.62, 0.62]) {
+    const arm = new THREE.Mesh(createPillowedCushionGeo(0.62, 0.048, 0.075, 0.02, 0), cedarMat);
+    arm.position.set(0, seatY + 0.28, sz * 1.44);
+    const armPost = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.26, 8), cedarMat);
+    armPost.position.set(0.24, seatY + 0.14, sz * 1.44);
+    const pillow = new THREE.Mesh(pillGeo, blushPillow);
+    pillow.position.set(-0.14, seatY + 0.28, sz);
+    pillow.rotation.set(0.1, Math.PI * 0.5 + 0.18 * Math.sign(sz), 0.16);
+    swingPivot.add(arm, armPost, pillow);
+  }
+  swingPivot.add(seatFrame, topRail, seatCushion);
   gazInteractive.add(swingPivot);
 
   tagInteractive(gazInteractive, "flower-gazebo", "海岬白石花亭秋千");
@@ -2731,44 +2962,54 @@ function buildGoldenBeachAndBoardwalk(parent) {
     }
   }
 
-  // Two teak seaside deck loungers + low side table + cream parasol on viewing deck
+  // Two Slatted Teak Steamer Deck Loungers + Slatted Teak Resort Side Table + Ribbed Valanced Market Parasol
+  const deckBrassMat = pbrMetalMat(0xcfa658, { roughness: 0.26, metalness: 0.88 });
+  const drinkGlassMat = pbrGlassMat({ color: 0xe6f6fa, opacity: 0.42 });
+  const citrusMat = new THREE.MeshStandardMaterial({ color: 0xf4a638, roughness: 0.45 });
   for (const [lx, lz, lyaw] of [
     [2.2, 36.25, 0.14],
     [3.95, 36.15, -0.12],
   ]) {
-    const lounger = new THREE.Group();
+    const lounger = buildTeakSteamerDeckLounger({
+      teakMat: cedarBeamMat,
+      linenMat,
+      accentMat: stripeBlueMat,
+      brassMat: deckBrassMat,
+    });
     lounger.position.set(lx, deckY, lz);
     lounger.rotation.y = lyaw;
-    const base = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.07, 1.72), cedarBeamMat);
-    base.position.y = 0.28;
-    const cushion = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.08, 1.16), linenMat);
-    cushion.position.set(0, 0.35, 0.24);
-    const backrest = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.08, 0.58), linenMat);
-    backrest.position.set(0, 0.52, -0.54);
-    backrest.rotation.x = 0.52;
-    const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.09, 0.22), stripeBlueMat);
-    pillow.position.set(0, 0.64, -0.66);
-    pillow.rotation.x = 0.52;
-    for (const [fx, fz] of [
-      [-0.31, -0.74],
-      [0.31, -0.74],
-      [-0.31, 0.74],
-      [0.31, 0.74],
-    ]) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.28, 0.06), cedarBeamMat);
-      leg.position.set(fx, 0.14, fz);
-      lounger.add(leg);
-    }
-    lounger.add(base, cushion, backrest, pillow);
     deckGroup.add(lounger);
   }
-  const sideTable = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.28, 0.42, 14), cedarBeamMat);
-  sideTable.position.set(3.08, deckY + 0.21, 35.85);
-  const parasolPole = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.036, 2.38, 10), cedarBeamMat);
-  parasolPole.position.set(3.08, deckY + 1.19, 35.85);
-  const parasolCanopy = new THREE.Mesh(new THREE.ConeGeometry(1.45, 0.48, 12, 1, true), linenMat);
-  parasolCanopy.position.set(3.08, deckY + 2.24, 35.85);
-  deckGroup.add(sideTable, parasolPole, parasolCanopy);
+  // Slatted Teak Resort Side Table + Two Iced Citrus Drinks + Ribbed Market Parasol
+  const sideTbl = new THREE.Group();
+  sideTbl.position.set(3.08, deckY, 35.85);
+  for (let s = -2; s <= 2; s += 1) {
+    const slat = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.024, 0.088), cedarBeamMat);
+    slat.position.set(0, 0.43, s * 0.105);
+    sideTbl.add(slat);
+  }
+  for (const [fx, fz] of [[-0.22, -0.22], [0.22, -0.22], [-0.22, 0.22], [0.22, 0.22]]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.42, 0.038), cedarBeamMat);
+    leg.position.set(fx, 0.21, fz);
+    sideTbl.add(leg);
+  }
+  for (const [gx, gz] of [[-0.12, 0.08], [0.13, -0.06]]) {
+    const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.028, 0.105, 12), drinkGlassMat);
+    glass.position.set(gx, 0.495, gz);
+    const slice = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.008, 10), citrusMat);
+    slice.rotation.z = Math.PI * 0.38;
+    slice.position.set(gx + 0.03, 0.545, gz);
+    sideTbl.add(glass, slice);
+  }
+  const deckParasol = buildResortMarketParasol({
+    teakMat: cedarBeamMat,
+    canvasMat: linenMat,
+    brassMat: deckBrassMat,
+    radius: 1.52,
+    height: 2.46,
+  });
+  deckParasol.position.set(3.08, deckY, 35.85);
+  deckGroup.add(sideTbl, deckParasol);
 
   boardwalkGroup.add(deckGroup);
   tagInteractive(boardwalkGroup, "beach-boardwalk", "金色沙滩亲水木栈道");

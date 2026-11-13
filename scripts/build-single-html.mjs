@@ -35,6 +35,24 @@ const MODEL_FILES = {
   ph_fern: "ph_fern.glb",
   ph_periwinkle: "ph_periwinkle.glb",
   hero_rose: "hero_rose.glb",
+  ph_sofa: "ph_sofa.glb",
+  ph_green_chair: "ph_green_chair.glb",
+  ph_armchair: "ph_armchair.glb",
+  ph_chandelier: "ph_chandelier.glb",
+  ph_ornate_mirror: "ph_ornate_mirror.glb",
+  ph_console: "ph_console.glb",
+  ph_nightstand: "ph_nightstand.glb",
+  ph_coffee_table: "ph_coffee_table.glb",
+  ph_tea_set: "ph_tea_set.glb",
+  ph_mantel_clock: "ph_mantel_clock.glb",
+  ph_picture_frame: "ph_picture_frame.glb",
+  ph_bistro_set: "ph_bistro_set.glb",
+  ph_brass_pan: "ph_brass_pan.glb",
+  ph_croissant: "ph_croissant.glb",
+  ph_wicker_basket: "ph_wicker_basket.glb",
+  ph_watering_can: "ph_watering_can.glb",
+  ph_alarm_clock: "ph_alarm_clock.glb",
+  ph_oil_lamp: "ph_oil_lamp.glb",
 };
 
 function escapeInlineScript(code) {
@@ -73,7 +91,7 @@ async function main() {
   console.log("[single-file] Bundling Three.js + scene modules into standalone IIFE...");
   const appCode = await bundleAppIIFE();
 
-  console.log("[single-file] Encoding font, styles, gift config & 10 GLB models (gzip-9 + base64)...");
+  console.log("[single-file] Encoding font, styles, gift config & 28 GLB models (gzip-9 + base64)...");
   const svgB64 = readFileSync(path.resolve(SITE, "assets/flower.svg")).toString("base64");
   const fontB64 = readFileSync(path.resolve(SITE, "assets/flower-song.woff2")).toString("base64");
 

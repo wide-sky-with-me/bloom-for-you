@@ -30,6 +30,7 @@ import {
 } from "./pbr-kit.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
+import { createPillowedCushionGeo, createPlumpPillowGeo } from "./vintage-craft-props.js";
 
 const MODEL_MANIFEST = {
   freshwater_shrimp: "./assets/models/freshwater_shrimp.glb",
@@ -42,11 +43,31 @@ const MODEL_MANIFEST = {
   ph_fern: "./assets/models/ph_fern.glb",
   ph_periwinkle: "./assets/models/ph_periwinkle.glb",
   hero_rose: "./assets/models/hero_rose.glb",
+  // Real-World CC0 1.0 Poly Haven Furniture & Prop Scans
+  ph_sofa: "./assets/models/ph_sofa.glb",
+  ph_green_chair: "./assets/models/ph_green_chair.glb",
+  ph_armchair: "./assets/models/ph_armchair.glb",
+  ph_chandelier: "./assets/models/ph_chandelier.glb",
+  ph_ornate_mirror: "./assets/models/ph_ornate_mirror.glb",
+  ph_console: "./assets/models/ph_console.glb",
+  ph_nightstand: "./assets/models/ph_nightstand.glb",
+  ph_coffee_table: "./assets/models/ph_coffee_table.glb",
+  ph_tea_set: "./assets/models/ph_tea_set.glb",
+  ph_mantel_clock: "./assets/models/ph_mantel_clock.glb",
+  ph_picture_frame: "./assets/models/ph_picture_frame.glb",
+  ph_bistro_set: "./assets/models/ph_bistro_set.glb",
+  ph_brass_pan: "./assets/models/ph_brass_pan.glb",
+  ph_croissant: "./assets/models/ph_croissant.glb",
+  ph_wicker_basket: "./assets/models/ph_wicker_basket.glb",
+  ph_watering_can: "./assets/models/ph_watering_can.glb",
+  ph_alarm_clock: "./assets/models/ph_alarm_clock.glb",
+  ph_oil_lamp: "./assets/models/ph_oil_lamp.glb",
 };
 
 function tuneMaterialForPBR(mat, { isAquatic = false, isFoliage = false, tintable = false } = {}) {
   if (!mat) return mat;
   const m = mat.clone();
+  const matName = m.name || "";
   if ("transmission" in m) m.transmission = 0;
   if (m.map) {
     m.map.colorSpace = THREE.SRGBColorSpace;
@@ -74,13 +95,59 @@ function tuneMaterialForPBR(mat, { isAquatic = false, isFoliage = false, tintabl
       m.depthWrite = true;
     }
     m.side = THREE.DoubleSide;
+  } else if (/chandelier.*glass/i.test(matName)) {
+    m.color = new THREE.Color(0xfff4ea);
+    m.emissive = new THREE.Color(0xffcfa0);
+    m.emissiveIntensity = 0.88;
+    m.transparent = true;
+    m.opacity = 0.82;
+    m.roughness = 0.08;
+    m.metalness = 0.14;
+    m.depthWrite = false;
+  } else if (/flame/i.test(matName)) {
+    m.emissive = new THREE.Color(0xffb866);
+    m.emissiveIntensity = 1.35;
+    m.transparent = true;
+    m.depthWrite = false;
+  } else if (/glass/i.test(matName)) {
+    m.color = new THREE.Color(0xf4f9fc);
+    m.transparent = true;
+    m.opacity = 0.24;
+    m.roughness = 0.08;
+    m.metalness = 0.12;
+    m.depthWrite = false;
   }
   return m;
 }
 
+function normalizeGeomForMerge(geom) {
+  const g = geom.index ? geom.toNonIndexed() : geom.clone();
+  if (!g.attributes.normal) g.computeVertexNormals();
+  const count = g.attributes.position.count;
+  if (!g.attributes.uv) {
+    g.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(count * 2), 2));
+  }
+  for (const key of Object.keys(g.attributes)) {
+    if (key !== "position" && key !== "normal" && key !== "uv") {
+      g.deleteAttribute(key);
+    }
+  }
+  return g;
+}
+
 // Extracts static mesh parts from a GLTF scene, baking world transforms and centering
 // XZ to (0, 0) and Y according to alignY ("min" | "max" | "center").
-function extractNormalizedParts(gltf, { alignY = "min", filterFn = null, isAquatic = false, isFoliage = true } = {}) {
+function extractNormalizedParts(
+  gltf,
+  {
+    alignY = "min",
+    filterFn = null,
+    isAquatic = false,
+    isFoliage = true,
+    mergeByMat = false,
+    forceTintable = false,
+  } = {}
+) {
   if (!gltf || !gltf.scene) return { parts: [], size: new THREE.Vector3(1, 1, 1) };
   gltf.scene.updateMatrixWorld(true);
 
@@ -113,19 +180,53 @@ function extractNormalizedParts(gltf, { alignY = "min", filterFn = null, isAquat
         ? center.y
         : combinedBox.min.y;
 
+  if (mergeByMat && rawParts.length > 1) {
+    const buckets = new Map();
+    for (const p of rawParts) {
+      p.geometry.translate(-center.x, -yRef, -center.z);
+      const key = p.matName || p.material?.uuid || "default";
+      if (!buckets.has(key)) buckets.set(key, { mat: p.material, matName: p.matName, geos: [] });
+      buckets.get(key).geos.push(normalizeGeomForMerge(p.geometry));
+      p.geometry.dispose();
+    }
+    const mergedParts = [];
+    for (const [, b] of buckets) {
+      const merged = b.geos.length === 1 ? b.geos[0] : mergeGeometries(b.geos, false);
+      if (b.geos.length > 1) b.geos.forEach((g) => g.dispose());
+      merged.computeBoundingSphere();
+      const mat = tuneMaterialForPBR(b.mat, {
+        isAquatic,
+        isFoliage,
+        tintable: Boolean(forceTintable),
+      });
+      if (!merged.attributes.tangent && mat.vertexTangents) mat.vertexTangents = false;
+      if (!merged.attributes.color && mat.vertexColors) mat.vertexColors = false;
+      mergedParts.push({
+        name: b.matName,
+        isPetal: false,
+        geometry: merged,
+        material: mat,
+      });
+    }
+    return { parts: mergedParts, size };
+  }
+
   const parts = rawParts.map((p) => {
     p.geometry.translate(-center.x, -yRef, -center.z);
     p.geometry.computeBoundingSphere();
     const isPetal = /flower|petal|material\.001/i.test(`${p.name} ${p.matName}`);
+    const mat = tuneMaterialForPBR(p.material, {
+      isAquatic,
+      isFoliage,
+      tintable: Boolean(forceTintable) || isPetal || isAquatic,
+    });
+    if (!p.geometry.attributes.tangent && mat.vertexTangents) mat.vertexTangents = false;
+    if (!p.geometry.attributes.color && mat.vertexColors) mat.vertexColors = false;
     return {
       name: p.name,
       isPetal,
       geometry: p.geometry,
-      material: tuneMaterialForPBR(p.material, {
-        isAquatic,
-        isFoliage,
-        tintable: isPetal || isAquatic,
-      }),
+      material: mat,
     };
   });
 
@@ -238,6 +339,7 @@ function buildInstancedGLBBatch(extracted, placements, { castShadow = false, rec
 
     inst.instanceMatrix.needsUpdate = true;
     if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+    inst.computeBoundingSphere();
     group.add(inst);
   }
   return group;
@@ -1349,22 +1451,25 @@ function buildTwoPersonSwingZone(parent, animState) {
     bench.add(slat);
   }
 
-  // Two-Person Plush Seat & Back Cushions + Pastel Throw Pillows
+  // Two-Person Sculpted Pillowed Seat & Back Cushions + Plump Pastel Throw Pillows
+  const seatCushGeo = createPillowedCushionGeo(0.73, 0.095, 0.50, 0.045, 0.018);
+  const backCushGeo = createPillowedCushionGeo(0.72, 0.44, 0.095, 0.045, 0.018);
+  const throwPillowGeo = createPlumpPillowGeo(0.34, 0.30, 0.13);
   for (const sx of [-1, 1]) {
-    const seatCush = new THREE.Mesh(new THREE.BoxGeometry(0.73, 0.095, 0.50), cushionIvory);
+    const seatCush = new THREE.Mesh(seatCushGeo, cushionIvory);
     seatCush.position.set(sx * 0.38, 0.052, 0.01);
     seatCush.castShadow = true;
-    const backCush = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.44, 0.095), cushionBlush);
+    const backCush = new THREE.Mesh(backCushGeo, cushionBlush);
     backCush.position.set(sx * 0.38, 0.31, -0.24);
     backCush.rotation.x = -0.18;
     backCush.castShadow = true;
     bench.add(seatCush, backCush);
   }
-  const pLeft = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.28, 0.11), pillowLilac);
-  pLeft.position.set(-0.56, 0.24, -0.12);
+  const pLeft = new THREE.Mesh(throwPillowGeo, pillowLilac);
+  pLeft.position.set(-0.56, 0.25, -0.12);
   pLeft.rotation.set(-0.15, 0.38, 0.12);
-  const pRight = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.28, 0.11), pillowCoral);
-  pRight.position.set(0.56, 0.24, -0.12);
+  const pRight = new THREE.Mesh(throwPillowGeo, pillowCoral);
+  pRight.position.set(0.56, 0.25, -0.12);
   pRight.rotation.set(-0.15, -0.38, -0.12);
   bench.add(pLeft, pRight);
 
@@ -2207,6 +2312,182 @@ function buildGardenFireflies(parent) {
 }
 
 // ---------------------------------------------------------------------------
+// Photogrammetry Real-World Furniture & Vintage Props Batcher (18 CC0 GLBs)
+// ---------------------------------------------------------------------------
+
+function placeEstateAndVillaGLBFurniture(group, extracted) {
+  const furnGroup = new THREE.Group();
+  furnGroup.name = "PhotogrammetryVintageFurniture";
+
+  const addBatch = (key, placements, { castShadow = true, receiveShadow = true } = {}) => {
+    const ext = extracted[key];
+    if (!ext || !ext.parts.length || !placements.length) return;
+    furnGroup.add(buildInstancedGLBBatch(ext, placements, { castShadow, receiveShadow }));
+  };
+
+  // 1. Brass & Crystal Chandeliers suspended from 4 Villa Ceiling Medallions
+  addBatch(
+    "ph_chandelier",
+    [
+      { x: -18.8, y: 5.96, z: 0.65, ry: 0.22, s: 1.02 },
+      { x: -12.65, y: 5.96, z: 1.15, ry: 0.68, s: 0.92 },
+      { x: -7.25, y: 5.92, z: -5.4, ry: -0.35, s: 0.88 },
+      { x: -16.8, y: 9.36, z: -2.8, ry: 0.14, s: 1.04 },
+    ],
+    { castShadow: false, receiveShadow: false }
+  );
+
+  // 2. Carved Walnut Salon Coffee Table (1F Grand Salon)
+  addBatch("ph_coffee_table", [{ x: -18.8, y: 2.6, z: 0.58, ry: 0, s: 1.0 }]);
+
+  // 3. Vintage Sage-Green Velvet Louis XV Accent & Desk Chairs (1F Salon, 1F Study Desk, 2F Sea-View Nook)
+  addBatch("ph_green_chair", [
+    { x: -20.68, y: 2.6, z: 0.44, ry: 1.18, s: 1.02 },
+    { x: -7.4, y: 2.6, z: -7.34, ry: Math.PI + 0.16, s: 0.98 },
+    { x: -22.15, y: 6.12, z: -1.02, ry: 1.16, s: 1.0 },
+  ]);
+
+  // 4. Soft Blush-Rose Tufted French Wingback Armchairs (1F Salon & 2F Sea-View Nook)
+  addBatch("ph_armchair", [
+    { x: -16.92, y: 2.6, z: 0.46, ry: -1.16, s: 0.98, color: 0xf7e4e6, tintAll: true },
+    { x: -22.15, y: 6.12, z: 0.52, ry: 1.96, s: 0.96, color: 0xf7e4e6, tintAll: true },
+  ]);
+
+  // 5. Blush-Tinted Louis XV Harbor Settee (1F Conservatory Study & 2F Master East Lounge)
+  addBatch("ph_sofa", [
+    { x: -4.68, y: 2.6, z: -5.85, ry: -Math.PI * 0.5, s: 1.15, color: 0xf8e5e7, tintAll: true },
+    { x: -11.88, y: 6.12, z: 0.0, ry: -Math.PI * 0.5, s: 1.04, color: 0xf8e5e7, tintAll: true },
+  ]);
+
+  // 6. Carved French Console Table & Rococo Dressing Vanity (1F Salon West Wall & 2F Master South Wall)
+  addBatch("ph_console", [
+    { x: -22.94, y: 2.6, z: -1.55, ry: Math.PI * 0.5, s: 0.92 },
+    { x: -16.65, y: 6.12, z: 3.55, ry: Math.PI, s: 0.94 },
+  ]);
+
+  // 7. Gilded Rococo Mirrors (1F Salon Fireplace Overmantel & 2F Master Vanity — zero blocked windows!)
+  addBatch(
+    "ph_ornate_mirror",
+    [
+      { x: -18.4, y: 4.86, z: -2.94, ry: 0, s: 1.56 },
+      { x: -16.65, y: 7.64, z: 3.845, ry: Math.PI, s: 1.42 },
+    ],
+    { castShadow: false }
+  );
+
+  // 8. Ornate Gilded Oil-Painting Frames on Solid Interior Boiserie Walls
+  addBatch(
+    "ph_picture_frame",
+    [
+      { x: -23.21, y: 4.28, z: -1.55, ry: Math.PI * 0.5, s: 1.26 },
+      { x: -11.65, y: 4.22, z: 3.818, ry: Math.PI, s: 1.15 },
+      { x: -11.385, y: 7.72, z: -2.95, ry: -Math.PI * 0.5, s: 1.24 },
+      { x: -11.38, y: 7.72, z: 2.65, ry: -Math.PI * 0.5, s: 1.12 },
+    ],
+    { castShadow: false }
+  );
+
+  // 9. Twin French Cabriole Bedside Nightstands flanking 2F Canopy Bed
+  addBatch("ph_nightstand", [
+    { x: -18.42, y: 6.12, z: -8.35, ry: 0, s: 1.0 },
+    { x: -15.18, y: 6.12, z: -8.35, ry: 0, s: 1.0 },
+  ]);
+
+  // 10. Antique Chiming Mantel Clocks (1F Fireplace Mantel & 1F Study Bookcase Shelf)
+  addBatch(
+    "ph_mantel_clock",
+    [
+      { x: -18.4, y: 4.158, z: -2.63, ry: 0, s: 1.22 },
+      { x: -9.94, y: 3.64, z: -7.8, ry: Math.PI * 0.5, s: 1.05 },
+    ],
+    { castShadow: false }
+  );
+
+  // 11. Twin-Bell Brass Vintage Alarm Clocks (2F Bedside Nightstand & 1F Study Bureau Plat)
+  addBatch(
+    "ph_alarm_clock",
+    [
+      { x: -18.24, y: 6.82, z: -8.24, ry: 0.28, s: 0.95 },
+      { x: -6.88, y: 3.389, z: -8.06, ry: -0.35, s: 0.88 },
+    ],
+    { castShadow: false }
+  );
+
+  // 12. Antique Brass & Blown-Glass Oil Lamps (1F Console, 1F Study Table, 2F Rooftop Bistro, Harbor Espresso Bar)
+  addBatch(
+    "ph_oil_lamp",
+    [
+      { x: -22.92, y: 3.473, z: -1.96, ry: 0.4, s: 0.68 },
+      { x: -4.72, y: 3.221, z: -4.22, ry: -0.6, s: 0.66 },
+      { x: -7.62, y: 6.888, z: -5.32, ry: 0.2, s: 0.56 },
+      { x: 20.65, y: 2.498, z: -14.1, ry: 0.3, s: 0.62 },
+    ],
+    { castShadow: false }
+  );
+
+  // 13. Slatted Wood & Wrought-Iron Outdoor Bistro Table + Chair Sets (1F SE Courtyard & 2F Rooftop Terrace)
+  addBatch("ph_bistro_set", [
+    { x: -7.4, y: 2.6, z: 3.8, ry: 0.38, s: 1.06 },
+    { x: -7.5, y: 6.12, z: -5.4, ry: -0.32, s: 1.05 },
+  ]);
+
+  // 14. Fine Porcelain Afternoon Tea Services (Salon, Kitchen Island, SE Courtyard, 2F Sea Nook, Harbor Cafés)
+  addBatch(
+    "ph_tea_set",
+    [
+      { x: -18.92, y: 3.125, z: 0.56, ry: 0.08, s: 0.68 },
+      { x: -15.12, y: 3.519, z: -6.36, ry: -0.12, s: 0.65 },
+      { x: -7.46, y: 3.376, z: 3.88, ry: 0.38, s: 0.56 },
+      { x: -22.05, y: 6.701, z: -0.25, ry: 1.55, s: 0.52 },
+      { x: 20.4, y: 2.15, z: -9.5, ry: 0.4, s: 0.66 },
+      { x: 16.05, y: 2.142, z: 6.28, ry: 0.8, s: 0.56 },
+    ],
+    { castShadow: false }
+  );
+
+  // 15. Freshly Baked French Croissants (Kitchen Butcher Block, Dining Tiered Stand, 2F Terrace, Harbor Café)
+  addBatch(
+    "ph_croissant",
+    [
+      { x: -14.26, y: 3.55, z: -6.32, ry: 0.45, s: 1.18 },
+      { x: -14.34, y: 3.55, z: -6.24, ry: -0.35, s: 1.1 },
+      { x: -12.56, y: 3.388, z: 0.94, ry: 0.62, s: 1.12 },
+      { x: -7.46, y: 6.888, z: -5.42, ry: -0.4, s: 1.15 },
+      { x: 25.05, y: 2.15, z: -10.35, ry: 0.5, s: 1.2 },
+    ],
+    { castShadow: false }
+  );
+
+  // 16. Hammered French Brass/Copper Sauté Pans (1 on La Cornue Burner + 3 Hooked along Overhead Pot Rack)
+  addBatch(
+    "ph_brass_pan",
+    [
+      { x: -13.96, y: 3.545, z: -8.95, ry: Math.PI + 0.18, s: 1.05 },
+      { x: -15.32, y: 4.96, z: -6.07, rx: Math.PI * 0.5, s: 0.95 },
+      { x: -15.0, y: 4.96, z: -6.07, rx: Math.PI * 0.5, s: 1.0 },
+      { x: -14.68, y: 4.96, z: -6.07, rx: Math.PI * 0.5, s: 0.92 },
+    ],
+    { castShadow: false }
+  );
+
+  // 17. Woven French Wicker Picnic & Linen Baskets (1F Hearthside, 2F Armoire Side, Front Courtyard)
+  addBatch("ph_wicker_basket", [
+    { x: -19.86, y: 2.6, z: -2.42, ry: 0.36, s: 1.22 },
+    { x: -13.68, y: 6.12, z: -8.92, ry: 0.22, s: 1.15 },
+    { x: -18.05, y: 2.2, z: 9.95, ry: -0.42, s: 1.15 },
+  ]);
+
+  // 18. Vintage Galvanized French Garden Watering Cans (SE Courtyard, 2F Rooftop Planters, Secret Garden)
+  addBatch("ph_watering_can", [
+    { x: -8.92, y: 2.6, z: 5.22, ry: -0.65, s: 1.15 },
+    { x: -5.05, y: 6.12, z: -2.28, ry: 0.78, s: 1.12 },
+    { x: -24.2, y: 2.22, z: 16.8, ry: 1.15, s: 1.18 },
+  ]);
+
+  group.add(furnGroup);
+}
+
+// ---------------------------------------------------------------------------
 // Public Builder Entrypoint
 // ---------------------------------------------------------------------------
 
@@ -2234,6 +2515,36 @@ export async function buildSecretGardensAndPond({ villaGroup = null, onProgress 
       isAquatic: true,
       isFoliage: false,
     }),
+
+    // 18 CC0 Real-World Photogrammetry Furniture & Vintage Props
+    ph_chandelier: extractNormalizedParts(models.ph_chandelier, { alignY: "max", isFoliage: false, mergeByMat: true }),
+    ph_coffee_table: extractNormalizedParts(models.ph_coffee_table, { alignY: "min", isFoliage: false, mergeByMat: true }),
+    ph_green_chair: extractNormalizedParts(models.ph_green_chair, { alignY: "min", isFoliage: false, mergeByMat: true }),
+    ph_armchair: extractNormalizedParts(models.ph_armchair, {
+      alignY: "min",
+      isFoliage: false,
+      mergeByMat: true,
+      forceTintable: true,
+    }),
+    ph_sofa: extractNormalizedParts(models.ph_sofa, {
+      alignY: "min",
+      isFoliage: false,
+      mergeByMat: true,
+      forceTintable: true,
+    }),
+    ph_console: extractNormalizedParts(models.ph_console, { alignY: "min", isFoliage: false, mergeByMat: true }),
+    ph_ornate_mirror: extractNormalizedParts(models.ph_ornate_mirror, { alignY: "center", isFoliage: false, mergeByMat: true }),
+    ph_picture_frame: extractNormalizedParts(models.ph_picture_frame, { alignY: "center", isFoliage: false, mergeByMat: true }),
+    ph_nightstand: extractNormalizedParts(models.ph_nightstand, { alignY: "min", isFoliage: false, mergeByMat: true }),
+    ph_mantel_clock: extractNormalizedParts(models.ph_mantel_clock, { alignY: "min", isFoliage: false, mergeByMat: true }),
+    ph_alarm_clock: extractNormalizedParts(models.ph_alarm_clock, { alignY: "min", isFoliage: false, mergeByMat: true }),
+    ph_oil_lamp: extractNormalizedParts(models.ph_oil_lamp, { alignY: "min", isFoliage: false, mergeByMat: true }),
+    ph_bistro_set: extractNormalizedParts(models.ph_bistro_set, { alignY: "min", isFoliage: false, mergeByMat: true }),
+    ph_tea_set: extractNormalizedParts(models.ph_tea_set, { alignY: "min", isFoliage: false, mergeByMat: true }),
+    ph_croissant: extractNormalizedParts(models.ph_croissant, { alignY: "min", isFoliage: false, mergeByMat: true }),
+    ph_brass_pan: extractNormalizedParts(models.ph_brass_pan, { alignY: "min", isFoliage: false, mergeByMat: true }),
+    ph_wicker_basket: extractNormalizedParts(models.ph_wicker_basket, { alignY: "min", isFoliage: false, mergeByMat: true }),
+    ph_watering_can: extractNormalizedParts(models.ph_watering_can, { alignY: "min", isFoliage: false, mergeByMat: true }),
   };
 
   const animState = {
@@ -2253,6 +2564,7 @@ export async function buildSecretGardensAndPond({ villaGroup = null, onProgress 
   buildTwoPersonSwingZone(group, animState);
   const irisCtrl = buildAllGLBFlora(group, extracted);
   const fireflies = buildGardenFireflies(group);
+  placeEstateAndVillaGLBFurniture(group, extracted);
   upgradeIndoorVasesWithHeroRoses(villaGroup, extracted.hero_rose);
   upgradeIndoorPlantersWithGLBFlora(villaGroup, extracted);
 

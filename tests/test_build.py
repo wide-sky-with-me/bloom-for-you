@@ -38,9 +38,8 @@ class IrisBayCoastalEstateTests(unittest.TestCase):
                 "modules/realistic-ocean-sky.js",
                 "modules/harbor-and-estate.js",
                 "modules/coastal-villa.js",
+                "modules/vintage-craft-props.js",
                 "modules/botanical-flora.js",
-                "modules/secret-gardens-and-pond.js",
-                "modules/distant-horizon.js",
                 "assets/models/freshwater_shrimp.glb",
                 "assets/models/ryukin_goldfish.glb",
                 "assets/models/pond_koi.glb",
@@ -48,6 +47,13 @@ class IrisBayCoastalEstateTests(unittest.TestCase):
                 "assets/models/rose_bush.glb",
                 "assets/models/wisteria_cascade.glb",
                 "assets/models/hero_rose.glb",
+                "assets/models/ph_sofa.glb",
+                "assets/models/ph_green_chair.glb",
+                "assets/models/ph_armchair.glb",
+                "assets/models/ph_chandelier.glb",
+                "assets/models/ph_coffee_table.glb",
+                "assets/models/ph_tea_set.glb",
+                "assets/models/ph_bistro_set.glb",
             ):
                 self.assertIn(mod, manifest["files"])
 
@@ -112,6 +118,24 @@ class IrisBayCoastalEstateTests(unittest.TestCase):
             "ph_fern",
             "ph_periwinkle",
             "hero_rose",
+            "ph_sofa",
+            "ph_green_chair",
+            "ph_armchair",
+            "ph_chandelier",
+            "ph_ornate_mirror",
+            "ph_console",
+            "ph_nightstand",
+            "ph_coffee_table",
+            "ph_tea_set",
+            "ph_mantel_clock",
+            "ph_picture_frame",
+            "ph_bistro_set",
+            "ph_brass_pan",
+            "ph_croissant",
+            "ph_wicker_basket",
+            "ph_watering_can",
+            "ph_alarm_clock",
+            "ph_oil_lamp",
         ):
             self.assertIn(f'"{model_key}":', text)
         self.assertIn("data:font/woff2;base64,", text)
@@ -138,7 +162,7 @@ class IrisBayCoastalEstateTests(unittest.TestCase):
             SITE / "audio.js",
             *sorted((SITE / "modules").glob("*.js")),
         ]
-        self.assertEqual(len(js_files), 11)
+        self.assertEqual(len(js_files), 12)
         for js_path in js_files:
             proc = subprocess.run(
                 [node, "--check", str(js_path)],

@@ -23,6 +23,21 @@ import {
   batchStaticMeshesByMaterial,
 } from "./pbr-kit.js";
 import { createRoseBouquet } from "./botanical-flora.js";
+import {
+  createPillowedCushionGeo,
+  buildButtonTuftedChesterfieldSofa,
+  buildVictorHornGramophone,
+  buildSmegRetroFridge,
+  buildLaCornueChateauRangeAndHood,
+  buildFarmhouseSinkAndBridgeFaucet,
+  buildThonetBentwoodCounterStool,
+  buildLouisXVIDiningSuite,
+  buildFrenchFireplaceAndMantel,
+  buildBureauPlatDeskAndEmeraliteLamp,
+  buildAcousticParlorGuitarOnStand,
+  buildFourPosterCanopyBed,
+  buildPorcelainTableLamp,
+} from "./vintage-craft-props.js";
 
 function createFineWoodMaterial(colorHex, { roughness = 0.38, repeatX = 2, repeatY = 2, seed = 4201 } = {}) {
   const rng = mulberry32(seed);
@@ -707,18 +722,29 @@ function addFloweringPlanter(
           : mats.celadonGlaze;
 
   const potH = 0.26;
-  const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.155, 0.108, potH, 14), potMat);
-  pot.position.y = potH * 0.5;
+  const potPts = [
+    new THREE.Vector2(0.001, 0.018),
+    new THREE.Vector2(0.095, 0.018),
+    new THREE.Vector2(0.112, 0.055),
+    new THREE.Vector2(0.148, 0.145),
+    new THREE.Vector2(0.156, 0.225),
+    new THREE.Vector2(0.166, 0.246),
+    new THREE.Vector2(0.152, 0.260),
+    new THREE.Vector2(0.136, 0.248),
+  ];
+  const pot = new THREE.Mesh(new THREE.LatheGeometry(potPts, 18), potMat);
   g.add(pot);
-  const lip = new THREE.Mesh(new THREE.TorusGeometry(0.156, 0.014, 8, 18), potMat);
-  lip.rotation.x = Math.PI * 0.5;
-  lip.position.y = potH - 0.01;
-  g.add(lip);
-  const saucer = new THREE.Mesh(new THREE.CylinderGeometry(0.135, 0.12, 0.024, 14), mats.brass);
-  saucer.position.y = 0.012;
+  const saucerPts = [
+    new THREE.Vector2(0.001, 0.0),
+    new THREE.Vector2(0.112, 0.0),
+    new THREE.Vector2(0.138, 0.022),
+    new THREE.Vector2(0.132, 0.028),
+    new THREE.Vector2(0.105, 0.014),
+  ];
+  const saucer = new THREE.Mesh(new THREE.LatheGeometry(saucerPts, 18), mats.brass);
   g.add(saucer);
-  const soil = new THREE.Mesh(new THREE.CylinderGeometry(0.142, 0.14, 0.02, 12), mats.soilDark);
-  soil.position.y = potH - 0.015;
+  const soil = new THREE.Mesh(new THREE.CylinderGeometry(0.140, 0.136, 0.02, 14), mats.soilDark);
+  soil.position.y = potH - 0.016;
   g.add(soil);
 
   const rng = mulberry32(Math.round((x * 41 + z * 67 + y * 13) * 100));
@@ -798,19 +824,37 @@ function addVintagePlantStand(parent, mats, x, y, z, ry = 0) {
   st.position.set(x, y, z);
   st.rotation.y = ry;
 
-  for (const [lx, lz] of [[-0.26, -0.18], [0.26, -0.18], [-0.26, 0.18], [0.26, 0.18]]) {
-    addBox(st, 0.024, 0.92, 0.024, mats.wroughtIron, lx, 0.46, lz);
+  // 3 S-Scrolled Wrought-Iron Tripod Legs + Brass Ball Feet & Finials
+  for (let i = 0; i < 3; i += 1) {
+    const a = (i / 3) * Math.PI * 2 + 0.35;
+    const legCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(Math.cos(a) * 0.28, 0.02, Math.sin(a) * 0.28),
+      new THREE.Vector3(Math.cos(a) * 0.22, 0.34, Math.sin(a) * 0.22),
+      new THREE.Vector3(Math.cos(a) * 0.16, 0.68, Math.sin(a) * 0.16),
+      new THREE.Vector3(Math.cos(a) * 0.19, 0.94, Math.sin(a) * 0.19),
+    ]);
+    st.add(new THREE.Mesh(new THREE.TubeGeometry(legCurve, 16, 0.011, 8, false), mats.wroughtIron));
+    const foot = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 8), mats.brass);
+    foot.position.set(Math.cos(a) * 0.28, 0.02, Math.sin(a) * 0.28);
+    const finial = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 8), mats.brass);
+    finial.position.set(Math.cos(a) * 0.19, 0.95, Math.sin(a) * 0.19);
+    st.add(foot, finial);
   }
+
   const tiers = [
     [0, 0.22, 0.12, "rose", "hydrangeaPink", "isIndoorGLBPeriwinklePot"],
     [-0.14, 0.56, -0.04, "celadon", "hydrangeaLilac", "isIndoorGLBFernPot"],
     [0.14, 0.88, -0.06, "ivory", "orchid", "isIndoorGLBMargaritaPot"],
   ];
   for (const [tx, ty, tz, pStyle, fType, tag] of tiers) {
-    const tray = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.18, 0.022, 16), mats.brass);
+    const tray = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.175, 0.018, 20), mats.brass);
     tray.position.set(tx, ty, tz);
     st.add(tray);
-    addFloweringPlanter(st, mats, tx, ty + 0.012, tz, {
+    const gallery = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.008, 8, 22), mats.brass);
+    gallery.rotation.x = Math.PI * 0.5;
+    gallery.position.set(tx, ty + 0.018, tz);
+    st.add(gallery);
+    addFloweringPlanter(st, mats, tx, ty + 0.010, tz, {
       potStyle: pStyle,
       flowerType: fType,
       scale: 0.78,
@@ -826,16 +870,29 @@ function addRoseArrangement(parent, mats, x, y, z, scale = 1.0, roseVase = false
   g.position.set(x, y, z);
   g.scale.setScalar(scale);
 
+  // Turned French Porcelain Baluster Vase + Gilt Collar & Foot Ring
+  const vasePts = [
+    new THREE.Vector2(0.001, 0.0),
+    new THREE.Vector2(0.058, 0.0),
+    new THREE.Vector2(0.046, 0.025),
+    new THREE.Vector2(0.088, 0.095),
+    new THREE.Vector2(0.078, 0.155),
+    new THREE.Vector2(0.052, 0.188),
+    new THREE.Vector2(0.068, 0.212),
+    new THREE.Vector2(0.058, 0.205),
+  ];
   const vase = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.068, 0.088, 0.21, 14),
+    new THREE.LatheGeometry(vasePts, 20),
     roseVase ? mats.retroRosePorcelain : mats.celadonGlaze
   );
-  vase.position.y = 0.105;
   g.add(vase);
-  const goldRim = new THREE.Mesh(new THREE.TorusGeometry(0.068, 0.007, 6, 16), mats.brass);
+  const goldRim = new THREE.Mesh(new THREE.TorusGeometry(0.066, 0.006, 6, 18), mats.brass);
   goldRim.rotation.x = Math.PI * 0.5;
-  goldRim.position.y = 0.208;
-  g.add(goldRim);
+  goldRim.position.y = 0.211;
+  const footRim = new THREE.Mesh(new THREE.TorusGeometry(0.058, 0.005, 6, 18), mats.brass);
+  footRim.rotation.x = Math.PI * 0.5;
+  footRim.position.y = 0.006;
+  g.add(goldRim, footRim);
 
   const bouquet = createRoseBouquet({ count: 7, scale: 0.9 });
   bouquet.position.y = 0.04;
@@ -846,56 +903,20 @@ function addRoseArrangement(parent, mats, x, y, z, scale = 1.0, roseVase = false
   return g;
 }
 
-// Multi-Arm Antique Brass & Rose-Crystal Candle Chandelier (法式复古黄铜粉晶枝形吊灯)
-function addCrystalBrassChandelier(parent, mats, x, ceilingY, z, arms = 6, drop = 0.92) {
-  const ch = new THREE.Group();
-  ch.position.set(x, ceilingY, z);
-
-  // Carved plaster ceiling medallion rose
-  const med = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.38, 0.035, 22), mats.creamMolding);
-  med.position.y = -0.02;
-  ch.add(med);
-  const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, drop, 8), mats.brass);
-  chain.position.y = -drop * 0.5;
-  ch.add(chain);
-
-  const hubY = -drop;
-  const hub = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 12), mats.brass);
-  hub.position.y = hubY;
-  ch.add(hub);
-  const finial = new THREE.Mesh(new THREE.OctahedronGeometry(0.065, 0), mats.roseCrystal);
-  finial.position.y = hubY - 0.15;
-  ch.add(finial);
-
-  for (let i = 0; i < arms; i += 1) {
-    const a = (i / arms) * Math.PI * 2;
-    const r = 0.38;
-    const ax = Math.cos(a) * r;
-    const az = Math.sin(a) * r;
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.011, r, 6), mats.brass);
-    arm.position.set(ax * 0.5, hubY - 0.02, az * 0.5);
-    arm.rotation.z = Math.PI * 0.44;
-    arm.rotation.y = -a;
-    ch.add(arm);
-
-    const bobeche = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.032, 0.025, 12), mats.roseCrystal);
-    bobeche.position.set(ax, hubY + 0.03, az);
-    ch.add(bobeche);
-    const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.11, 8), mats.ivoryLinen);
-    candle.position.set(ax, hubY + 0.095, az);
-    ch.add(candle);
-    const flame = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 8), mats.opalGlow);
-    flame.scale.set(0.75, 1.35, 0.75);
-    flame.position.set(ax, hubY + 0.165, az);
-    flame.userData.noShadow = true;
-    ch.add(flame);
-    const dropGem = new THREE.Mesh(new THREE.OctahedronGeometry(0.032, 0), mats.roseCrystal);
-    dropGem.scale.set(0.7, 1.4, 0.7);
-    dropGem.position.set(ax * 0.86, hubY - 0.055, az * 0.86);
-    ch.add(dropGem);
-  }
-  parent.add(ch);
-  return ch;
+// Carved Plaster Ceiling Medallion Rose & Brass Hook for Photogrammetry Crystal Chandelier (ph_chandelier.glb)
+function addCeilingMedallion(parent, mats, x, ceilingY, z) {
+  const med = new THREE.Group();
+  med.position.set(x, ceilingY, z);
+  const outerRing = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.42, 0.026, 24), mats.creamMolding);
+  outerRing.position.y = -0.013;
+  const innerRing = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.016, 8, 22), mats.creamMolding);
+  innerRing.rotation.x = Math.PI * 0.5;
+  innerRing.position.y = -0.026;
+  const brassEscutcheon = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.095, 0.035, 16), mats.brass);
+  brassEscutcheon.position.y = -0.022;
+  med.add(outerRing, innerRing, brassEscutcheon);
+  parent.add(med);
+  return med;
 }
 
 function createPleatedCurtain(mat, width, height) {
@@ -1240,26 +1261,9 @@ function buildPlinthTerracesAndWalkZones(group, mats) {
     wAnchor.userData.isIndoorGLBWisteria = true;
     group.add(wAnchor);
   }
-  // Courtyard Bistro Table & Dusty-Rose Cushioned Chairs
-  const cTop = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.04, 20), mats.marble);
-  cTop.position.set(-7.4, 3.34, 3.8);
-  group.add(cTop);
-  const cPed = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.20, 0.72, 12), mats.wroughtIron);
-  cPed.position.set(-7.4, 2.96, 3.8);
-  group.add(cPed);
-  addRoseArrangement(group, mats, -7.4, 3.36, 3.8, 0.85, true);
-  for (const [cx, ry] of [[-8.25, 1.35], [-6.55, -1.35]]) {
-    const ch = new THREE.Group();
-    ch.position.set(cx, 2.60, 3.8);
-    ch.rotation.y = ry;
-    addBox(ch, 0.56, 0.06, 0.54, mats.dustyRoseVelvet, 0, 0.46, 0);
-    addBox(ch, 0.54, 0.48, 0.05, mats.wroughtIron, 0, 0.72, -0.25);
-    for (const [lx, lz] of [[-0.22, -0.21], [0.22, -0.21], [-0.22, 0.21], [0.22, 0.21]]) {
-      addBox(ch, 0.03, 0.44, 0.03, mats.wroughtIron, lx, 0.22, lz);
-    }
-    group.add(ch);
-  }
-  registerBoxCollider(-8.6, -6.2, 3.3, 4.3, 2.0, 5.0);
+  // Courtyard Slatted Teak & Iron Bistro Set (ph_bistro_set.glb + ph_tea_set.glb + ph_watering_can.glb)
+  addRoseArrangement(group, mats, -7.24, 3.376, 3.66, 0.74, true);
+  registerBoxCollider(-8.45, -6.35, 2.85, 4.75, 2.0, 5.0);
   addFloweringPlanter(group, mats, -9.4, 2.60, 5.3, { potStyle: "terracotta", flowerType: "hydrangeaPink", scale: 1.25, glbTag: "isIndoorGLBRosePot" });
   addFloweringPlanter(group, mats, -5.4, 2.60, 5.3, { potStyle: "celadon", flowerType: "hydrangeaBlue", scale: 1.25, glbTag: "isIndoorGLBMargaritaPot" });
 }
@@ -1713,6 +1717,8 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
     group.add(w2);
   }
   addHangingSpiderPlant(group, mats, hangingPlantAnimList, -7.5, 8.92, -3.6, { drop: 0.62, scale: 0.95, rosePot: true });
+  addRoseArrangement(group, mats, -7.36, 6.888, -5.52, 0.70, false);
+  registerBoxCollider(-8.35, -6.65, -6.4, -4.4, 5.4, 9.8);
   addFloweringPlanter(group, mats, -4.6, 6.12, -2.1, { potStyle: "rose", flowerType: "hydrangeaPink", scale: 1.15, glbTag: "isIndoorGLBRosePot" });
   addFloweringPlanter(group, mats, -4.6, 6.12, -8.9, { potStyle: "celadon", flowerType: "hydrangeaBlue", scale: 1.15, glbTag: "isIndoorGLBMargaritaPot" });
 
@@ -1773,132 +1779,74 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
 
 function buildVintageSalonDiningKitchen(group, mats, emberState, hangingPlantAnimList) {
   // --- 1. FRENCH VINTAGE SALON (West-South of 1F: X in [-23.0, -15.6], Z in [-2.8, +3.8]) ---
-  // Carved Limestone & Gilt-Brass French Mantel Fireplace at X = -18.4, Z = -2.62
-  addBox(group, 2.36, 1.48, 0.58, mats.hearthStone, -18.4, 3.34, -2.72);
-  addBox(group, 2.62, 0.14, 0.72, mats.copingStone, -18.4, 4.12, -2.68);
-  addBox(group, 2.58, 0.11, 0.92, mats.marble, -18.4, 2.655, -2.56);
-  addBox(group, 1.18, 0.86, 0.04, mats.wroughtIron, -18.4, 3.14, -2.42);
-  // Fluted pilaster jambs & brass trim
-  for (const side of [-1, 1]) {
-    addBox(group, 0.24, 1.32, 0.14, mats.copingStone, -18.4 + side * 0.94, 3.34, -2.40);
-  }
-  addBox(group, 1.28, 0.032, 0.03, mats.brass, -18.4, 3.58, -2.38);
+  // Carved French Bolection Limestone & Marble Mantelpiece + Brass Andirons & Spark Screen
+  const fireplace = buildFrenchFireplaceAndMantel(mats, emberState);
+  fireplace.position.set(-18.4, 2.60, -2.74);
+  group.add(fireplace);
 
-  for (let i = 0; i < 4; i += 1) {
-    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.06, 0.64, 8), mats.walnut);
-    log.rotation.z = Math.PI * 0.5 + (i - 1.5) * 0.08;
-    log.position.set(-18.4, 2.80 + (i > 1 ? 0.08 : 0), -2.32 + (i % 2) * 0.06);
-    group.add(log);
+  // Pair of Turned Gilt-Brass Candlesticks on Mantel Shelf (ph_ornate_mirror & ph_mantel_clock sit between them!)
+  const stickPts = [
+    new THREE.Vector2(0.001, 0.0),
+    new THREE.Vector2(0.055, 0.0),
+    new THREE.Vector2(0.042, 0.025),
+    new THREE.Vector2(0.018, 0.065),
+    new THREE.Vector2(0.028, 0.125),
+    new THREE.Vector2(0.014, 0.185),
+    new THREE.Vector2(0.036, 0.215),
+    new THREE.Vector2(0.022, 0.225),
+  ];
+  const stickGeo = new THREE.LatheGeometry(stickPts, 16);
+  for (const cx of [-19.34, -17.46]) {
+    const cStick = new THREE.Mesh(stickGeo, mats.brass);
+    cStick.position.set(cx, 4.158, -2.64);
+    const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.015, 0.11, 10), mats.ivoryLinen);
+    candle.position.set(cx, 4.275, -2.64);
+    const cBulb = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 8), mats.opalGlow);
+    cBulb.scale.set(0.72, 1.45, 0.72);
+    cBulb.position.set(cx, 4.35, -2.64);
+    cBulb.userData.noShadow = true;
+    group.add(cStick, candle, cBulb);
   }
-  const emberBed = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.08, 0.22), mats.emberGlow);
-  emberBed.position.set(-18.4, 2.75, -2.30);
-  group.add(emberBed);
-  emberState.mesh = emberBed;
-
-  // Ornate Gilt-Brass Arched Rococo Overmantel Mirror + Candlesticks + Trailing Mantel Ivy
-  addBox(group, 1.38, 1.16, 0.06, mats.brass, -18.4, 4.78, -2.92);
-  const mirArch = new THREE.Mesh(new THREE.CylinderGeometry(0.69, 0.69, 0.06, 20, 1, false, 0, Math.PI), mats.brass);
-  mirArch.rotation.z = -Math.PI * 0.5;
-  mirArch.rotation.y = Math.PI * 0.5;
-  mirArch.position.set(-18.4, 5.36, -2.92);
-  group.add(mirArch);
-  addBox(group, 1.22, 1.04, 0.065, mats.mirrorSilver, -18.4, 4.78, -2.91);
-  for (const cx of [-19.35, -17.45]) {
-    const cStick = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.055, 0.22, 10), mats.brass);
-    cStick.position.set(cx, 4.30, -2.62);
-    group.add(cStick);
-    const cBulb = new THREE.Mesh(new THREE.SphereGeometry(0.024, 8, 8), mats.opalGlow);
-    cBulb.position.set(cx, 4.46, -2.62);
-    group.add(cBulb);
-  }
-  addTrailingVine(group, mats, -18.4, 4.16, -2.34, 1.85, 9, 1);
+  addTrailingVine(group, mats, -18.4, 4.15, -2.37, 1.85, 9, 1);
   registerBoxCollider(-19.72, -17.08, -3.05, -2.12, 2.0, 5.2);
 
   // French Aubusson Rose-Medallion Rug (4.4m x 3.2m)
   addBox(group, 4.4, 0.015, 3.2, mats.livingRug, -18.9, 2.608, 0.65);
 
-  // Tufted Vintage Dusty-Rose Velvet Rolled-Arm Chesterfield Sofa (X = -18.8, Z = +2.15)
-  const sofa = new THREE.Group();
-  sofa.position.set(-18.8, 2.60, 2.15);
-  addBox(sofa, 2.86, 0.26, 0.94, mats.dustyRoseVelvet, 0, 0.26, 0);
-  addBox(sofa, 2.86, 0.58, 0.24, mats.deepRoseVelvet, 0, 0.62, 0.35);
-  // Rolled Cylindrical Velvet Arms & Tufted Back Buttons
-  for (const side of [-1, 1]) {
-    const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.96, 14), mats.deepRoseVelvet);
-    roll.rotation.x = Math.PI * 0.5;
-    roll.position.set(side * 1.38, 0.56, 0);
-    sofa.add(roll);
-    addBox(sofa, 0.24, 0.34, 0.92, mats.dustyRoseVelvet, side * 1.34, 0.38, 0);
-  }
-  for (let c = -1; c <= 1; c += 1) {
-    addBox(sofa, 0.82, 0.15, 0.72, mats.dustyRoseVelvet, c * 0.84, 0.44, -0.06);
-    const btn = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 8), mats.brass);
-    btn.position.set(c * 0.68, 0.66, 0.22);
-    sofa.add(btn);
-  }
-  for (const [lx, lz] of [[-1.28, -0.36], [1.28, -0.36], [-1.28, 0.36], [1.28, 0.36]]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.024, 0.14, 10), mats.walnut);
-    leg.position.set(lx, 0.07, lz);
-    sofa.add(leg);
-  }
-  // Sage-Green & Blush Silk Throw Pillows
-  addBox(sofa, 0.42, 0.36, 0.14, mats.sageVelvet, -1.02, 0.62, 0.12, 0.24);
-  addBox(sofa, 0.40, 0.34, 0.14, mats.blushSilk, 0.0, 0.60, 0.15, -0.08);
-  addBox(sofa, 0.42, 0.36, 0.14, mats.sageVelvet, 1.02, 0.62, 0.12, -0.24);
+  // Button-Tufted Dusty-Rose Velvet Chesterfield Sofa (Capitonné) facing Fireplace & Coffee Table
+  const sofa = buildButtonTuftedChesterfieldSofa(mats);
+  sofa.position.set(-18.8, 2.60, 2.18);
+  sofa.rotation.y = Math.PI;
   group.add(sofa);
   registerBoxCollider(-20.32, -17.28, 1.64, 2.68, 2.0, 5.2);
 
-  // Vintage Sage-Green Velvet Wingback Armchair (X = -21.55, Z = +0.45)
-  const wingChair = new THREE.Group();
-  wingChair.position.set(-21.55, 2.60, 0.45);
-  wingChair.rotation.y = 1.15;
-  addBox(wingChair, 0.84, 0.34, 0.80, mats.sageVelvet, 0, 0.28, 0);
-  addBox(wingChair, 0.84, 0.78, 0.16, mats.sageVelvet, 0, 0.72, -0.32);
-  addBox(wingChair, 0.12, 0.48, 0.34, mats.sageVelvet, -0.38, 0.84, -0.18);
-  addBox(wingChair, 0.12, 0.48, 0.34, mats.sageVelvet, 0.38, 0.84, -0.18);
-  addBox(wingChair, 0.16, 0.32, 0.76, mats.sageVelvet, -0.36, 0.48, 0);
-  addBox(wingChair, 0.16, 0.32, 0.76, mats.sageVelvet, 0.36, 0.48, 0);
-  addBox(wingChair, 0.42, 0.32, 0.13, mats.dustyRoseVelvet, 0, 0.54, -0.16);
-  group.add(wingChair);
-  registerCircleCollider(-21.55, 0.45, 0.48, 2.0, 5.2);
+  // Colliders for Photogrammetry Louis XV Armchairs (ph_green_chair & ph_armchair) + West Wall Console (ph_console)
+  registerCircleCollider(-20.68, 0.44, 0.44, 2.0, 5.2);
+  registerCircleCollider(-16.92, 0.46, 0.46, 2.0, 5.2);
+  registerBoxCollider(-23.32, -22.58, -2.30, -0.80, 2.0, 5.2);
 
-  // Turned-Leg French Walnut & Marble Coffee Table (-18.8, 2.60, +0.55)
-  addBox(group, 1.38, 0.05, 0.78, mats.walnut, -18.8, 3.04, 0.55);
-  addBox(group, 1.26, 0.025, 0.66, mats.marble, -18.8, 3.072, 0.55);
-  for (const [lx, lz] of [[-0.58, -0.30], [0.58, -0.30], [-0.58, 0.30], [0.58, 0.30]]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.024, 0.42, 10), mats.walnut);
-    leg.position.set(-18.8 + lx, 2.81, 0.55 + lz);
-    group.add(leg);
-  }
-  addBox(group, 0.32, 0.04, 0.24, mats.deepRoseVelvet, -19.16, 3.105, 0.52, 0.14);
-  addRoseArrangement(group, mats, -18.52, 3.085, 0.56, 0.96, true);
-  registerBoxCollider(-19.52, -18.08, 0.14, 0.96, 2.0, 5.2);
+  // Coffee Table Centerpiece & Clothbound Art Book resting atop Photogrammetry ph_coffee_table.glb (top Y = 3.125m)
+  const artBook = new THREE.Mesh(createPillowedCushionGeo(0.32, 0.038, 0.24, 0.012, 0.002), mats.deepRoseVelvet);
+  artBook.position.set(-19.24, 3.144, 0.46);
+  artBook.rotation.y = 0.16;
+  group.add(artBook);
+  addRoseArrangement(group, mats, -18.38, 3.125, 0.62, 0.92, true);
+  registerBoxCollider(-19.60, -18.00, 0.08, 1.08, 2.0, 5.2);
 
-  // Antique Brass Horn Gramophone (复古黄铜大喇叭留声机) on Carved Walnut Pedestal (-16.55, 2.60, -2.15)
-  const gramPed = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.26, 0.72, 16), mats.walnut);
-  gramPed.position.set(-16.55, 2.96, -2.15);
-  group.add(gramPed);
-  addBox(group, 0.36, 0.14, 0.36, mats.walnut, -16.55, 3.39, -2.15);
-  const vinyl = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.012, 18), mats.wroughtIron);
-  vinyl.position.set(-16.55, 3.47, -2.15);
-  group.add(vinyl);
-  const hornNeck = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.04, 0.24, 10), mats.brass);
-  hornNeck.position.set(-16.55, 3.58, -2.24);
-  hornNeck.rotation.x = 0.45;
-  group.add(hornNeck);
-  const hornBell = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.38, 18, 1, true), mats.brass);
-  hornBell.position.set(-16.55, 3.76, -2.06);
-  hornBell.rotation.x = -1.12;
-  group.add(hornBell);
+  // Antique 1905 Victor Monarch Horn Gramophone with 10-Petal Scalloped Brass Horn (-16.55, 2.60, -2.15)
+  const gramophone = buildVictorHornGramophone(mats);
+  gramophone.position.set(-16.55, 2.60, -2.15);
+  gramophone.rotation.y = 0.38;
+  group.add(gramophone);
   registerCircleCollider(-16.55, -2.15, 0.34, 2.0, 5.2);
 
-  // Salon Chandelier + Wrought-Iron Flower Stand + Hanging Spider Plants (吊兰) + Potted Hydrangeas
-  addCrystalBrassChandelier(group, mats, -18.8, 5.98, 0.65, 6, 0.88);
+  // Salon Ceiling Medallion (for ph_chandelier.glb) + Scrolled Plant Stand + Spider Plants + Blooming Pots
+  addCeilingMedallion(group, mats, -18.8, 5.98, 0.65);
   addVintagePlantStand(group, mats, -22.45, 2.60, 3.15, 0.65);
   registerCircleCollider(-22.45, 3.15, 0.36, 2.0, 5.2);
   addFloweringPlanter(group, mats, -16.4, 2.60, 3.35, { potStyle: "rose", flowerType: "hydrangeaPink", scale: 1.25, glbTag: "isIndoorGLBRosePot" });
-  addFloweringPlanter(group, mats, -21.95, 2.60, 1.85, { potStyle: "rose", flowerType: "hydrangeaBlush", scale: 1.15, glbTag: "isIndoorGLBMargaritaPot" });
-  addFloweringPlanter(group, mats, -19.8, 2.66, -2.35, { potStyle: "celadon", flowerType: "hydrangeaLilac", scale: 1.08, glbTag: "isIndoorGLBFernPot" });
+  addFloweringPlanter(group, mats, -21.95, 2.60, 2.45, { potStyle: "rose", flowerType: "hydrangeaBlush", scale: 1.15, glbTag: "isIndoorGLBMargaritaPot" });
+  addFloweringPlanter(group, mats, -17.15, 2.66, -2.35, { potStyle: "celadon", flowerType: "hydrangeaLilac", scale: 1.08, glbTag: "isIndoorGLBFernPot" });
   addHangingSpiderPlant(group, mats, hangingPlantAnimList, -16.6, 5.82, 0.72, { drop: 0.78, scale: 1.08, rosePot: true });
   addHangingSpiderPlant(group, mats, hangingPlantAnimList, -19.2, 5.82, -0.65, { drop: 0.72, scale: 1.02, rosePot: false });
   addHangingSpiderPlant(group, mats, hangingPlantAnimList, -21.2, 5.86, 3.25, { drop: 0.70, scale: 1.05, rosePot: true });
@@ -1906,110 +1854,126 @@ function buildVintageSalonDiningKitchen(group, mats, emberState, hangingPlantAni
   addHangingSpiderPlant(group, mats, hangingPlantAnimList, -22.6, 5.86, -1.65, { drop: 0.74, scale: 1.02, rosePot: true });
 
   // --- 2. VINTAGE FRENCH DINING HALL (X = -12.65, Z = +1.15, overlooking SE Garden Courtyard) ---
-  addBox(group, 2.25, 0.06, 1.06, mats.walnut, -12.65, 3.35, 1.15);
-  for (const [lx, lz] of [[-0.98, -0.42], [0.98, -0.42], [-0.98, 0.42], [0.98, 0.42]]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.028, 0.72, 10), mats.walnut);
-    leg.position.set(-12.65 + lx, 2.96, 1.15 + lz);
-    group.add(leg);
-  }
-  addBox(group, 1.85, 0.012, 0.36, mats.blushSilk, -12.65, 3.388, 1.15);
-  addRoseArrangement(group, mats, -12.95, 3.39, 1.15, 0.92, false);
-  const cakeStand = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.08, 0.11, 16), mats.retroRosePorcelain);
-  cakeStand.position.set(-12.18, 3.44, 1.15);
-  group.add(cakeStand);
-  const tart = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.10, 0.045, 14), mats.waxSeal);
-  tart.position.set(-12.18, 3.51, 1.15);
-  group.add(tart);
-
-  const addVintageDiningChair = (cx, cz, ry, matSeat) => {
-    const ch = new THREE.Group();
-    ch.position.set(cx, 2.60, cz);
-    ch.rotation.y = ry;
-    addBox(ch, 0.48, 0.06, 0.46, matSeat, 0, 0.46, 0);
-    const back = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.045, 16), matSeat);
-    back.rotation.x = Math.PI * 0.5;
-    back.position.set(0, 0.78, -0.21);
-    ch.add(back);
-    const frame = new THREE.Mesh(new THREE.TorusGeometry(0.225, 0.02, 8, 18), mats.walnut);
-    frame.position.set(0, 0.78, -0.21);
-    ch.add(frame);
-    for (const [sx, sz] of [[-0.20, -0.19], [0.20, -0.19], [-0.20, 0.19], [0.20, 0.19]]) {
-      addBox(ch, 0.038, 0.45, 0.038, mats.walnut, sx, 0.225, sz);
-    }
-    group.add(ch);
-  };
-  addVintageDiningChair(-13.15, 0.48, 0, mats.dustyRoseVelvet);
-  addVintageDiningChair(-12.15, 0.48, 0, mats.sageVelvet);
-  addVintageDiningChair(-13.15, 1.82, Math.PI, mats.sageVelvet);
-  addVintageDiningChair(-12.15, 1.82, Math.PI, mats.dustyRoseVelvet);
+  const diningSuite = buildLouisXVIDiningSuite(mats);
+  diningSuite.position.set(-12.65, 2.60, 1.15);
+  group.add(diningSuite);
+  addRoseArrangement(group, mats, -13.06, 3.386, 1.15, 0.92, false);
   registerBoxCollider(-13.85, -11.45, 0.35, 1.95, 2.0, 5.2);
-  addCrystalBrassChandelier(group, mats, -12.65, 5.98, 1.15, 5, 0.84);
+  addCeilingMedallion(group, mats, -12.65, 5.98, 1.15);
   addFloweringPlanter(group, mats, -11.15, 2.60, 3.35, { potStyle: "celadon", flowerType: "hydrangeaBlush", scale: 1.18, glbTag: "isIndoorGLBMargaritaPot" });
 
   // --- 3. RETRO FRENCH SAGE-GREEN & DUSTY-ROSE COUNTRY KITCHEN (X in [-19.4, -10.8], Z in [-9.6, -4.8]) ---
-  // Retro Rounded Mint-Sage Smeg-Style Refrigerator (-18.75, 2.60, -9.15)
-  const fridge = new THREE.Group();
-  fridge.position.set(-18.75, 2.60, -9.18);
-  addBox(fridge, 0.92, 1.96, 0.72, mats.retroMintEnamel, 0, 0.98, 0);
-  const fCap = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.72, 16, 1, false, 0, Math.PI), mats.retroMintEnamel);
-  fCap.rotation.z = -Math.PI * 0.5;
-  fCap.rotation.y = Math.PI * 0.5;
-  fCap.position.set(0, 1.96, 0);
-  fridge.add(fCap);
-  addBox(fridge, 0.26, 0.03, 0.05, mats.brass, 0.24, 1.38, 0.38);
-  addBox(fridge, 0.26, 0.03, 0.05, mats.brass, 0.24, 0.78, 0.38);
-  group.add(fridge);
+  // Smeg FAB28 Retro Rounded Mint-Sage Refrigerator (-18.75, 2.60, -9.18)
+  const smegFridge = buildSmegRetroFridge(mats);
+  smegFridge.position.set(-18.75, 2.60, -9.18);
+  group.add(smegFridge);
 
-  // Vintage Sage-Green Beaded Base Cabinetry + Checkered Dusty-Rose Zellige Backsplash (Z = -9.28, X in [-17.9, -11.2])
-  addBox(group, 6.6, 0.88, 0.68, mats.boiserieSage, -14.5, 3.04, -9.28);
-  addBox(group, 6.68, 0.05, 0.74, mats.marble, -14.5, 3.505, -9.26);
-  addBox(group, 6.5, 0.92, 0.03, mats.checkeredTile, -14.5, 3.98, -9.62);
+  // Checkered Dusty-Rose Zellige Tile Backsplash across North Wall
+  addBox(group, 6.6, 0.96, 0.03, mats.checkeredTile, -14.55, 3.98, -9.62);
 
-  // Vintage Cream & Brass La Cornue French Range Cooker (-13.6, 2.60, -9.22) + Scalloped Plaster & Brass Hood
-  addBox(group, 1.18, 0.90, 0.74, mats.retroCreamEnamel, -13.6, 3.05, -9.22);
-  addBox(group, 1.12, 0.03, 0.62, mats.wroughtIron, -13.6, 3.52, -9.22);
-  addBox(group, 0.46, 0.42, 0.04, mats.brass, -13.3, 3.04, -8.84);
-  addBox(group, 0.46, 0.42, 0.04, mats.brass, -13.9, 3.04, -8.84);
-  const kettle = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.13, 0.15, 14), mats.copper);
-  kettle.position.set(-13.35, 3.60, -9.18);
-  group.add(kettle);
-  addBox(group, 1.28, 1.48, 0.62, mats.extBlushTrim, -13.6, 5.16, -9.32);
-  addBox(group, 1.34, 0.08, 0.66, mats.brass, -13.6, 4.42, -9.32);
+  // Left Shaker Base Cabinetry Bank [-17.95, -14.24] + Right Shaker Bank [-12.96, -11.15] (leaving 1.28m bay for La Cornue!)
+  addBox(group, 3.71, 0.88, 0.68, mats.boiserieSage, -16.095, 3.04, -9.28);
+  addBox(group, 1.81, 0.88, 0.68, mats.boiserieSage, -12.055, 3.04, -9.28);
+  // Calacatta Marble Countertops split neatly around Belfast Farmhouse Sink Basin [-16.58, -15.82]
+  addBox(group, 1.40, 0.048, 0.74, mats.marble, -17.28, 3.504, -9.26);
+  addBox(group, 1.58, 0.048, 0.74, mats.marble, -15.03, 3.504, -9.26);
+  addBox(group, 1.85, 0.048, 0.74, mats.marble, -12.04, 3.504, -9.26);
 
-  // Open Vintage Sage Plate-Rack Hutch displaying Dusty-Rose Porcelain Plates + Trailing Ivy (-11.9, 4.85, -9.42)
-  addBox(group, 1.56, 1.08, 0.36, mats.boiserieSage, -11.9, 4.88, -9.44);
-  addBox(group, 1.64, 0.06, 0.40, mats.creamMolding, -11.9, 5.44, -9.44);
+  // Recessed Shaker Cabinet Doors, Top Drawers & Turned Brass Knobs along Base Cabinetry
+  const addShakerDoor = (cx, cy, w, h, zFace) => {
+    addBox(group, w, h, 0.022, mats.creamMolding, cx, cy, zFace);
+    addBox(group, w - 0.09, h - 0.09, 0.026, mats.boiserieSageDeep, cx, cy, zFace + 0.003);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.013, 8, 8), mats.brass);
+    knob.position.set(cx + (w > 0.45 ? 0.16 : 0), cy + (h < 0.25 ? 0 : 0.06), zFace + 0.022);
+    group.add(knob);
+  };
+  for (const dx of [-17.62, -16.95, -15.45, -14.68, -12.52, -11.62]) {
+    addShakerDoor(dx, 3.36, 0.58, 0.16, -8.93);
+    addShakerDoor(dx, 2.94, 0.58, 0.56, -8.93);
+  }
+
+  // Glazed Belfast Farmhouse Apron Sink + Brass Bridge Gooseneck Faucet centered under North Window (-16.20, 3.505, -9.26)
+  const belfastSink = buildFarmhouseSinkAndBridgeFaucet(mats);
+  belfastSink.position.set(-16.20, 3.505, -9.26);
+  group.add(belfastSink);
+  addShakerDoor(-16.20, 2.86, 0.72, 0.42, -8.93);
+
+  // La Cornue Château 120 Vaulted French Range Cooker + Bell Chimney Hood (-13.60, 2.60, -9.22)
+  const laCornue = buildLaCornueChateauRangeAndHood(mats);
+  laCornue.position.set(-13.60, 2.60, -9.22);
+  group.add(laCornue);
+
+  // Open French Plate-Rack Hutch displaying Turned Limoges Dusty-Rose Plates & Celadon Canisters (-11.95, 4.88, -9.44)
+  addBox(group, 1.58, 1.12, 0.34, mats.boiserieSage, -11.95, 4.88, -9.45);
+  addBox(group, 1.68, 0.07, 0.40, mats.creamMolding, -11.95, 5.46, -9.44);
+  addBox(group, 1.52, 0.03, 0.32, mats.walnut, -11.95, 4.92, -9.43);
+  addBox(group, 1.50, 0.016, 0.016, mats.brass, -11.95, 4.74, -9.29);
+  const platePts = [
+    new THREE.Vector2(0.001, 0.0),
+    new THREE.Vector2(0.085, 0.002),
+    new THREE.Vector2(0.125, 0.022),
+    new THREE.Vector2(0.132, 0.024),
+  ];
+  const plateGeo = new THREE.LatheGeometry(platePts, 20);
   for (let p = 0; p < 5; p += 1) {
-    const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.018, 16), mats.retroRosePorcelain);
-    plate.rotation.x = Math.PI * 0.44;
-    plate.position.set(-12.46 + p * 0.28, 4.78, -9.38);
+    const plate = new THREE.Mesh(plateGeo, p % 2 === 0 ? mats.retroRosePorcelain : mats.zelligeTile);
+    plate.rotation.x = Math.PI * 0.46;
+    plate.position.set(-12.51 + p * 0.28, 4.68, -9.38);
     group.add(plate);
   }
-  addTrailingVine(group, mats, -11.9, 5.46, -9.22, 1.35, 7, 1);
+  for (let j = 0; j < 3; j += 1) {
+    const jar = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.052, 0.14, 14), j === 1 ? mats.retroRosePorcelain : mats.celadonGlaze);
+    jar.position.set(-12.35 + j * 0.36, 5.01, -9.42);
+    const lid = new THREE.Mesh(new THREE.SphereGeometry(0.048, 12, 8), mats.brass);
+    lid.scale.set(1, 0.45, 1);
+    lid.position.set(-12.35 + j * 0.36, 5.09, -9.42);
+    group.add(jar, lid);
+  }
+  addTrailingVine(group, mats, -11.95, 5.48, -9.24, 1.35, 7, 1);
   registerBoxCollider(-19.3, -11.0, -9.75, -8.82, 2.0, 5.2);
 
-  // Turned-Leg Vintage Sage & Calacatta Marble Kitchen Island (-15.0, 2.60, -6.35) + Overhead Brass Plant Rack!
-  addBox(group, 2.48, 0.86, 0.92, mats.boiserieSage, -15.0, 3.03, -6.35);
-  addBox(group, 2.64, 0.055, 1.08, mats.marble, -15.0, 3.49, -6.35);
-  addFloweringPlanter(group, mats, -15.85, 3.52, -6.35, { potStyle: "rose", flowerType: "orchid", scale: 0.78 });
-  // Overhead Brass Hanging Pot & Spider-Plant Rack
-  addBox(group, 2.20, 0.04, 0.56, mats.brass, -15.0, 5.18, -6.35);
-  for (const rx of [-15.9, -14.1]) {
+  // Turned-Column Shaker Kitchen Island (-15.0, 2.60, -6.35) + Butcher Block + Overhead Brass Pot Rack + 3 Thonet Bar Stools!
+  addBox(group, 2.42, 0.86, 0.88, mats.boiserieSage, -15.0, 3.03, -6.35);
+  for (const ix of [-15.82, -15.0, -14.18]) {
+    addBox(group, 0.68, 0.62, 0.022, mats.creamMolding, ix, 3.03, -6.80);
+    addBox(group, 0.58, 0.52, 0.026, mats.boiserieSageDeep, ix, 3.03, -6.805);
+  }
+  for (const [cx, cz] of [[-16.22, -6.78], [-13.78, -6.78], [-16.22, -5.92], [-13.78, -5.92]]) {
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.036, 0.86, 12), mats.creamMolding);
+    col.position.set(cx, 3.03, cz);
+    group.add(col);
+  }
+  const islandSlab = new THREE.Mesh(createPillowedCushionGeo(2.68, 0.058, 1.12, 0.035, 0), mats.marble);
+  islandSlab.position.set(-15.0, 3.49, -6.35);
+  group.add(islandSlab);
+  const cuttingBoard = new THREE.Mesh(createPillowedCushionGeo(0.46, 0.032, 0.32, 0.022, 0), mats.walnut);
+  cuttingBoard.position.set(-14.28, 3.534, -6.32);
+  cuttingBoard.rotation.y = 0.08;
+  group.add(cuttingBoard);
+  addFloweringPlanter(group, mats, -15.92, 3.52, -6.35, { potStyle: "rose", flowerType: "orchid", scale: 0.78 });
+
+  // Overhead Brass Pot & Spider-Plant Rack (Hammered ph_brass_pan.glb pans hang along front bar!)
+  addBox(group, 2.24, 0.032, 0.56, mats.brass, -15.0, 5.18, -6.35);
+  for (let b = -4; b <= 4; b += 1) {
+    addBox(group, 0.014, 0.018, 0.52, mats.brass, -15.0 + b * 0.24, 5.18, -6.35);
+  }
+  for (const rx of [-15.92, -14.08]) {
     const rRod = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.82, 8), mats.brass);
     rRod.position.set(rx, 5.59, -6.35);
     group.add(rRod);
   }
-  addHangingSpiderPlant(group, mats, hangingPlantAnimList, -15.75, 5.16, -6.35, { drop: 0.48, scale: 0.88, rosePot: true });
-  addHangingSpiderPlant(group, mats, hangingPlantAnimList, -14.25, 5.16, -6.35, { drop: 0.48, scale: 0.88, rosePot: false });
-  for (const sx of [-15.7, -15.0, -14.3]) {
-    const sSeat = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.07, 16), mats.dustyRoseVelvet);
-    sSeat.position.set(sx, 3.24, -5.62);
-    group.add(sSeat);
-    const sPed = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.16, 0.62, 12), mats.walnut);
-    sPed.position.set(sx, 2.91, -5.62);
-    group.add(sPed);
-  }
-  registerBoxCollider(-16.36, -13.64, -6.92, -5.42, 2.0, 5.2);
+  addHangingSpiderPlant(group, mats, hangingPlantAnimList, -15.82, 5.16, -6.35, { drop: 0.48, scale: 0.88, rosePot: true });
+  addHangingSpiderPlant(group, mats, hangingPlantAnimList, -14.18, 5.16, -6.35, { drop: 0.48, scale: 0.88, rosePot: false });
+
+  // 3 Sculpted French Thonet Bentwood & Velvet Counter Bar Stools facing the Kitchen Island
+  const stoolMats = [mats.dustyRoseVelvet, mats.sageVelvet, mats.dustyRoseVelvet];
+  [-15.76, -15.0, -14.24].forEach((sx, idx) => {
+    const stool = buildThonetBentwoodCounterStool(mats, stoolMats[idx]);
+    stool.position.set(sx, 2.60, -5.54);
+    stool.rotation.y = Math.PI + (idx - 1) * 0.06;
+    group.add(stool);
+  });
+  registerBoxCollider(-16.38, -13.62, -6.95, -5.32, 2.0, 5.2);
 }
 
 function buildConservatoryStudyAndLetter(group, mats, hangingPlantAnimList) {
@@ -2017,7 +1981,11 @@ function buildConservatoryStudyAndLetter(group, mats, hangingPlantAnimList) {
   addBox(group, 4.2, 0.014, 3.4, mats.studyRug, -7.25, 2.608, -5.65);
 
   // Vintage Celadon-Sage Floor-to-Ceiling Library Bookcase at X = -10.02, Z in [-9.45, -6.45]
-  addBox(group, 0.44, 2.86, 2.96, mats.boiserieSage, -10.04, 4.03, -7.95);
+  // Open-front carcass (back panel + side gables + plinth) so the book spines are visible from the study
+  addBox(group, 0.08, 2.86, 2.96, mats.boiserieSage, -10.22, 4.03, -7.95);
+  addBox(group, 0.44, 2.86, 0.05, mats.boiserieSage, -10.04, 4.03, -9.405);
+  addBox(group, 0.44, 2.86, 0.05, mats.boiserieSage, -10.04, 4.03, -6.495);
+  addBox(group, 0.46, 0.08, 2.96, mats.boiserieSage, -10.03, 2.64, -7.95);
   addBox(group, 0.52, 0.09, 3.08, mats.creamMolding, -10.02, 5.48, -7.95);
   for (let s = 0; s < 6; s += 1) {
     addBox(group, 0.46, 0.04, 2.92, mats.walnut, -10.02, 2.66 + s * 0.48, -7.95);
@@ -2026,7 +1994,7 @@ function buildConservatoryStudyAndLetter(group, mats, hangingPlantAnimList) {
 
   // 84 Varied Clothbound Vintage Books via InstancedMesh
   const rng = mulberry32(8842);
-  const bookCount = 84;
+  const bookCount = 300;
   const bookGeom = new THREE.BoxGeometry(0.22, 1.0, 1.0);
   const bookMat = new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0.04 });
   const booksInst = new THREE.InstancedMesh(bookGeom, bookMat, bookCount);
@@ -2044,8 +2012,10 @@ function buildConservatoryStudyAndLetter(group, mats, hangingPlantAnimList) {
       }
       const thick = 0.028 + rng() * 0.026;
       const bh = 0.24 + rng() * 0.13;
-      dummy.position.set(-9.96, shelfY + bh * 0.5, curZ + thick * 0.5);
-      dummy.scale.set(1.0, bh, thick);
+      const depth = 0.17 + rng() * 0.05;
+      dummy.position.set(-10.17 + depth * 0.5, shelfY + bh * 0.5, curZ + thick * 0.5);
+      dummy.rotation.set(rng() < 0.06 ? 0.08 : 0, 0, 0);
+      dummy.scale.set(depth / 0.22, bh, thick);
       dummy.updateMatrix();
       booksInst.setMatrixAt(idx, dummy.matrix);
       col.setHex(palette[Math.floor(rng() * palette.length)]);
@@ -2060,28 +2030,75 @@ function buildConservatoryStudyAndLetter(group, mats, hangingPlantAnimList) {
   group.add(booksInst);
   registerBoxCollider(-10.3, -9.72, -9.5, -6.4, 2.0, 5.2);
 
-  // Tufted Dusty-Rose Velvet Conservatory Daybed against East Window (-4.85, 2.60, -5.65)
-  addBox(group, 1.38, 0.26, 2.04, mats.walnut, -4.85, 2.75, -5.65);
-  addBox(group, 0.16, 0.72, 2.04, mats.dustyRoseVelvet, -4.22, 3.00, -5.65);
-  addBox(group, 1.32, 0.56, 0.14, mats.deepRoseVelvet, -4.86, 2.94, -6.62);
-  addBox(group, 1.32, 0.56, 0.14, mats.deepRoseVelvet, -4.86, 2.94, -4.68);
-  addBox(group, 1.26, 0.18, 1.88, mats.blushSilk, -4.88, 2.95, -5.65);
-  addBox(group, 1.28, 0.08, 0.72, mats.sageVelvet, -4.88, 3.06, -5.12);
-  registerBoxCollider(-5.58, -4.12, -6.72, -4.58, 2.0, 5.2);
+  // Harbor-View Louis XV Settee (ph_sofa.glb at -4.68, 2.60, -5.85) + Turned Walnut Pedestal Lamp Table (-4.72, 2.60, -4.22)
+  const sideTbl = new THREE.Group();
+  sideTbl.position.set(-4.72, 2.60, -4.22);
+  const tblTop = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.27, 0.032, 22), mats.walnut);
+  tblTop.position.y = 0.605;
+  const tblStem = new THREE.Mesh(
+    new THREE.LatheGeometry(
+      [
+        new THREE.Vector2(0.18, 0),
+        new THREE.Vector2(0.16, 0.035),
+        new THREE.Vector2(0.045, 0.12),
+        new THREE.Vector2(0.036, 0.46),
+        new THREE.Vector2(0.075, 0.58),
+      ],
+      16
+    ),
+    mats.walnut
+  );
+  sideTbl.add(tblTop, tblStem);
+  group.add(sideTbl);
+  registerBoxCollider(-5.35, -4.12, -6.85, -3.88, 2.0, 5.2);
 
-  // Artist Studio Easel (-5.65, 2.60, -2.55) + Cedar Guitar
+  // French Beechwood Artist Studio Easel + Thumb-Hole Oil Palette + Brush Jar (-5.65, 2.60, -2.55) + Acoustic Guitar on Stand!
   const easel = new THREE.Group();
   easel.position.set(-5.65, 2.60, -2.55);
   easel.rotation.y = -2.45;
-  addBox(easel, 0.04, 1.72, 0.04, mats.naturalOak, -0.22, 0.86, 0.08);
-  addBox(easel, 0.04, 1.72, 0.04, mats.naturalOak, 0.22, 0.86, 0.08);
-  addBox(easel, 0.04, 1.66, 0.04, mats.naturalOak, 0, 0.82, -0.24);
-  addBox(easel, 0.76, 0.60, 0.045, mats.brass, 0, 1.22, 0.11);
-  addBox(easel, 0.68, 0.52, 0.05, mats.paintingStudy, 0, 1.22, 0.115);
+  addBox(easel, 0.042, 1.76, 0.042, mats.naturalOak, -0.24, 0.88, 0.08);
+  addBox(easel, 0.042, 1.76, 0.042, mats.naturalOak, 0.24, 0.88, 0.08);
+  addBox(easel, 0.038, 1.88, 0.045, mats.naturalOak, 0, 0.94, 0.06);
+  const rearLeg = addBox(easel, 0.04, 1.68, 0.04, mats.naturalOak, 0, 0.80, -0.26);
+  rearLeg.rotation.x = 0.34;
+  // Adjustable ratcheted painting shelf + top clamp + framed Monet canvas
+  addBox(easel, 0.84, 0.045, 0.16, mats.naturalOak, 0, 0.89, 0.14);
+  addBox(easel, 0.16, 0.04, 0.09, mats.brass, 0, 1.55, 0.11);
+  addBox(easel, 0.78, 0.62, 0.045, mats.brass, 0, 1.22, 0.11);
+  addBox(easel, 0.70, 0.54, 0.052, mats.paintingStudy, 0, 1.22, 0.116);
+  // Painter's oval palette + oil pigment dabs + ceramic brush cup on easel shelf
+  const pal = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.008, 16), mats.walnut);
+  pal.scale.set(1.25, 1, 0.85);
+  pal.position.set(-0.22, 0.918, 0.16);
+  easel.add(pal);
+  const dabMats = [mats.petalPink, mats.sageVelvet, mats.petalBlue, mats.petalWhite, mats.brass];
+  for (let d = 0; d < 5; d += 1) {
+    const da = -0.6 + d * 0.52;
+    const dab = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 6), dabMats[d]);
+    dab.scale.set(1, 0.45, 1);
+    dab.position.set(-0.22 + Math.cos(da) * 0.075, 0.924, 0.16 + Math.sin(da) * 0.055);
+    easel.add(dab);
+  }
+  const brushCup = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.026, 0.085, 12), mats.celadonGlaze);
+  brushCup.position.set(0.28, 0.955, 0.15);
+  easel.add(brushCup);
+  for (let b = 0; b < 4; b += 1) {
+    const br = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.002, 0.19, 6), mats.walnut);
+    br.position.set(0.28 + (b - 1.5) * 0.008, 1.03, 0.15);
+    br.rotation.z = (b - 1.5) * 0.11;
+    easel.add(br);
+  }
   group.add(easel);
-  registerCircleCollider(-5.65, -2.55, 0.38, 2.0, 5.2);
+  registerCircleCollider(-5.65, -2.55, 0.40, 2.0, 5.2);
 
-  // Conservatory Botanical Abundance: Wrought-Iron Stand + Hanging Spider Plants + Blooming Pots
+  // Sculpted Figure-8 Acoustic Parlor Guitar on Folding Walnut Stand (-4.82, 2.60, -2.85)
+  const parlorGuitar = buildAcousticParlorGuitarOnStand(mats);
+  parlorGuitar.position.set(-4.82, 2.60, -2.85);
+  parlorGuitar.rotation.y = -2.22;
+  group.add(parlorGuitar);
+  registerCircleCollider(-4.82, -2.85, 0.28, 2.0, 5.2);
+
+  // Conservatory Botanical Abundance: Scrolled Plant Stand + Hanging Spider Plants + Blooming Pots + Ceiling Medallion
   addVintagePlantStand(group, mats, -9.25, 2.60, -2.25, 0.45);
   registerCircleCollider(-9.25, -2.25, 0.36, 2.0, 5.2);
   addFloweringPlanter(group, mats, -4.65, 2.60, -8.85, { potStyle: "celadon", flowerType: "hydrangeaPink", scale: 1.22, glbTag: "isIndoorGLBRosePot" });
@@ -2089,59 +2106,33 @@ function buildConservatoryStudyAndLetter(group, mats, hangingPlantAnimList) {
   addHangingSpiderPlant(group, mats, hangingPlantAnimList, -8.5, 5.84, -2.25, { drop: 0.66, scale: 1.02, rosePot: false });
   addHangingSpiderPlant(group, mats, hangingPlantAnimList, -5.8, 5.84, -2.25, { drop: 0.70, scale: 1.0, rosePot: true });
   addHangingSpiderPlant(group, mats, hangingPlantAnimList, -5.2, 5.84, -7.85, { drop: 0.68, scale: 0.98, rosePot: false });
-  addCrystalBrassChandelier(group, mats, -7.25, 5.94, -5.4, 5, 0.78);
+  addCeilingMedallion(group, mats, -7.25, 5.94, -5.4);
 
-  // Hero Sunlit French Walnut Writing Desk (-7.40, 2.60, -8.25) with Interactive Wax-Sealed Letter!
-  addBox(group, 1.72, 0.055, 0.84, mats.walnut, -7.40, 3.35, -8.25);
-  addBox(group, 0.42, 0.68, 0.76, mats.walnut, -8.02, 2.98, -8.25);
-  addBox(group, 0.42, 0.68, 0.76, mats.walnut, -6.78, 2.98, -8.25);
-  for (const dx of [-8.02, -6.78]) {
-    addBox(group, 0.14, 0.02, 0.03, mats.brass, dx, 3.16, -7.85);
-    addBox(group, 0.14, 0.02, 0.03, mats.brass, dx, 2.94, -7.85);
-  }
-  addBox(group, 0.74, 0.01, 0.46, mats.sageVelvet, -7.40, 3.382, -8.21);
+  // Hero Louis XVI Bureau Plat Writing Desk + Emeralite Banker's Lamp + Inkwell & Globe (-7.40, 2.60, -8.25)
+  // (Paired with Photogrammetry ph_green_chair.glb desk chair at -7.40, 2.60, -7.34!)
+  const bureauPlat = buildBureauPlatDeskAndEmeraliteLamp(mats);
+  bureauPlat.position.set(-7.40, 2.60, -8.25);
+  group.add(bureauPlat);
 
-  // Tufted Dusty-Rose Study Chair
-  const sChair = new THREE.Group();
-  sChair.position.set(-7.40, 2.60, -7.36);
-  sChair.rotation.y = Math.PI + 0.20;
-  addBox(sChair, 0.52, 0.06, 0.48, mats.dustyRoseVelvet, 0, 0.46, 0);
-  addBox(sChair, 0.50, 0.46, 0.06, mats.dustyRoseVelvet, 0, 0.70, -0.21);
-  for (const [lx, lz] of [[-0.21, -0.19], [0.21, -0.19], [-0.21, 0.19], [0.21, 0.19]]) {
-    addBox(sChair, 0.04, 0.44, 0.04, mats.walnut, lx, 0.22, lz);
-  }
-  group.add(sChair);
+  addRoseArrangement(group, mats, -6.66, 3.386, -8.45, 0.85, true);
 
-  // Classic Emerald Banker's Lamp + Thorny Hero Rose Vase + Fountain Pen
-  const bBase = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.095, 0.03, 14), mats.brass);
-  bBase.position.set(-7.96, 3.39, -8.43);
-  group.add(bBase);
-  addBox(group, 0.022, 0.30, 0.022, mats.brass, -7.96, 3.54, -8.43);
-  const emeraldShade = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.075, 0.075, 0.22, 12, 1, false, 0, Math.PI),
-    new THREE.MeshPhysicalMaterial({
-      color: 0x1f6b4a,
-      emissive: new THREE.Color(0x2d8a5e),
-      emissiveIntensity: 0.48,
-      roughness: 0.18,
-      clearcoat: 0.8,
-    })
-  );
-  emeraldShade.rotation.z = Math.PI * 0.5;
-  emeraldShade.position.set(-7.96, 3.68, -8.40);
-  group.add(emeraldShade);
-
-  addRoseArrangement(group, mats, -6.62, 3.38, -8.46, 0.85, true);
-
-  const pen = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.005, 0.17, 8), mats.brass);
-  pen.rotation.z = Math.PI * 0.5;
-  pen.rotation.y = 0.36;
-  pen.position.set(-7.14, 3.395, -8.17);
-  group.add(pen);
+  // Vintage Lacquer & Gold-Nib Fountain Pen beside the Letter
+  const penGroup = new THREE.Group();
+  penGroup.position.set(-7.12, 3.396, -8.17);
+  penGroup.rotation.y = 0.36;
+  const penBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.0065, 0.005, 0.14, 10), mats.wroughtIron);
+  penBarrel.rotation.z = Math.PI * 0.5;
+  const penNib = new THREE.Mesh(new THREE.ConeGeometry(0.005, 0.024, 8), mats.brass);
+  penNib.rotation.z = -Math.PI * 0.5;
+  penNib.position.x = 0.082;
+  const penBand = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.008, 10), mats.brass);
+  penBand.rotation.z = Math.PI * 0.5;
+  penGroup.add(penBarrel, penNib, penBand);
+  group.add(penGroup);
 
   // Interactive Wax-Sealed Cotton-Paper Keepsake Letter (with paper thickness, fold crease, flap & wax seal)
   const letterGroup = new THREE.Group();
-  letterGroup.position.set(-7.40, 3.388, -8.17);
+  letterGroup.position.set(-7.40, 3.390, -8.17);
 
   const sheetHolder = new THREE.Group();
   sheetHolder.position.set(-0.025, 0.006, 0.014);
@@ -2204,7 +2195,7 @@ function buildConservatoryStudyAndLetter(group, mats, hangingPlantAnimList) {
 
   tagInteractive(letterGroup, "love-letter", "书桌上的火漆纪念信笺");
   group.add(letterGroup);
-  registerBoxCollider(-8.28, -6.52, -8.72, -7.18, 2.0, 5.2);
+  registerBoxCollider(-8.32, -6.48, -8.72, -7.02, 2.0, 5.2);
 }
 
 function buildSecondFloorMasterSuite(group, mats, hangingPlantAnimList) {
@@ -2213,125 +2204,134 @@ function buildSecondFloorMasterSuite(group, mats, hangingPlantAnimList) {
   // Romantic Vintage Dusty-Rose Aubusson Master Rug (4.2m x 3.6m)
   addBox(group, 4.2, 0.015, 3.6, mats.masterRug, -16.8, y2 + 0.008, -6.8);
 
-  // Carved French Walnut & Brass Four-Poster Sheer-Canopy Bed (-16.8, 6.12, -7.45)
-  const bed = new THREE.Group();
+  // Sculpted French Four-Poster Canopy Bed (Lit à Baldaquin) + Louis XVI Tufted Foot Bench (-16.8, 6.12, -7.45)
+  const bed = buildFourPosterCanopyBed(mats, createPleatedCurtain);
   bed.position.set(-16.8, y2, -7.45);
-  addBox(bed, 2.18, 0.30, 2.28, mats.walnut, 0, 0.22, 0);
-  // Scalloped Tufted Dusty-Rose Velvet Headboard
-  addBox(bed, 2.14, 1.18, 0.14, mats.deepRoseVelvet, 0, 0.82, -1.08);
-  const hbArch = new THREE.Mesh(new THREE.CylinderGeometry(1.07, 1.07, 0.14, 20, 1, false, 0, Math.PI), mats.deepRoseVelvet);
-  hbArch.rotation.z = -Math.PI * 0.5;
-  hbArch.rotation.y = Math.PI * 0.5;
-  hbArch.position.set(0, 1.41, -1.08);
-  bed.add(hbArch);
-
-  // Mattress + Dusty-Rose Velvet Quilted Coverlet + Sage-Green Silk Throw & Bolster Pillows
-  addBox(bed, 2.04, 0.24, 2.12, mats.ivoryLinen, 0, 0.48, 0.02);
-  addBox(bed, 2.08, 0.14, 1.56, mats.dustyRoseVelvet, 0, 0.62, 0.30);
-  addBox(bed, 2.10, 0.08, 0.44, mats.sageVelvet, 0, 0.68, 0.84);
-  addBox(bed, 2.09, 0.07, 0.42, mats.blushSilk, 0, 0.67, -0.38);
-  addBox(bed, 0.80, 0.22, 0.34, mats.ivoryLinen, -0.48, 0.72, -0.78, 0.05);
-  addBox(bed, 0.80, 0.22, 0.34, mats.ivoryLinen, 0.48, 0.72, -0.78, -0.05);
-  addBox(bed, 0.56, 0.20, 0.24, mats.sageVelvet, -0.44, 0.74, -0.52, 0.08);
-  addBox(bed, 0.56, 0.20, 0.24, mats.dustyRoseVelvet, 0.44, 0.74, -0.52, -0.08);
-
-  // 4 Turned Walnut & Brass Canopy Posts + Tester Frame + Flowing Sheer Canopy Curtains
-  const postH = 2.48;
-  for (const [px, pz] of [[-1.06, -1.08], [1.06, -1.08], [-1.06, 1.08], [1.06, 1.08]]) {
-    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.046, postH, 12), mats.walnut);
-    p.position.set(px, postH * 0.5, pz);
-    bed.add(p);
-    const finial = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 10), mats.brass);
-    finial.position.set(px, postH + 0.04, pz);
-    bed.add(finial);
-    const drape = createPleatedCurtain(mats.sheerCurtain, 0.48, postH - 0.18);
-    drape.position.set(px * 0.88, postH - 0.04, pz);
-    bed.add(drape);
-  }
-  addBox(bed, 2.18, 0.045, 0.045, mats.brass, 0, postH, -1.08);
-  addBox(bed, 2.18, 0.045, 0.045, mats.brass, 0, postH, 1.08);
-  addBox(bed, 0.045, 0.045, 2.18, mats.brass, -1.06, postH, 0);
-  addBox(bed, 0.045, 0.045, 2.18, mats.brass, 1.06, postH, 0);
-  // Sheer Canopy Roof Voile
-  const testerVoile = new THREE.Mesh(new THREE.PlaneGeometry(2.08, 2.12), mats.sheerCurtain);
-  testerVoile.rotation.x = Math.PI * 0.5;
-  testerVoile.position.set(0, postH - 0.02, 0);
-  bed.add(testerVoile);
-
-  // Carved Tufted Bench at Foot of Bed
-  addBox(bed, 1.58, 0.14, 0.46, mats.sageVelvet, 0, 0.42, 1.42);
-  for (const [bx, bz] of [[-0.68, 1.26], [0.68, 1.26], [-0.68, 1.58], [0.68, 1.58]]) {
-    addBox(bed, 0.045, 0.34, 0.045, mats.walnut, bx, 0.18, bz);
-  }
   group.add(bed);
   registerBoxCollider(-17.95, -15.65, -8.68, -5.75, 5.4, 9.8);
 
-  // Flanking Vintage Nightstands + Pleated Blush Brass Lamps
-  for (const nx of [-18.42, -15.18]) {
-    addBox(group, 0.56, 0.56, 0.46, mats.creamMolding, nx, y2 + 0.28, -8.35);
-    addBox(group, 0.58, 0.03, 0.48, mats.marble, nx, y2 + 0.575, -8.35);
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.22, 12), mats.brass);
-    base.position.set(nx, y2 + 0.70, -8.35);
-    group.add(base);
-    const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.18, 0.20, 16, 1, true), mats.warmShade);
-    shade.position.set(nx, y2 + 0.88, -8.35);
-    group.add(shade);
-  }
-  addRoseArrangement(group, mats, -15.18, y2 + 0.59, -8.18, 0.76, true);
+  // Porcelain Ginger-Jar Bedside Lamps + Hero Rose Vase resting atop Photogrammetry ph_nightstand.glb (top Y = 6.820m)
+  const leftLamp = buildPorcelainTableLamp(mats, false);
+  leftLamp.position.set(-18.46, y2 + 0.700, -8.38);
+  group.add(leftLamp);
+  const rightLamp = buildPorcelainTableLamp(mats, true);
+  rightLamp.position.set(-15.14, y2 + 0.700, -8.38);
+  group.add(rightLamp);
+  addRoseArrangement(group, mats, -15.32, y2 + 0.700, -8.22, 0.74, true);
 
-  // Arched Gilt-Brass Vintage Dressing Vanity + Dusty-Rose Pouf near West Sea Window (-22.65, 6.12, -0.3)
-  addBox(group, 0.54, 0.12, 1.28, mats.creamMolding, -22.65, y2 + 0.74, -0.3);
-  addBox(group, 0.56, 0.03, 1.32, mats.marble, -22.65, y2 + 0.815, -0.3);
-  for (const [vx, vz] of [[-0.20, -0.56], [0.20, -0.56], [-0.20, 0.56], [0.20, 0.56]]) {
-    addBox(group, 0.042, 0.70, 0.042, mats.creamMolding, -22.65 + vx, y2 + 0.35, -0.3 + vz);
+  // Rococo Dressing Vanity against Solid 2F South Rose-Damask Wall (X = -16.65, Z = +3.55, ph_console.glb + ph_ornate_mirror.glb)
+  // Plus Crystal Perfume Flacons on Brass Tray (top Y = 7.012m) & Tufted Velvet Ottoman Pouf
+  const tray = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.13, 0.012, 18), mats.brass);
+  tray.position.set(-16.92, y2 + 0.898, 3.54);
+  group.add(tray);
+  for (const [fx, fz, fh, fMat] of [
+    [-16.96, 3.52, 0.11, mats.roseCrystal],
+    [-16.87, 3.57, 0.085, mats.glass],
+  ]) {
+    const flacon = new THREE.Mesh(createPillowedCushionGeo(0.055, fh, 0.042, 0.012, 0), fMat);
+    flacon.position.set(fx, y2 + 0.904 + fh * 0.5, fz);
+    const stopper = new THREE.Mesh(new THREE.OctahedronGeometry(0.018, 0), mats.brass);
+    stopper.position.set(fx, y2 + 0.912 + fh, fz);
+    group.add(flacon, stopper);
   }
-  const vFrame = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.05, 20), mats.brass);
-  vFrame.rotation.z = Math.PI * 0.5;
-  vFrame.position.set(-22.88, y2 + 1.22, -0.3);
-  group.add(vFrame);
-  const vMir = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.055, 20), mats.mirrorSilver);
-  vMir.rotation.z = Math.PI * 0.5;
-  vMir.position.set(-22.87, y2 + 1.22, -0.3);
-  group.add(vMir);
-  const pouf = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.42, 16), mats.dustyRoseVelvet);
-  pouf.position.set(-22.05, y2 + 0.21, -0.3);
+  addRoseArrangement(group, mats, -16.32, y2 + 0.892, 3.54, 0.70, true);
+
+  // Button-Tufted Dusty-Rose Velvet Dressing Ottoman Pouf on Turned Walnut Legs (-16.65, 6.12, 2.86)
+  const pouf = new THREE.Group();
+  pouf.position.set(-16.65, y2, 2.86);
+  const poufCush = new THREE.Mesh(
+    new THREE.LatheGeometry(
+      [
+        new THREE.Vector2(0.001, 0.22),
+        new THREE.Vector2(0.21, 0.22),
+        new THREE.Vector2(0.24, 0.31),
+        new THREE.Vector2(0.21, 0.42),
+        new THREE.Vector2(0.08, 0.44),
+        new THREE.Vector2(0.001, 0.43),
+      ],
+      20
+    ),
+    mats.dustyRoseVelvet
+  );
+  pouf.add(poufCush);
+  const pBtn = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 8), mats.brass);
+  pBtn.position.y = 0.435;
+  pouf.add(pBtn);
+  for (let l = 0; l < 4; l += 1) {
+    const la = (l / 4) * Math.PI * 2 + Math.PI * 0.25;
+    const pLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.014, 0.23, 10), mats.walnut);
+    pLeg.position.set(Math.cos(la) * 0.16, 0.115, Math.sin(la) * 0.16);
+    pouf.add(pLeg);
+  }
   group.add(pouf);
-  registerBoxCollider(-23.1, -21.8, -1.0, 0.4, 5.4, 9.8);
+  registerBoxCollider(-17.45, -15.85, 2.60, 3.92, 5.4, 9.8);
 
-  // Vintage Celadon-Sage Painted French Armoire (-12.55, 6.12, -8.95) + Trailing Ivy + Framed Floral Painting
-  addBox(group, 1.56, 2.38, 0.58, mats.boiserieSage, -12.55, y2 + 1.19, -9.05);
-  addBox(group, 1.66, 0.10, 0.64, mats.creamMolding, -12.55, y2 + 2.42, -9.05);
-  addBox(group, 0.64, 1.92, 0.03, mats.boiserieRose, -12.92, y2 + 1.20, -8.75);
-  addBox(group, 0.64, 1.92, 0.03, mats.boiserieRose, -12.18, y2 + 1.20, -8.75);
-  addTrailingVine(group, mats, -12.55, y2 + 2.45, -8.72, 1.3, 6, 1);
-  registerBoxCollider(-13.4, -11.7, -9.4, -8.65, 5.4, 9.8);
+  // Sea-View Tea & Reading Nook by 2F West Window (ph_green_chair + ph_armchair + Tripod Walnut Tea Table at -22.05, 6.12, -0.25)
+  const teaTbl = new THREE.Group();
+  teaTbl.position.set(-22.05, y2, -0.25);
+  const ttTop = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.31, 0.032, 24), mats.walnut);
+  ttTop.position.y = 0.565;
+  const ttRim = new THREE.Mesh(new THREE.TorusGeometry(0.318, 0.006, 6, 24), mats.brass);
+  ttRim.rotation.x = Math.PI * 0.5;
+  ttRim.position.y = 0.582;
+  const ttCol = new THREE.Mesh(
+    new THREE.LatheGeometry(
+      [
+        new THREE.Vector2(0.19, 0),
+        new THREE.Vector2(0.17, 0.035),
+        new THREE.Vector2(0.048, 0.12),
+        new THREE.Vector2(0.038, 0.44),
+        new THREE.Vector2(0.082, 0.55),
+      ],
+      18
+    ),
+    mats.walnut
+  );
+  teaTbl.add(ttTop, ttRim, ttCol);
+  group.add(teaTbl);
+  registerBoxCollider(-22.78, -21.45, -1.55, 1.05, 5.4, 9.8);
 
-  addBox(group, 1.24, 0.92, 0.05, mats.brass, -13.2, y2 + 1.78, -2.9);
-  addBox(group, 1.12, 0.80, 0.055, mats.paintingMaster, -13.2, y2 + 1.78, -2.9);
-  // Note: Framed painting mounted on East wall (-11.35, Z = -2.9)
-  group.children[group.children.length - 2].position.set(-11.35, y2 + 1.78, -2.9);
-  group.children[group.children.length - 2].rotation.y = -Math.PI * 0.5;
-  group.children[group.children.length - 1].position.set(-11.36, y2 + 1.78, -2.9);
-  group.children[group.children.length - 1].rotation.y = -Math.PI * 0.5;
+  // Louis XV Arched-Bonnet Celadon-Sage & Dusty-Rose French Armoire (-12.55, 6.12, -9.05) with Brass Cremone Bolts
+  const armX = -12.55;
+  const armZ = -9.05;
+  for (const [fx, fz] of [[-0.72, -0.24], [0.72, -0.24], [-0.72, 0.24], [0.72, 0.24]]) {
+    const foot = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), mats.walnut);
+    foot.scale.set(1, 0.72, 1);
+    foot.position.set(armX + fx, y2 + 0.04, armZ + fz);
+    group.add(foot);
+  }
+  addBox(group, 1.64, 0.10, 0.62, mats.creamMolding, armX, y2 + 0.12, armZ);
+  addBox(group, 1.56, 2.24, 0.56, mats.boiserieSage, armX, y2 + 1.28, armZ);
+  addBox(group, 1.70, 0.11, 0.66, mats.creamMolding, armX, y2 + 2.44, armZ);
+  // Arched bonnet pediment crest
+  const bonnet = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 0.62, 20, 1, false, 0, Math.PI), mats.creamMolding);
+  bonnet.rotation.set(0, Math.PI * 0.5, -Math.PI * 0.5);
+  bonnet.scale.set(1, 1, 0.36);
+  bonnet.position.set(armX, y2 + 2.48, armZ);
+  group.add(bonnet);
+  // Twin recessed boiserie doors + full-height brass cremone bolt rods & handles
+  for (const dx of [-0.38, 0.38]) {
+    addBox(group, 0.68, 2.02, 0.032, mats.creamMolding, armX + dx, y2 + 1.28, armZ + 0.285);
+    addBox(group, 0.56, 1.32, 0.038, mats.boiserieRose, armX + dx, y2 + 1.54, armZ + 0.29);
+    addBox(group, 0.56, 0.46, 0.038, mats.boiserieRoseDeep, armX + dx, y2 + 0.56, armZ + 0.29);
+  }
+  const cremone = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 2.04, 8), mats.brass);
+  cremone.position.set(armX, y2 + 1.28, armZ + 0.312);
+  const cHandle = new THREE.Mesh(new THREE.SphereGeometry(0.026, 10, 8), mats.brass);
+  cHandle.scale.set(0.8, 1.4, 0.8);
+  cHandle.position.set(armX, y2 + 1.18, armZ + 0.328);
+  group.add(cremone, cHandle);
+  addTrailingVine(group, mats, armX, y2 + 2.49, armZ + 0.33, 1.35, 6, 1);
+  registerBoxCollider(-13.45, -11.65, -9.42, -8.65, 5.4, 9.8);
 
-  // Sea-View Vintage Sage Velvet Reading Chaise near South Balcony Doors (-19.6, 6.12, +2.35)
-  const chaise = new THREE.Group();
-  chaise.position.set(-19.6, y2, 2.35);
-  chaise.rotation.y = 2.45;
-  addBox(chaise, 0.82, 0.30, 1.56, mats.sageVelvet, 0, 0.26, 0);
-  addBox(chaise, 0.82, 0.56, 0.18, mats.sageVelvet, 0, 0.58, -0.68);
-  addBox(chaise, 0.44, 0.30, 0.14, mats.dustyRoseVelvet, 0, 0.52, -0.48);
-  group.add(chaise);
-  registerBoxCollider(-20.4, -18.8, 1.55, 3.15, 5.4, 9.8);
-
-  // 2F Chandelier + Wrought-Iron Flower Stands + Hanging Spider Plants (吊兰) + Blooming Planters
-  addCrystalBrassChandelier(group, mats, -16.8, 9.38, -2.8, 6, 0.86);
+  // 2F Ceiling Medallion (for ph_chandelier.glb) + Scrolled Flower Stands + Spider Plants + Blooming Planters
+  addCeilingMedallion(group, mats, -16.8, 9.38, -2.8);
   addVintagePlantStand(group, mats, -12.05, y2, 3.15, -0.65);
   registerCircleCollider(-12.05, 3.15, 0.36, 5.4, 9.8);
   addVintagePlantStand(group, mats, -19.45, y2, -3.55, 0.35);
   registerCircleCollider(-19.45, -3.55, 0.36, 5.4, 9.8);
   addFloweringPlanter(group, mats, -14.35, y2, -7.65, { potStyle: "rose", flowerType: "hydrangeaPink", scale: 1.18, glbTag: "isIndoorGLBRosePot" });
-  addFloweringPlanter(group, mats, -15.7, y2, 3.35, { potStyle: "rose", flowerType: "hydrangeaPink", scale: 1.2, glbTag: "isIndoorGLBRosePot" });
+  addFloweringPlanter(group, mats, -15.35, y2, 3.35, { potStyle: "rose", flowerType: "hydrangeaPink", scale: 1.15, glbTag: "isIndoorGLBRosePot" });
   addFloweringPlanter(group, mats, -22.5, y2, 3.25, { potStyle: "celadon", flowerType: "hydrangeaLilac", scale: 1.15, glbTag: "isIndoorGLBFernPot" });
   addHangingSpiderPlant(group, mats, hangingPlantAnimList, -15.0, 9.18, -4.35, { drop: 0.76, scale: 1.06, rosePot: true });
   addHangingSpiderPlant(group, mats, hangingPlantAnimList, -19.4, 9.18, -5.25, { drop: 0.72, scale: 1.02, rosePot: false });

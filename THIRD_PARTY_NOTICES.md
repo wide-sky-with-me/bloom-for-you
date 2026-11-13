@@ -66,3 +66,25 @@ All 3D models below are self-hosted locally in `site/assets/models/` with textur
    - Titles: `fern_02` and `periwinkle_plant`
    - Author: Poly Haven
    - License: CC0 1.0 Universal (Public Domain Dedication)
+
+## 4. Bundled 3D Photogrammetry Furniture & Vintage Prop `.glb` Assets (`site/assets/models/ph_*.glb`)
+All 18 real-world scanned furniture, lighting, tableware, and vintage prop models below originate from Poly Haven and are dedicated to the public domain under **CC0 1.0 Universal** (with textures downscaled & repacked locally for real-time WebGL2 & single-file offline HTML delivery):
+
+10. `site/assets/models/ph_sofa.glb` — `Sofa_01` (Poly Haven, CC0 1.0)
+11. `site/assets/models/ph_green_chair.glb` — `GreenChair_01` (Poly Haven, CC0 1.0)
+12. `site/assets/models/ph_armchair.glb` — `ArmChair_01` (Poly Haven, CC0 1.0)
+13. `site/assets/models/ph_chandelier.glb` — `Chandelier_03` (Poly Haven, CC0 1.0)
+14. `site/assets/models/ph_ornate_mirror.glb` — `ornate_mirror_01` (Poly Haven, CC0 1.0)
+15. `site/assets/models/ph_console.glb` — `ClassicConsole_01` (Poly Haven, CC0 1.0)
+16. `site/assets/models/ph_nightstand.glb` — `ClassicNightstand_01` (Poly Haven, CC0 1.0)
+17. `site/assets/models/ph_coffee_table.glb` — `CoffeeTable_01` (Poly Haven, CC0 1.0)
+18. `site/assets/models/ph_tea_set.glb` — `tea_set_01` (Poly Haven, CC0 1.0)
+19. `site/assets/models/ph_mantel_clock.glb` — `mantel_clock_01` (Poly Haven, CC0 1.0)
+20. `site/assets/models/ph_picture_frame.glb` — `fancy_picture_frame_02` (Poly Haven, CC0 1.0)
+21. `site/assets/models/ph_bistro_set.glb` — `outdoor_table_chair_set_01` (Poly Haven, CC0 1.0)
+22. `site/assets/models/ph_brass_pan.glb` — `brass_pan_01` (Poly Haven, CC0 1.0)
+23. `site/assets/models/ph_croissant.glb` — `croissant` (Poly Haven, CC0 1.0)
+24. `site/assets/models/ph_wicker_basket.glb` — `wicker_basket_02` (Poly Haven, CC0 1.0)
+25. `site/assets/models/ph_watering_can.glb` — `watering_can_metal_01` (Poly Haven, CC0 1.0)
+26. `site/assets/models/ph_alarm_clock.glb` — `alarm_clock_01` (Poly Haven, CC0 1.0)
+27. `site/assets/models/ph_oil_lamp.glb` — `vintage_oil_lamp` (Poly Haven, CC0 1.0)
