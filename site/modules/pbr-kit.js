@@ -437,12 +437,25 @@ export function getPondNormalizedRadius(x, z) {
 // Deterministic C1-smooth realistic coastal topography across X, Z in [-140, +140].
 // Y = 0.00m is Mean Sea Level.
 export function getWorldTerrainY(x, z) {
+  // Natural multi-harmonic coastal cape & cove undulation so the peninsula never looks square-cut.
+  // Keep Harbor Quay zone (z in [-26.5, +23.0]) completely undisturbed on the East side.
+  const quayCoastProtect = 1.0 - smoothstep(-29.5, -24.5, z) * (1.0 - smoothstep(22.5, 28.5, z));
+  const eastCoastCurve =
+    quayCoastProtect *
+    (11.5 * Math.sin(z * 0.048 + 0.7) + 6.2 * Math.cos(z * 0.105 - 0.4) - 8.5 * smoothstep(-58.0, -108.0, z));
+  const westCoastCurve = 12.0 * Math.sin(z * 0.044 - 0.5) + 6.5 * Math.cos(z * 0.096 + 1.1);
+  const northCoastCurve =
+    13.5 * Math.cos(x * 0.041 + 0.35) +
+    6.8 * Math.sin(x * 0.089 - 0.8) -
+    14.0 * smoothstep(18.0, 52.0, Math.abs(x - 6.0));
+  const southCoastCurve = 9.5 * Math.sin(x * 0.052 + 0.9) + 4.8 * Math.cos(x * 0.11 - 0.3);
+
   // Base organic coastal landmass profile: high in North & West, shelving to East Harbor & South Sea
-  const eastSeaMask = smoothstep(38.0, 56.0, x);
+  const eastSeaMask = smoothstep(38.5 + eastCoastCurve, 57.5 + eastCoastCurve, x);
   const southSeaMask = smoothstep(35.0, 66.0, z) * smoothstep(-44.0, -18.0, x);
-  const farWestCliff = smoothstep(-106.0, -126.0, x);
-  const farSouthCliff = smoothstep(78.0, 102.0, z);
-  const farNorthDrop = smoothstep(-114.0, -134.0, z);
+  const farWestCliff = smoothstep(-102.0 + westCoastCurve, -124.0 + westCoastCurve, x);
+  const farSouthCliff = smoothstep(74.0 + southCoastCurve, 99.0 + southCoastCurve, z);
+  const farNorthDrop = smoothstep(-106.0 + northCoastCurve, -129.0 + northCoastCurve, z);
 
   // Rolling wildflower & woodland hills
   const macroRoll =
@@ -531,6 +544,19 @@ export function getWorldTerrainY(x, z) {
   const wmGate = 1.0 - smoothstep(6.5, 14.0, dWm);
   if (wmGate > 0.001) {
     y = lerp(y, 14.2, wmGate);
+  }
+
+  // Flatten 3 Scenic Northern Hillside Cottage Garden Terraces so foundations sit level
+  for (const [cx, cz, ty] of [
+    [-78.0, -56.0, 14.6],
+    [-18.0, -82.0, 14.4],
+    [24.5, -68.0, 11.2],
+  ]) {
+    const dCot = Math.hypot(x - cx, z - cz);
+    const cotGate = 1.0 - smoothstep(5.8, 12.2, dCot);
+    if (cotGate > 0.001) {
+      y = lerp(y, ty, cotGate);
+    }
   }
 
   // Sculpted Outer-Bay Limestone Sea-Stack Islet at (+58, +56) rising to +5.6m

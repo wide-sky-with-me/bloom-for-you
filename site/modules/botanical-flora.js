@@ -87,9 +87,12 @@ export function isMeadowFloraAllowed(x, z) {
   // 5. Exclude Creek Channel
   if (z >= -114.0 && z <= -23.0 && Math.abs(x - getCreekCenterX(z)) < 3.6) return false;
 
-  // 6. Exclude Cliffside Gazebo Terrace & Hilltop Windmill Terrace
+  // 6. Exclude Cliffside Gazebo Terrace, Hilltop Windmill Terrace & 3 Northern Cottages
   if (Math.hypot(x + 64.0, z - 42.0) < 6.4) return false;
   if (Math.hypot(x + 52.0, z + 68.0) < 6.8) return false;
+  if (Math.hypot(x + 78.0, z + 56.0) < 5.8) return false;
+  if (Math.hypot(x + 18.0, z + 82.0) < 6.2) return false;
+  if (Math.hypot(x - 24.5, z + 68.0) < 5.6) return false;
 
   // 7. Exclude Scenic Footpaths (width ~ 2.6m -> half-clearance < 1.85m)
   if (distToPolyline2D(x, z, WEST_GAZEBO_TRAIL) < 1.85) return false;
@@ -102,11 +105,14 @@ function isTreeSpotAllowed(x, z, placedTrees, minSpacing = 4.2) {
   if (Math.abs(x) > 114.0 || Math.abs(z) > 114.0) return false;
   if (!isMeadowFloraAllowed(x, z)) return false;
 
-  // Extra clearance from footpaths, terraces, villa walls, and steep cliff drops
+  // Extra clearance from footpaths, terraces, villa walls, cottages, and steep cliff drops
   if (distToPolyline2D(x, z, WEST_GAZEBO_TRAIL) < 2.65) return false;
   if (distToPolyline2D(x, z, NORTH_WINDMILL_TRAIL) < 2.65) return false;
   if (Math.hypot(x + 64.0, z - 42.0) < 7.6) return false;
   if (Math.hypot(x + 52.0, z + 68.0) < 8.2) return false;
+  if (Math.hypot(x + 78.0, z + 56.0) < 7.8) return false;
+  if (Math.hypot(x + 18.0, z + 82.0) < 8.2) return false;
+  if (Math.hypot(x - 24.5, z + 68.0) < 7.6) return false;
   if (x >= -36.5 && x <= 6.8 && z >= -14.6 && z <= 24.5) return false;
   if (z >= -114.0 && z <= -23.0 && Math.abs(x - getCreekCenterX(z)) < 4.5) return false;
 
@@ -1835,18 +1841,19 @@ function sampleOrganicMeadowSpot(rng, speciesIdx) {
     let x;
     let z;
     const zone = rng();
-    if (zone < 0.30) {
+    if (zone < 0.24) {
       x = -78.0 + rng() * 54.0;
       z = -16.0 + rng() * 68.0;
-    } else if (zone < 0.56) {
-      x = -32.0 + rng() * 60.0;
-      z = -62.0 + rng() * 50.0;
-    } else if (zone < 0.82) {
-      x = -114.0 + rng() * 92.0;
-      z = -45.0 + rng() * 115.0;
+    } else if (zone < 0.48) {
+      // Sweeping northern hillside & creek-bank floral meadows (visible in default aerial overlook)
+      x = -92.0 + rng() * 134.0;
+      z = -104.0 + rng() * 78.0;
+    } else if (zone < 0.72) {
+      x = -112.0 + rng() * 90.0;
+      z = -45.0 + rng() * 112.0;
     } else {
-      x = -112.0 + rng() * 158.0;
-      z = -112.0 + rng() * 192.0;
+      x = -108.0 + rng() * 154.0;
+      z = -108.0 + rng() * 186.0;
     }
     if (!isMeadowFloraAllowed(x, z)) continue;
 

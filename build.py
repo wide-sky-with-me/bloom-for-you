@@ -25,6 +25,7 @@ REQUIRED_SITE_FILES = (
     "modules/coastal-villa.js",
     "modules/botanical-flora.js",
     "modules/secret-gardens-and-pond.js",
+    "modules/distant-horizon.js",
     "assets/flower-song.woff2",
     "assets/FONT-LICENSE.txt",
     "assets/flower.svg",
@@ -110,8 +111,8 @@ def build(output: Path) -> Path:
             file_hashes[rel] = _sha256(file_path)
 
     release = {
-        "schema": 7,
-        "style": "realistic-coastal-villa-pond-swing-flower-estate-v4",
+        "schema": 8,
+        "style": "realistic-coastal-villa-pond-swing-horizon-estate-v5",
         "worldSizeMeters": 260,
         "renderer": "three-0.186.1",
         "navigation": "default-aerial-overlook-click-to-dive-and-walk-inside",

@@ -382,74 +382,6 @@ function buildCoastalTerrainAndHorizon(parent) {
   terrainMesh.userData.noCastShadow = true;
   terrainMesh.name = "CoastalPeninsulaTerrain";
   parent.add(terrainMesh);
-
-  // Distant Misty Coastal Mountain & Peninsula Amphitheater (radius 780m - 1120m)
-  const buildMountainRing = (innerR, outerR, segs, maxH, baseHex, crestHex, seedOff) => {
-    const geo = new THREE.BufferGeometry();
-    const positions = [];
-    const vColors = [];
-    const uvs = [];
-    const indices = [];
-    const cBase = new THREE.Color(baseHex);
-    const cCrest = new THREE.Color(crestHex);
-    const cTmp = new THREE.Color();
-
-    const radialSteps = 5;
-    for (let r = 0; r <= radialSteps; r += 1) {
-      const rt = r / radialSteps;
-      const profile = Math.sin(rt * Math.PI);
-      for (let s = 0; s <= segs; s += 1) {
-        const u = s / segs;
-        const ang = u * Math.PI * 2;
-        const ridge =
-          0.46 * Math.sin(ang * 5.0 + seedOff) +
-          0.31 * Math.cos(ang * 11.0 - seedOff * 1.7) +
-          0.16 * Math.sin(ang * 23.0 + 1.1) +
-          0.09 * Math.cos(ang * 37.0 - 0.6);
-
-        // Leave a lower dramatic open-bay horizon channel to East-Southeast (ang ~ 0.35 rad)
-        const seaChannelDip = 1.0 - 0.68 * Math.exp(-Math.pow(Math.sin((ang - 0.32) * 0.5), 2) / 0.045);
-        const radius = lerp(innerR, outerR, rt) + 26.0 * Math.sin(ang * 7.0 + rt * 2.0);
-        const hPeak = Math.max(6.0, maxH * (0.52 + 0.48 * ridge) * seaChannelDip);
-        const y = -8.0 + (hPeak + 8.0) * Math.pow(profile, 0.78);
-
-        positions.push(Math.cos(ang) * radius, y, Math.sin(ang) * radius);
-        uvs.push(u * 12, rt);
-        const hFactor = clamp(y / Math.max(maxH, 1), 0, 1);
-        cTmp.copy(cBase).lerp(cCrest, smoothstep(0.18, 0.88, hFactor));
-        vColors.push(cTmp.r, cTmp.g, cTmp.b);
-      }
-    }
-
-    const stride = segs + 1;
-    for (let r = 0; r < radialSteps; r += 1) {
-      for (let s = 0; s < segs; s += 1) {
-        const a = r * stride + s;
-        const b = a + 1;
-        const c = (r + 1) * stride + s;
-        const d = c + 1;
-        indices.push(a, c, b, b, c, d);
-      }
-    }
-
-    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute("color", new THREE.Float32BufferAttribute(vColors, 3));
-    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-    geo.setIndex(indices);
-    geo.computeVertexNormals();
-
-    const mat = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.95,
-      metalness: 0.0,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.userData.noShadow = true;
-    return mesh;
-  };
-
-  parent.add(buildMountainRing(780, 945, 160, 96, 0x5c7b83, 0x7b98a1, 0.7));
-  parent.add(buildMountainRing(930, 1120, 160, 148, 0x79959e, 0x9ab2ba, 2.4));
 }
 
 function createWickerMat() {
@@ -584,6 +516,22 @@ function buildCourtyardAndTrails(parent, waterAnimList) {
     [-34.0, -60.0],
     [-48.2, -66.5],
   ]);
+  // Scenic hillside garden spurs linking the 3 Provençal stone cottages to the main trail
+  addPolylineStones([
+    [-48.2, -65.0],
+    [-62.5, -60.5],
+    [-73.5, -56.5],
+  ], 1.2, 0.88);
+  addPolylineStones([
+    [-14.0, -53.0],
+    [-16.2, -66.5],
+    [-17.8, -76.5],
+  ], 1.2, 0.88);
+  addPolylineStones([
+    [14.2, -45.5],
+    [19.2, -55.5],
+    [23.2, -63.0],
+  ], 1.2, 0.88);
 
   const trailsMesh = new THREE.Mesh(safeMerge(rampGeos), trailStoneMat);
   sec.add(trailsMesh);
@@ -1101,6 +1049,75 @@ function buildQuayDetailsLandingAndCafe(
   }
 
   buildBoathouseEspressoPergola(sec, { quayWallMat, castIronMat, brassMat, teakMat, lanternGlowMat });
+
+  // Mediterranean Harborside Promenade Bistro Parasols, Limestone Floral Urns & Teak Benches
+  const creamCanvas = pbrFabricMat(0xf7f2e6, { roughness: 0.82, side: THREE.DoubleSide });
+  const terracottaPotMat = pbrPlasterMat(0xc46d4e, { roughness: 0.8 });
+  const oliveLeafMat = new THREE.MeshStandardMaterial({ color: 0x526b46, roughness: 0.78 });
+
+  for (const [tx, tz] of [
+    [16.2, 6.2],
+    [22.4, 9.8],
+    [16.5, -20.2],
+  ]) {
+    registerCircleCollider(tx, tz, 0.95);
+    const bistro = new THREE.Group();
+    bistro.position.set(tx, 1.36, tz);
+
+    const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.28, 0.74, 12), castIronMat);
+    ped.position.y = 0.37;
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.66, 0.045, 20), copingMat);
+    top.position.y = 0.76;
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 2.48, 10), teakMat);
+    pole.position.y = 1.24;
+    const canopy = new THREE.Mesh(new THREE.ConeGeometry(1.52, 0.48, 8, 1, true), creamCanvas);
+    canopy.position.y = 2.34;
+    const finial = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), brassMat);
+    finial.position.y = 2.61;
+    bistro.add(ped, top, pole, canopy, finial);
+
+    for (const ca of [0.4, 2.5, 4.5]) {
+      const cx = Math.cos(ca) * 0.96;
+      const cz = Math.sin(ca) * 0.96;
+      const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.21, 0.035, 12), teakMat);
+      seat.position.set(cx, 0.45, cz);
+      const cStem = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.14, 0.44, 8), castIronMat);
+      cStem.position.set(cx, 0.22, cz);
+      bistro.add(seat, cStem);
+    }
+    const centerpiece = createRoseBouquet({ count: 3, scale: 0.48 });
+    centerpiece.position.y = 0.78;
+    bistro.add(centerpiece);
+    sec.add(bistro);
+  }
+
+  for (const [px, pz] of [
+    [12.2, -8.5],
+    [12.2, 12.8],
+    [29.5, -21.5],
+    [36.5, 16.5],
+    [39.8, -16.8],
+  ]) {
+    registerCircleCollider(px, pz, 0.62);
+    const urn = new THREE.Group();
+    urn.position.set(px, 1.36, pz);
+    const plinth = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.24, 0.82), copingMat);
+    plinth.position.y = 0.12;
+    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.28, 0.58, 14), terracottaPotMat);
+    pot.position.y = 0.52;
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.045, 8, 18), terracottaPotMat);
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = 0.81;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.08, 0.92, 8), teakMat);
+    trunk.position.y = 1.18;
+    const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(0.56, 1), oliveLeafMat);
+    crown.scale.set(1.08, 0.86, 1.04);
+    crown.position.y = 1.78;
+    const blooms = createRoseBouquet({ count: 5, scale: 0.62 });
+    blooms.position.y = 0.82;
+    urn.add(plinth, pot, rim, trunk, crown, blooms);
+    sec.add(urn);
+  }
 }
 
 function buildBoathouseEspressoPergola(
@@ -2170,58 +2187,126 @@ function buildWindmillCottagesAndIslet(parent) {
   tagInteractive(wm, "windmill", "花海山顶石砌风车");
   sec.add(wm);
 
-  // 3 Picturesque Stone-and-Terracotta Coastal Cottages on Distant Northern Slopes
-  const plasterMat = pbrPlasterMat(0xf1e9da, { repeatX: 3, repeatY: 2, roughness: 0.86 });
+  // 3 Detailed Provençal Stone-and-Terracotta Hillside Country Cottages on Level Terraces
+  const plasterCream = pbrPlasterMat(0xf4ecdd, { repeatX: 3, repeatY: 2, roughness: 0.85 });
+  const plasterOchre = pbrPlasterMat(0xefe0c6, { repeatX: 3, repeatY: 2, roughness: 0.85 });
+  const shutterSage = pbrWoodMat(0x6b8471, { roughness: 0.62 });
+  const shutterBlue = pbrWoodMat(0x5b768c, { roughness: 0.62 });
   const roofTex = getTerracottaRoofTextures(6, 4);
   const roofMat = new THREE.MeshStandardMaterial({
-    color: 0xc97352,
+    color: 0xc56b49,
     map: roofTex.map,
     normalMap: roofTex.normalMap,
-    roughness: 0.78,
+    roughness: 0.76,
   });
   const warmWinMat = new THREE.MeshStandardMaterial({
-    color: 0xfff1cf,
-    emissive: 0xffb85c,
-    emissiveIntensity: 1.65,
-    roughness: 0.25,
+    color: 0xfff2d2,
+    emissive: 0xffb658,
+    emissiveIntensity: 1.55,
+    roughness: 0.22,
   });
+  const cypressMat = new THREE.MeshStandardMaterial({ color: 0x365536, roughness: 0.82 });
 
   const cottageSites = [
-    [-82.0, -58.0, 0.38, 7.2, 5.4],
-    [-18.0, -86.0, -0.22, 8.0, 5.6],
-    [42.0, -74.0, -0.48, 7.0, 5.2],
+    [-78.0, -56.0, 0.42, 8.2, 5.8, plasterCream, shutterSage],
+    [-18.0, -82.0, -0.18, 8.8, 6.0, plasterOchre, shutterBlue],
+    [24.5, -68.0, -0.52, 7.8, 5.6, plasterCream, shutterSage],
   ];
-  for (const [cx, cz, ry, cw, cd] of cottageSites) {
+  for (const [cx, cz, ry, cw, cd, wallMat, shutMat] of cottageSites) {
     const cy = getWorldTerrainY(cx, cz);
-    const halfR = Math.max(cw, cd) * 0.55;
+    const halfR = Math.max(cw, cd) * 0.58;
     registerBoxCollider(cx - halfR, cx + halfR, cz - halfR, cz + halfR);
 
     const cot = new THREE.Group();
     cot.position.set(cx, cy, cz);
     cot.rotation.y = ry;
 
-    const plinth = new THREE.Mesh(new THREE.BoxGeometry(cw + 0.3, 2.8, cd + 0.3), towerStone);
-    plinth.position.y = -1.05;
-    const body = new THREE.Mesh(new THREE.BoxGeometry(cw, 3.3, cd), plasterMat);
-    body.position.y = 1.95;
-    const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.85, 2.6, 0.85), towerStone);
-    chimney.position.set(cw * 0.32, 4.4, -cd * 0.22);
-    cot.add(plinth, body, chimney);
+    // Level flagstone garden terrace & low dry-stone retaining wall
+    const terrace = new THREE.Mesh(new THREE.CylinderGeometry(cw * 0.86, cw * 0.96, 1.8, 12), towerStone);
+    terrace.position.y = -0.84;
+    const gardenWall = new THREE.Mesh(
+      new THREE.TorusGeometry(cw * 0.78, 0.22, 6, 16, Math.PI * 1.35),
+      towerStone
+    );
+    gardenWall.rotation.x = Math.PI / 2;
+    gardenWall.rotation.z = Math.PI * 0.82;
+    gardenWall.position.y = 0.22;
 
+    const plinth = new THREE.Mesh(new THREE.BoxGeometry(cw + 0.36, 1.4, cd + 0.36), towerStone);
+    plinth.position.y = -0.35;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(cw, 3.55, cd), wallMat);
+    body.position.y = 2.08;
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(cw * 0.44, 2.75, cd * 0.72), wallMat);
+    wing.position.set(-cw * 0.62, 1.68, -cd * 0.08);
+    const wingRoof = new THREE.Mesh(new THREE.BoxGeometry(cw * 0.5, 0.16, cd * 0.84), roofMat);
+    wingRoof.position.set(-cw * 0.62, 3.22, -cd * 0.08);
+    wingRoof.rotation.z = 0.24;
+
+    const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.86, 2.85, 0.86), towerStone);
+    chimney.position.set(cw * 0.3, 4.65, -cd * 0.22);
+    const chimPot = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.45, 10), roofMat);
+    chimPot.position.set(cw * 0.3, 6.22, -cd * 0.22);
+    cot.add(terrace, gardenWall, plinth, body, wing, wingRoof, chimney, chimPot);
+
+    // Gable end triangles + overhanging terracotta barrel-tile roof slopes
     for (const side of [-1, 1]) {
-      const slopeLen = Math.hypot(cd * 0.58, 1.65);
-      const roofSlope = new THREE.Mesh(new THREE.BoxGeometry(cw + 0.7, 0.16, slopeLen), roofMat);
-      roofSlope.position.set(0, 4.32, side * cd * 0.27);
-      roofSlope.rotation.x = side * Math.atan2(1.65, cd * 0.58);
+      const slopeLen = Math.hypot(cd * 0.6, 1.75);
+      const roofSlope = new THREE.Mesh(new THREE.BoxGeometry(cw + 0.85, 0.18, slopeLen), roofMat);
+      roofSlope.position.set(0, 4.55, side * cd * 0.28);
+      roofSlope.rotation.x = side * Math.atan2(1.75, cd * 0.6);
       cot.add(roofSlope);
     }
-    for (const wx of [-cw * 0.26, cw * 0.26]) {
-      for (const wz of [-cd * 0.51, cd * 0.51]) {
-        const win = new THREE.Mesh(new THREE.BoxGeometry(0.92, 1.08, 0.08), warmWinMat);
-        win.position.set(wx, 2.05, wz);
-        cot.add(win);
+
+    // Timber entry pergola porch & arched oak doorway on +Z facade
+    const door = new THREE.Mesh(new THREE.BoxGeometry(1.12, 2.18, 0.14), cedarMat);
+    door.position.set(0, 1.18, cd * 0.51);
+    const porchBeam = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.14, 0.14), cedarMat);
+    porchBeam.position.set(0, 2.68, cd * 0.5 + 1.45);
+    cot.add(door, porchBeam);
+    for (const px of [-1.45, 1.45]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.13, 2.62, 0.13), cedarMat);
+      post.position.set(px, 1.35, cd * 0.5 + 1.45);
+      const rafter = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 1.65), cedarMat);
+      rafter.position.set(px, 2.78, cd * 0.5 + 0.78);
+      cot.add(post, rafter);
+    }
+    const porchRoses = createRoseBouquet({ count: 6, scale: 0.75 });
+    porchRoses.position.set(-1.35, 2.75, cd * 0.5 + 1.25);
+    const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), warmWinMat);
+    lantern.position.set(0.82, 2.25, cd * 0.5 + 0.18);
+    cot.add(porchRoses, lantern);
+
+    // Shuttered mullioned windows + flower boxes
+    for (const wx of [-cw * 0.28, cw * 0.28]) {
+      for (const wzSign of [-1, 1]) {
+        const wz = wzSign * (cd * 0.505);
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(1.06, 1.22, 0.1), cedarMat);
+        frame.position.set(wx, 2.22, wz);
+        const pane = new THREE.Mesh(new THREE.BoxGeometry(0.88, 1.04, 0.12), warmWinMat);
+        pane.position.set(wx, 2.22, wz);
+        const sillBox = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.2, 0.26), cedarMat);
+        sillBox.position.set(wx, 1.54, wz + wzSign * 0.12);
+        cot.add(frame, pane, sillBox);
+        for (const sSide of [-1, 1]) {
+          const shutter = new THREE.Mesh(new THREE.BoxGeometry(0.42, 1.16, 0.06), shutMat);
+          shutter.position.set(wx + sSide * 0.68, 2.22, wz + wzSign * 0.04);
+          cot.add(shutter);
+        }
       }
     }
+
+    // Paired Italian Cypress accents framing each hillside cottage garden
+    for (const [tx, tz, th] of [
+      [cw * 0.68, cd * 0.35, 6.4],
+      [-cw * 0.88, cd * 0.45, 5.2],
+    ]) {
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 1.4, 7), cedarMat);
+      trunk.position.set(tx, 0.7, tz);
+      const spire = new THREE.Mesh(new THREE.ConeGeometry(0.68, th, 9), cypressMat);
+      spire.position.set(tx, 1.1 + th * 0.5, tz);
+      cot.add(trunk, spire);
+    }
+
     sec.add(cot);
   }
 

@@ -21,6 +21,7 @@ import { buildHarborAndEstate } from "./modules/harbor-and-estate.js";
 import { buildCoastalVilla } from "./modules/coastal-villa.js";
 import { buildBotanicalFlora } from "./modules/botanical-flora.js";
 import { buildSecretGardensAndPond } from "./modules/secret-gardens-and-pond.js";
+import { buildDistantHorizon } from "./modules/distant-horizon.js";
 import { createHarborAudio } from "./audio.js";
 
 async function loadGiftLetter() {
@@ -133,6 +134,9 @@ async function init() {
 
   const oceanSky = buildRealisticOceanAndSky({ fogColor: fogColorHex, fogDensity });
   worldRoot.add(oceanSky.group);
+
+  const distantHorizon = buildDistantHorizon();
+  worldRoot.add(distantHorizon.group);
 
   const estate = buildHarborAndEstate();
   worldRoot.add(estate.group);
@@ -524,6 +528,7 @@ async function init() {
     elapsed += dt;
     controls.update(dt);
     oceanSky.update?.(elapsed, dt);
+    distantHorizon.update?.(elapsed, dt);
     estate.update?.(elapsed, dt);
     villa.update?.(elapsed, dt);
     flora.update?.(elapsed, dt);

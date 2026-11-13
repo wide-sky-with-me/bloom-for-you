@@ -24,8 +24,8 @@ class RealisticCoastalEstateTests(unittest.TestCase):
             self.assertTrue((built / "THIRD_PARTY_NOTICES.md").is_file())
 
             manifest = json.loads((built / "release.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["schema"], 7)
-            self.assertEqual(manifest["style"], "realistic-coastal-villa-pond-swing-flower-estate-v4")
+            self.assertEqual(manifest["schema"], 8)
+            self.assertEqual(manifest["style"], "realistic-coastal-villa-pond-swing-horizon-estate-v5")
             self.assertEqual(manifest["worldSizeMeters"], 260)
             self.assertEqual(manifest["renderer"], "three-0.186.1")
             self.assertEqual(manifest["navigation"], "default-aerial-overlook-click-to-dive-and-walk-inside")
@@ -37,6 +37,7 @@ class RealisticCoastalEstateTests(unittest.TestCase):
                 "modules/coastal-villa.js",
                 "modules/botanical-flora.js",
                 "modules/secret-gardens-and-pond.js",
+                "modules/distant-horizon.js",
                 "assets/models/freshwater_shrimp.glb",
                 "assets/models/ryukin_goldfish.glb",
                 "assets/models/pond_koi.glb",
@@ -105,7 +106,7 @@ class RealisticCoastalEstateTests(unittest.TestCase):
             SITE / "audio.js",
             *sorted((SITE / "modules").glob("*.js")),
         ]
-        self.assertEqual(len(js_files), 9)
+        self.assertEqual(len(js_files), 10)
         for js_path in js_files:
             proc = subprocess.run(
                 [node, "--check", str(js_path)],

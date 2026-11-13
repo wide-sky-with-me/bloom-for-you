@@ -53,21 +53,36 @@ const SKY_FRAGMENT = /* glsl */ `
     float y = clamp(dir.y, -0.15, 1.0);
     float up = max(y, 0.0);
 
-    // Rayleigh + Mie coastal daylight sky gradient
-    vec3 zenithCol  = vec3(0.185, 0.415, 0.695);
+    // Rayleigh + Mie coastal daylight sky gradient with warm golden-apricot horizon glow
+    vec3 zenithCol  = vec3(0.180, 0.410, 0.695);
     vec3 midSkyCol  = vec3(0.435, 0.680, 0.885);
-    vec3 horizonCol = vec3(0.845, 0.905, 0.945);
+    vec3 horizonCol = vec3(0.865, 0.910, 0.945);
 
     vec3 sky = mix(horizonCol, midSkyCol, pow(up, 0.36));
     sky = mix(sky, zenithCol, pow(up, 0.88));
 
-    // Solar Mie aureole & crisp sun disc
+    // Solar Mie aureole, warm horizon band & crisp sun disc
     float mu = max(dot(dir, normalize(uSunDir)), 0.0);
-    sky += vec3(1.0, 0.91, 0.72) * pow(mu, 7.0) * 0.24;
+    float horizonGlow = exp(-abs(dir.y - 0.02) * 9.5) * (0.28 + 0.72 * pow(mu, 2.2));
+    sky += vec3(1.0, 0.86, 0.68) * horizonGlow * 0.22;
+    sky += vec3(1.0, 0.91, 0.72) * pow(mu, 7.0) * 0.26;
     sky += vec3(1.0, 0.96, 0.86) * pow(mu, 96.0) * 0.58;
     sky += vec3(1.0, 0.99, 0.94) * smoothstep(0.99935, 0.99985, mu) * 2.2;
 
-    // Soft sunlit coastal cumulus clouds projected onto sky dome
+    // Distant sunlit coastal horizon cumulus banks sitting above mountain crests
+    if (dir.y > 0.008 && dir.y < 0.26) {
+      float az = atan(dir.z, dir.x);
+      vec2 bankUV = vec2(az * 2.8 + uTime * 0.0014, (dir.y - 0.01) * 11.5);
+      float bankShape = fbmCloud(bankUV * vec2(1.15, 0.85)) * 0.72 + fbmCloud(bankUV * 2.7 + 4.1) * 0.28;
+      float verticalEnv = smoothstep(0.008, 0.042, dir.y) * (1.0 - smoothstep(0.11, 0.24, dir.y));
+      float bankMask = smoothstep(0.46, 0.74, bankShape) * verticalEnv * 0.78;
+      float rim = clamp((fbmCloud(bankUV + vec2(0.0, 0.16)) - bankShape) * -2.6 + 0.68, 0.0, 1.0);
+      vec3 bankShadow = mix(vec3(0.73, 0.81, 0.89), vec3(0.82, 0.84, 0.90), pow(mu, 2.0));
+      vec3 bankLit = mix(vec3(0.98, 0.98, 0.99), vec3(1.0, 0.93, 0.82), 0.35 + 0.55 * pow(mu, 2.4));
+      sky = mix(sky, mix(bankShadow, bankLit, rim), bankMask);
+    }
+
+    // Soft sunlit overhead coastal cumulus clouds projected onto sky dome
     if (dir.y > 0.025) {
       vec2 cloudUV = dir.xz / (dir.y + 0.16) * 1.18 + vec2(uTime * 0.0045, uTime * 0.0022);
       float cBase = fbmCloud(cloudUV);
