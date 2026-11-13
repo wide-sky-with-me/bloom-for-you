@@ -88,3 +88,13 @@ All 18 real-world scanned furniture, lighting, tableware, and vintage prop model
 25. `site/assets/models/ph_watering_can.glb` — `watering_can_metal_01` (Poly Haven, CC0 1.0)
 26. `site/assets/models/ph_alarm_clock.glb` — `alarm_clock_01` (Poly Haven, CC0 1.0)
 27. `site/assets/models/ph_oil_lamp.glb` — `vintage_oil_lamp` (Poly Haven, CC0 1.0)
+28. `site/assets/models/ph_cliff_01.glb` — `coastal_cliff_01` (Poly Haven, CC0 1.0)
+29. `site/assets/models/ph_cliff_02.glb` — `coastal_cliff_02` (Poly Haven, CC0 1.0)
+30. `site/assets/models/ph_coast_rocks.glb` — `coast_rocks_01` (Poly Haven, CC0 1.0)
+31. `site/assets/models/ph_coast_rocks_b.glb` — `coast_rocks_03` (Poly Haven, CC0 1.0)
+32. `site/assets/models/ph_moss_boulder.glb` — `rock_moss_set_01` (Poly Haven, CC0 1.0)
+33. `site/assets/models/ph_coastal_shrub.glb` — `shrub_02` (Poly Haven, CC0 1.0)
+34. `site/assets/models/ph_lifebuoy.glb` — `lifebuoy` (Poly Haven, CC0 1.0)
+35. `site/assets/models/ph_picnic_table.glb` — `wooden_picnic_table` (Poly Haven, CC0 1.0)
+
+`site/assets/models/couple_parts.glb` is an original first-party Blender sculpt authored specifically for this project.

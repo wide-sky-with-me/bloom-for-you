@@ -22,7 +22,7 @@ import {
   enablePBRShadows,
   batchStaticMeshesByMaterial,
 } from "./pbr-kit.js";
-import { createRoseBouquet } from "./botanical-flora.js";
+import { createRoseBouquet, createInteractionFX } from "./botanical-flora.js";
 import {
   createPillowedCushionGeo,
   buildButtonTuftedChesterfieldSofa,
@@ -37,6 +37,21 @@ import {
   buildAcousticParlorGuitarOnStand,
   buildFourPosterCanopyBed,
   buildPorcelainTableLamp,
+  buildItalianLeverEspressoMachine,
+  buildFramedPortrait,
+  buildBookStack,
+  buildPlushSlippers,
+  buildFruitBowl,
+  buildPorcelainTeaService,
+  buildWateringCan,
+  buildDrapedThrow,
+  buildPillarCandleTrio,
+  buildUtensilCrock,
+  buildApothecaryJarRow,
+  buildLogBasket,
+  buildFireToolStand,
+  buildPlaceSetting,
+  getDetailMats,
 } from "./vintage-craft-props.js";
 
 function createFineWoodMaterial(colorHex, { roughness = 0.38, repeatX = 2, repeatY = 2, seed = 4201 } = {}) {
@@ -919,22 +934,77 @@ function addCeilingMedallion(parent, mats, x, ceilingY, z) {
   return med;
 }
 
-function createPleatedCurtain(mat, width, height) {
+function createPleatedCurtain(mat, width, height, { tie = null, morphTie = false } = {}) {
   const segsX = 16;
-  const geom = new THREE.PlaneGeometry(width, height, segsX, 6);
+  const segsY = tie ? 18 : 6;
+  const geom = new THREE.PlaneGeometry(width, height, segsX, segsY);
   geom.translate(0, -height * 0.5, 0);
   const pos = geom.attributes.position;
+  const base = new Float32Array(pos.count * 3);
+  const tied = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i += 1) {
     const px = pos.getX(i);
     const py = pos.getY(i);
     const dropFactor = clamp(-py / height, 0, 1);
     const pleat = Math.sin((px / width) * Math.PI * 8.0) * (0.03 + 0.02 * dropFactor);
-    pos.setZ(i, pleat);
+    base[i * 3] = px;
+    base[i * 3 + 1] = py;
+    base[i * 3 + 2] = pleat;
+    if (tie) {
+      // gather the drape toward its outer edge at the tie-back height (hourglass swag)
+      const xo = tie.side * width * 0.5;
+      const yt = -height + tie.y;
+      const sig = py > yt ? 0.62 : 0.3;
+      const s = 1 - 0.64 * Math.exp(-Math.pow((py - yt) / sig, 2));
+      const blouse = py > yt ? Math.exp(-Math.pow((py - yt - 0.18) / 0.22, 2)) * 0.035 : 0;
+      tied[i * 3] = xo + (px - xo) * s;
+      tied[i * 3 + 1] = py;
+      tied[i * 3 + 2] = pleat * (1 + (1 - s) * 1.6) + blouse;
+    }
   }
+  if (tie && !morphTie) {
+    pos.array.set(tied);
+  } else {
+    pos.array.set(base);
+  }
+  pos.needsUpdate = true;
   geom.computeVertexNormals();
+  if (tie && morphTie) {
+    const tg = new THREE.BufferGeometry();
+    tg.setAttribute("position", new THREE.Float32BufferAttribute(tied, 3));
+    tg.setIndex(geom.index);
+    tg.computeVertexNormals();
+    geom.morphAttributes.position = [tg.attributes.position];
+    geom.morphAttributes.normal = [tg.attributes.normal];
+  }
   const mesh = new THREE.Mesh(geom, mat);
+  if (tie && morphTie) mesh.morphTargetInfluences[0] = 1;
   mesh.userData.noShadow = true;
   return mesh;
+}
+
+// Brass rosette holdback + tasselled silk cord gathered around a tied drape (in the drape's local frame)
+function addCurtainTieBack(parent, mats, width, height, tie) {
+  const xo = tie.side * width * 0.5;
+  const s = 1 - 0.64;
+  const cx = xo + (0 - xo) * s;
+  const yt = -height + tie.y;
+  const cord = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.009, 6, 18), mats.brass);
+  cord.scale.set(1.0, 0.55, 0.45);
+  cord.rotation.x = Math.PI * 0.5;
+  cord.position.set(cx, yt, 0.0);
+  parent.add(cord);
+  const rosette = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.03, 14), mats.brass);
+  rosette.rotation.x = Math.PI * 0.5;
+  rosette.position.set(xo + tie.side * 0.05, yt, -0.03);
+  parent.add(rosette);
+  const tassel = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.11, 8), mats.roseDrape);
+  tassel.position.set(cx + tie.side * 0.05, yt - 0.1, 0.04);
+  parent.add(tassel);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6), mats.brass);
+  knob.position.set(cx + tie.side * 0.05, yt - 0.035, 0.04);
+  parent.add(knob);
+  return [cord, tassel, knob];
 }
 
 function addCoachSconce(parent, mats, x, y, z, rotY = 0) {
@@ -1024,6 +1094,20 @@ function addInteriorVintageWallFace(
       addBox(parent, 0.012, uh, span, paperMat, off1, uy, midU);
     }
     addBox(parent, 0.038, 0.085, span, mats.creamMolding, off2, topY - 0.045, midU);
+  }
+  // Moulded skirting board (plinth + ogee bead) and a stepped crown fascia under the cornice
+  const offSk = fixedCoord + normalSign * 0.15;
+  const offBead = fixedCoord + normalSign * 0.16;
+  const offCrown = fixedCoord + normalSign * 0.146;
+  const skirtMat = theme === "rose" ? mats.creamMolding : mats.creamMolding;
+  if (axis === "x") {
+    addBox(parent, span, 0.15, 0.03, skirtMat, midU, baseY + 0.075, offSk);
+    addBox(parent, span, 0.022, 0.018, skirtMat, midU, baseY + 0.158, offBead);
+    if (topY - baseY > 1.6) addBox(parent, span, 0.045, 0.03, mats.creamMolding, midU, topY - 0.11, offCrown);
+  } else {
+    addBox(parent, 0.03, 0.15, span, skirtMat, offSk, baseY + 0.075, midU);
+    addBox(parent, 0.018, 0.022, span, skirtMat, offBead, baseY + 0.158, midU);
+    if (topY - baseY > 1.6) addBox(parent, 0.03, 0.045, span, mats.creamMolding, offCrown, topY - 0.11, midU);
   }
 }
 
@@ -1268,7 +1352,7 @@ function buildPlinthTerracesAndWalkZones(group, mats) {
   addFloweringPlanter(group, mats, -5.4, 2.60, 5.3, { potStyle: "celadon", flowerType: "hydrangeaBlue", scale: 1.25, glbTag: "isIndoorGLBMargaritaPot" });
 }
 
-function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlantAnimList) {
+function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlantAnimList, refs = {}) {
   const y1Base = 2.60;
   const y1Top = 6.00;
   const h1 = y1Top - y1Base;
@@ -1288,10 +1372,26 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
     interiorSign,
     floorBase,
     floorTop,
-    { bays = 3, theme = "sage", shutters = true, flowerBox = true } = {}
+    { bays = 3, theme = "sage", shutters = true, flowerBox = true, interactiveKey = null } = {}
   ) => {
     const span = u1 - u0;
     const midU = (u0 + u1) * 0.5;
+    const drapeRec = interactiveKey ? { sheers: [], roses: [], ties: [], axis, span, midU } : null;
+    if (drapeRec) refs[interactiveKey] = drapeRec;
+    const addTiedDrape = (px, py, pz, rotY, localSide, dropH) => {
+      const tie = { side: localSide, y: 1.0 };
+      const holder = new THREE.Group();
+      holder.position.set(px, py, pz);
+      holder.rotation.y = rotY;
+      const roseC = createPleatedCurtain(mats.roseDrape, 0.44, dropH, { tie, morphTie: Boolean(drapeRec) });
+      holder.add(roseC);
+      const tieParts = addCurtainTieBack(holder, mats, 0.44, dropH, tie);
+      group.add(holder);
+      if (drapeRec) {
+        holder.userData.dynamic = true;
+        drapeRec.roses.push({ holder, mesh: roseC, baseX: px, baseZ: pz, localSide, tieParts });
+      }
+    };
     const sillY = floorBase + 0.76;
     const headY = floorTop - 0.52;
     const sillH = sillY - floorBase;
@@ -1355,9 +1455,8 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
         group.add(sheer);
         curtainAnimList.push({ mesh: sheer, phase: midU * 0.3 + side });
 
-        const roseC = createPleatedCurtain(mats.roseDrape, 0.44, dropH);
-        roseC.position.set(midU + side * (span * 0.5 + 0.02), headY + 0.135, cz + interiorSign * 0.03);
-        group.add(roseC);
+        addTiedDrape(midU + side * (span * 0.5 + 0.02), headY + 0.135, cz + interiorSign * 0.03, 0, side, dropH);
+        if (drapeRec) drapeRec.sheers.push({ mesh: sheer, baseX: sheer.position.x, baseZ: sheer.position.z, side });
       }
     } else {
       addBox(group, 0.24, sillH, span, mats.extPlaster, fixedPos, floorBase + sillH * 0.5, midU);
@@ -1409,10 +1508,8 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
         group.add(sheer);
         curtainAnimList.push({ mesh: sheer, phase: midU * 0.3 + side });
 
-        const roseC = createPleatedCurtain(mats.roseDrape, 0.44, dropH);
-        roseC.rotation.y = Math.PI * 0.5;
-        roseC.position.set(cx + interiorSign * 0.03, headY + 0.135, midU + side * (span * 0.5 + 0.02));
-        group.add(roseC);
+        addTiedDrape(cx + interiorSign * 0.03, headY + 0.135, midU + side * (span * 0.5 + 0.02), Math.PI * 0.5, -side, dropH);
+        if (drapeRec) drapeRec.sheers.push({ mesh: sheer, baseX: sheer.position.x, baseZ: sheer.position.z, side });
       }
     }
   };
@@ -1424,11 +1521,15 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
   // 1F South Wall (Z = +4.0, X in [-23.4, -10.4]): Salon Window [-21.6, -17.6], Main French Doors [-15.2, -12.8]
   addBox(group, 1.8, h1, 0.24, mats.extPlaster, -22.5, mid1, 4.0);
   addInteriorVintageWallFace(group, mats, "x", -23.3, -21.6, 4.0, -1, y1Base, y1Top, { theme: "sage" });
-  addVillaWindow("x", -21.6, -17.6, 4.0, -1, y1Base, y1Top, { bays: 3, theme: "sage" });
+  addVillaWindow("x", -21.6, -17.6, 4.0, -1, y1Base, y1Top, { bays: 3, theme: "sage", interactiveKey: "salonDrapes" });
   addBox(group, 2.4, h1, 0.24, mats.extPlaster, -16.4, mid1, 4.0);
   addInteriorVintageWallFace(group, mats, "x", -17.6, -15.2, 4.0, -1, y1Base, y1Top, { theme: "sage" });
   addBox(group, 2.4, y1Top - 5.25, 0.24, mats.extPlaster, -14.0, (y1Top + 5.25) * 0.5, 4.0);
   addBox(group, 2.58, 0.12, 0.32, mats.copingStone, -14.0, 5.26, 4.0);
+  // Moulded French-door casing jamb & transom frame around [-15.2, -12.8]
+  addBox(group, 0.08, 2.66, 0.32, mats.creamMolding, -15.22, y1Base + 1.33, 3.96);
+  addBox(group, 0.08, 2.66, 0.32, mats.creamMolding, -12.78, y1Base + 1.33, 3.96);
+  addBox(group, 2.52, 0.09, 0.32, mats.creamMolding, -14.0, 5.22, 3.96);
   addBox(group, 2.4, h1, 0.24, mats.extPlaster, -11.6, mid1, 4.0);
   addInteriorVintageWallFace(group, mats, "x", -12.8, -10.5, 4.0, -1, y1Base, y1Top, { theme: "sage" });
   registerBoxCollider(-23.5, -15.2, 3.86, 4.14, 2.0, 5.2);
@@ -1443,6 +1544,9 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
   s1DoorR.position.set(-12.84, y1Base, 3.92);
   s1DoorR.rotation.y = -1.48;
   group.add(s1DoorR);
+  s1DoorL.userData.dynamic = true;
+  s1DoorR.userData.dynamic = true;
+  refs.frontDoors = { left: s1DoorL, right: s1DoorR, openL: 1.48, openR: -1.48 };
 
   // 1F East Courtyard Wall (X = -10.4, Z in [-1.4, +4.0]): French Doorway [+0.2, +2.2] onto SE Garden Courtyard
   addBox(group, 0.24, h1, 1.6, mats.extPlaster, -10.4, mid1, -0.6);
@@ -1661,7 +1765,7 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
   // 2F West Wall (X = -23.4, Z in [-9.8, +4.0]): Window [-2.2, +1.6]
   addBox(group, 0.24, h2, 7.6, mats.extPlaster, -23.4, mid2, -6.0);
   addInteriorVintageWallFace(group, mats, "z", -9.7, -2.2, -23.4, 1, y2Base, y2Top, { theme: "rose", skipBoiserie: true });
-  addVillaWindow("z", -2.2, 1.6, -23.4, 1, y2Base, y2Top, { bays: 3, theme: "rose" });
+  addVillaWindow("z", -2.2, 1.6, -23.4, 1, y2Base, y2Top, { bays: 3, theme: "rose", interactiveKey: "nookDrapes" });
   addBox(group, 0.24, h2, 2.4, mats.extPlaster, -23.4, mid2, 2.8);
   addInteriorVintageWallFace(group, mats, "z", 1.6, 3.9, -23.4, 1, y2Base, y2Top, { theme: "rose" });
   registerBoxCollider(-23.54, -23.26, -9.9, 4.12, 5.4, 9.8);
@@ -1777,7 +1881,7 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
   }
 }
 
-function buildVintageSalonDiningKitchen(group, mats, emberState, hangingPlantAnimList) {
+function buildVintageSalonDiningKitchen(group, mats, emberState, hangingPlantAnimList, refs = {}) {
   // --- 1. FRENCH VINTAGE SALON (West-South of 1F: X in [-23.0, -15.6], Z in [-2.8, +3.8]) ---
   // Carved French Bolection Limestone & Marble Mantelpiece + Brass Andirons & Spark Screen
   const fireplace = buildFrenchFireplaceAndMantel(mats, emberState);
@@ -1796,15 +1900,20 @@ function buildVintageSalonDiningKitchen(group, mats, emberState, hangingPlantAni
     new THREE.Vector2(0.022, 0.225),
   ];
   const stickGeo = new THREE.LatheGeometry(stickPts, 16);
+  const candleFlameMat = mats.opalGlow.clone();
+  refs.mantelCandleMat = candleFlameMat;
+  refs.mantelCandles = [];
   for (const cx of [-19.34, -17.46]) {
     const cStick = new THREE.Mesh(stickGeo, mats.brass);
     cStick.position.set(cx, 4.158, -2.64);
     const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.015, 0.11, 10), mats.ivoryLinen);
     candle.position.set(cx, 4.275, -2.64);
-    const cBulb = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 8), mats.opalGlow);
+    const cBulb = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 8), candleFlameMat);
     cBulb.scale.set(0.72, 1.45, 0.72);
     cBulb.position.set(cx, 4.35, -2.64);
     cBulb.userData.noShadow = true;
+    cBulb.userData.dynamic = true;
+    refs.mantelCandles.push(cBulb);
     group.add(cStick, candle, cBulb);
   }
   addTrailingVine(group, mats, -18.4, 4.15, -2.37, 1.85, 9, 1);
@@ -1818,6 +1927,7 @@ function buildVintageSalonDiningKitchen(group, mats, emberState, hangingPlantAni
   sofa.position.set(-18.8, 2.60, 2.18);
   sofa.rotation.y = Math.PI;
   group.add(sofa);
+  refs.sofa = sofa;
   registerBoxCollider(-20.32, -17.28, 1.64, 2.68, 2.0, 5.2);
 
   // Colliders for Photogrammetry Louis XV Armchairs (ph_green_chair & ph_armchair) + West Wall Console (ph_console)
@@ -1826,10 +1936,6 @@ function buildVintageSalonDiningKitchen(group, mats, emberState, hangingPlantAni
   registerBoxCollider(-23.32, -22.58, -2.30, -0.80, 2.0, 5.2);
 
   // Coffee Table Centerpiece & Clothbound Art Book resting atop Photogrammetry ph_coffee_table.glb (top Y = 3.125m)
-  const artBook = new THREE.Mesh(createPillowedCushionGeo(0.32, 0.038, 0.24, 0.012, 0.002), mats.deepRoseVelvet);
-  artBook.position.set(-19.24, 3.144, 0.46);
-  artBook.rotation.y = 0.16;
-  group.add(artBook);
   addRoseArrangement(group, mats, -18.38, 3.125, 0.62, 0.92, true);
   registerBoxCollider(-19.60, -18.00, 0.08, 1.08, 2.0, 5.2);
 
@@ -1838,6 +1944,7 @@ function buildVintageSalonDiningKitchen(group, mats, emberState, hangingPlantAni
   gramophone.position.set(-16.55, 2.60, -2.15);
   gramophone.rotation.y = 0.38;
   group.add(gramophone);
+  refs.gramophone = gramophone;
   registerCircleCollider(-16.55, -2.15, 0.34, 2.0, 5.2);
 
   // Salon Ceiling Medallion (for ph_chandelier.glb) + Scrolled Plant Stand + Spider Plants + Blooming Pots
@@ -1847,11 +1954,11 @@ function buildVintageSalonDiningKitchen(group, mats, emberState, hangingPlantAni
   addFloweringPlanter(group, mats, -16.4, 2.60, 3.35, { potStyle: "rose", flowerType: "hydrangeaPink", scale: 1.25, glbTag: "isIndoorGLBRosePot" });
   addFloweringPlanter(group, mats, -21.95, 2.60, 2.45, { potStyle: "rose", flowerType: "hydrangeaBlush", scale: 1.15, glbTag: "isIndoorGLBMargaritaPot" });
   addFloweringPlanter(group, mats, -17.15, 2.66, -2.35, { potStyle: "celadon", flowerType: "hydrangeaLilac", scale: 1.08, glbTag: "isIndoorGLBFernPot" });
-  addHangingSpiderPlant(group, mats, hangingPlantAnimList, -16.6, 5.82, 0.72, { drop: 0.78, scale: 1.08, rosePot: true });
-  addHangingSpiderPlant(group, mats, hangingPlantAnimList, -19.2, 5.82, -0.65, { drop: 0.72, scale: 1.02, rosePot: false });
-  addHangingSpiderPlant(group, mats, hangingPlantAnimList, -21.2, 5.86, 3.25, { drop: 0.70, scale: 1.05, rosePot: true });
-  addHangingSpiderPlant(group, mats, hangingPlantAnimList, -17.9, 5.86, 3.25, { drop: 0.66, scale: 1.0, rosePot: false });
-  addHangingSpiderPlant(group, mats, hangingPlantAnimList, -22.6, 5.86, -1.65, { drop: 0.74, scale: 1.02, rosePot: true });
+  addHangingSpiderPlant(group, mats, hangingPlantAnimList, -16.6, 5.88, 1.55, { drop: 0.44, scale: 0.98, rosePot: true });
+  addHangingSpiderPlant(group, mats, hangingPlantAnimList, -19.6, 5.88, -0.95, { drop: 0.44, scale: 0.96, rosePot: false });
+  addHangingSpiderPlant(group, mats, hangingPlantAnimList, -21.2, 5.88, 3.35, { drop: 0.52, scale: 1.0, rosePot: true });
+  addHangingSpiderPlant(group, mats, hangingPlantAnimList, -17.9, 5.88, 3.35, { drop: 0.50, scale: 0.96, rosePot: false });
+  addHangingSpiderPlant(group, mats, hangingPlantAnimList, -22.6, 5.88, -1.65, { drop: 0.52, scale: 0.98, rosePot: true });
 
   // --- 2. VINTAGE FRENCH DINING HALL (X = -12.65, Z = +1.15, overlooking SE Garden Courtyard) ---
   const diningSuite = buildLouisXVIDiningSuite(mats);
@@ -1867,6 +1974,7 @@ function buildVintageSalonDiningKitchen(group, mats, emberState, hangingPlantAni
   const smegFridge = buildSmegRetroFridge(mats);
   smegFridge.position.set(-18.75, 2.60, -9.18);
   group.add(smegFridge);
+  refs.fridge = smegFridge;
 
   // Checkered Dusty-Rose Zellige Tile Backsplash across North Wall
   addBox(group, 6.6, 0.96, 0.03, mats.checkeredTile, -14.55, 3.98, -9.62);
@@ -1902,6 +2010,7 @@ function buildVintageSalonDiningKitchen(group, mats, emberState, hangingPlantAni
   const laCornue = buildLaCornueChateauRangeAndHood(mats);
   laCornue.position.set(-13.60, 2.60, -9.22);
   group.add(laCornue);
+  refs.range = laCornue;
 
   // Open French Plate-Rack Hutch displaying Turned Limoges Dusty-Rose Plates & Celadon Canisters (-11.95, 4.88, -9.44)
   addBox(group, 1.58, 1.12, 0.34, mats.boiserieSage, -11.95, 4.88, -9.45);
@@ -1976,7 +2085,7 @@ function buildVintageSalonDiningKitchen(group, mats, emberState, hangingPlantAni
   registerBoxCollider(-16.38, -13.62, -6.95, -5.32, 2.0, 5.2);
 }
 
-function buildConservatoryStudyAndLetter(group, mats, hangingPlantAnimList) {
+function buildConservatoryStudyAndLetter(group, mats, hangingPlantAnimList, refs = {}) {
   // Aubusson Sage-and-Rose Study Rug
   addBox(group, 4.2, 0.014, 3.4, mats.studyRug, -7.25, 2.608, -5.65);
 
@@ -2096,6 +2205,7 @@ function buildConservatoryStudyAndLetter(group, mats, hangingPlantAnimList) {
   parlorGuitar.position.set(-4.82, 2.60, -2.85);
   parlorGuitar.rotation.y = -2.22;
   group.add(parlorGuitar);
+  refs.guitar = parlorGuitar;
   registerCircleCollider(-4.82, -2.85, 0.28, 2.0, 5.2);
 
   // Conservatory Botanical Abundance: Scrolled Plant Stand + Hanging Spider Plants + Blooming Pots + Ceiling Medallion
@@ -2113,6 +2223,7 @@ function buildConservatoryStudyAndLetter(group, mats, hangingPlantAnimList) {
   const bureauPlat = buildBureauPlatDeskAndEmeraliteLamp(mats);
   bureauPlat.position.set(-7.40, 2.60, -8.25);
   group.add(bureauPlat);
+  refs.bureau = bureauPlat;
 
   addRoseArrangement(group, mats, -6.66, 3.386, -8.45, 0.85, true);
 
@@ -2198,7 +2309,7 @@ function buildConservatoryStudyAndLetter(group, mats, hangingPlantAnimList) {
   registerBoxCollider(-8.32, -6.48, -8.72, -7.02, 2.0, 5.2);
 }
 
-function buildSecondFloorMasterSuite(group, mats, hangingPlantAnimList) {
+function buildSecondFloorMasterSuite(group, mats, hangingPlantAnimList, refs = {}) {
   const y2 = 6.12;
 
   // Romantic Vintage Dusty-Rose Aubusson Master Rug (4.2m x 3.6m)
@@ -2208,6 +2319,7 @@ function buildSecondFloorMasterSuite(group, mats, hangingPlantAnimList) {
   const bed = buildFourPosterCanopyBed(mats, createPleatedCurtain);
   bed.position.set(-16.8, y2, -7.45);
   group.add(bed);
+  refs.bed = bed;
   registerBoxCollider(-17.95, -15.65, -8.68, -5.75, 5.4, 9.8);
 
   // Porcelain Ginger-Jar Bedside Lamps + Hero Rose Vase resting atop Photogrammetry ph_nightstand.glb (top Y = 6.820m)
@@ -2217,6 +2329,14 @@ function buildSecondFloorMasterSuite(group, mats, hangingPlantAnimList) {
   const rightLamp = buildPorcelainTableLamp(mats, true);
   rightLamp.position.set(-15.14, y2 + 0.700, -8.38);
   group.add(rightLamp);
+  const bedShadeMat = mats.warmShade.clone();
+  for (const lmp of [leftLamp, rightLamp]) {
+    lmp.traverse((o) => {
+      if (o.isMesh && o.material === mats.warmShade) o.material = bedShadeMat;
+    });
+  }
+  refs.bedShadeMat = bedShadeMat;
+  refs.bedLampPositions = [new THREE.Vector3(-18.46, y2 + 1.05, -8.38), new THREE.Vector3(-15.14, y2 + 1.05, -8.38)];
   addRoseArrangement(group, mats, -15.32, y2 + 0.700, -8.22, 0.74, true);
 
   // Rococo Dressing Vanity against Solid 2F South Rose-Damask Wall (X = -16.65, Z = +3.55, ph_console.glb + ph_ornate_mirror.glb)
@@ -2301,7 +2421,47 @@ function buildSecondFloorMasterSuite(group, mats, hangingPlantAnimList) {
     group.add(foot);
   }
   addBox(group, 1.64, 0.10, 0.62, mats.creamMolding, armX, y2 + 0.12, armZ);
-  addBox(group, 1.56, 2.24, 0.56, mats.boiserieSage, armX, y2 + 1.28, armZ);
+  // Hollow carcass (back, gables, floor, top) so the opened doors reveal a real wardrobe interior
+  addBox(group, 1.56, 2.24, 0.04, mats.boiserieSage, armX, y2 + 1.28, armZ - 0.26);
+  addBox(group, 0.05, 2.24, 0.56, mats.boiserieSage, armX - 0.755, y2 + 1.28, armZ);
+  addBox(group, 0.05, 2.24, 0.56, mats.boiserieSage, armX + 0.755, y2 + 1.28, armZ);
+  addBox(group, 1.48, 0.04, 0.52, mats.boiserieSage, armX, y2 + 0.19, armZ);
+  addBox(group, 1.48, 0.04, 0.52, mats.boiserieSage, armX, y2 + 2.38, armZ);
+  addBox(group, 1.46, 2.14, 0.01, mats.blushSilk, armX, y2 + 1.28, armZ - 0.235);
+  addBox(group, 0.03, 2.14, 0.5, mats.boiserieSage, armX + 0.2, y2 + 1.28, armZ);
+  for (const sy of [0.62, 1.12, 1.62]) addBox(group, 0.52, 0.025, 0.48, mats.walnut, armX + 0.47, y2 + sy, armZ);
+  {
+    const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.9, 10), mats.brass);
+    rail.rotation.z = Math.PI * 0.5;
+    rail.position.set(armX - 0.27, y2 + 2.1, armZ - 0.02);
+    group.add(rail);
+    // his & hers: a dusty-rose tea dress, a blush blouse, a sage linen shirt and a cream cardigan
+    const garmentMats = [mats.dustyRoseVelvet, mats.blushSilk, mats.sageVelvet, mats.creamLinen];
+    for (let gI = 0; gI < 4; gI += 1) {
+      const gx = armX - 0.6 + gI * 0.2;
+      const hanger = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.006, 4, 12, Math.PI), mats.walnut);
+      hanger.position.set(gx, y2 + 2.02, armZ - 0.02);
+      hanger.rotation.y = Math.PI * 0.5;
+      group.add(hanger);
+      const len = gI === 0 ? 1.05 : gI === 3 ? 0.7 : 0.72;
+      const body = new THREE.Mesh(createPillowedCushionGeo(0.06, len, 0.36, 0.025, 0.004), garmentMats[gI]);
+      body.position.set(gx, y2 + 2.02 - len * 0.5, armZ - 0.02);
+      group.add(body);
+      if (gI === 0) {
+        const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.2, 0.5, 12, 1, true), garmentMats[0]);
+        skirt.scale.set(0.45, 1, 1);
+        skirt.position.set(gx, y2 + 1.25, armZ - 0.02);
+        group.add(skirt);
+      }
+    }
+    // folded jumpers & a hat box on the shelves
+    for (const [sy, m] of [[0.65, mats.celadonLinen], [0.69, mats.blushSilk], [1.15, mats.ivoryLinen]]) {
+      addBox(group, 0.36, 0.04, 0.3, m, armX + 0.47, y2 + sy, armZ + 0.02);
+    }
+    const hatBox = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.18, 18), mats.retroRosePorcelain);
+    hatBox.position.set(armX + 0.47, y2 + 1.72, armZ);
+    group.add(hatBox);
+  }
   addBox(group, 1.70, 0.11, 0.66, mats.creamMolding, armX, y2 + 2.44, armZ);
   // Arched bonnet pediment crest
   const bonnet = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 0.62, 20, 1, false, 0, Math.PI), mats.creamMolding);
@@ -2309,18 +2469,27 @@ function buildSecondFloorMasterSuite(group, mats, hangingPlantAnimList) {
   bonnet.scale.set(1, 1, 0.36);
   bonnet.position.set(armX, y2 + 2.48, armZ);
   group.add(bonnet);
-  // Twin recessed boiserie doors + full-height brass cremone bolt rods & handles
-  for (const dx of [-0.38, 0.38]) {
-    addBox(group, 0.68, 2.02, 0.032, mats.creamMolding, armX + dx, y2 + 1.28, armZ + 0.285);
-    addBox(group, 0.56, 1.32, 0.038, mats.boiserieRose, armX + dx, y2 + 1.54, armZ + 0.29);
-    addBox(group, 0.56, 0.46, 0.038, mats.boiserieRoseDeep, armX + dx, y2 + 0.56, armZ + 0.29);
+  // Twin hinged boiserie doors (pivot at the outer gables) with brass cremone bolt halves
+  const armoireDoors = [];
+  for (const side of [-1, 1]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(armX + side * 0.76, y2, armZ + 0.285);
+    pivot.userData.dynamic = true;
+    const cx = -side * 0.38;
+    addBox(pivot, 0.75, 2.06, 0.032, mats.creamMolding, cx, 1.28, 0);
+    addBox(pivot, 0.6, 1.32, 0.038, mats.boiserieRose, cx, 1.54, 0.005);
+    addBox(pivot, 0.6, 0.46, 0.038, mats.boiserieRoseDeep, cx, 0.56, 0.005);
+    const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 2.04, 8), mats.brass);
+    bolt.position.set(-side * 0.73, 1.28, 0.027);
+    pivot.add(bolt);
+    const h = new THREE.Mesh(new THREE.SphereGeometry(0.024, 10, 8), mats.brass);
+    h.scale.set(0.8, 1.4, 0.8);
+    h.position.set(-side * 0.7, 1.18, 0.04);
+    pivot.add(h);
+    group.add(pivot);
+    armoireDoors.push({ pivot, side });
   }
-  const cremone = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 2.04, 8), mats.brass);
-  cremone.position.set(armX, y2 + 1.28, armZ + 0.312);
-  const cHandle = new THREE.Mesh(new THREE.SphereGeometry(0.026, 10, 8), mats.brass);
-  cHandle.scale.set(0.8, 1.4, 0.8);
-  cHandle.position.set(armX, y2 + 1.18, armZ + 0.328);
-  group.add(cremone, cHandle);
+  refs.armoireDoors = armoireDoors;
   addTrailingVine(group, mats, armX, y2 + 2.49, armZ + 0.33, 1.35, 6, 1);
   registerBoxCollider(-13.45, -11.65, -9.42, -8.65, 5.4, 9.8);
 
@@ -2339,6 +2508,600 @@ function buildSecondFloorMasterSuite(group, mats, hangingPlantAnimList) {
   addHangingSpiderPlant(group, mats, hangingPlantAnimList, -12.2, 9.22, 0.2, { drop: 0.68, scale: 1.0, rosePot: false });
 }
 
+function buildInteriorDetailsAndInteractions(group, mats, emberState, refs) {
+  const D = getDetailMats();
+  const detailGroup = new THREE.Group();
+  detailGroup.name = "VillaInteriorDetails";
+  group.add(detailGroup);
+
+  const fx = createInteractionFX(group, { name: "VillaFX", maxSparks: 320, maxPetals: 120, maxRings: 8 });
+  const candleFlameMat = new THREE.MeshStandardMaterial({
+    color: 0xffefc2,
+    emissive: new THREE.Color(0xff9c38),
+    emissiveIntensity: 1.9,
+    roughness: 0.35,
+  });
+
+  // 1. Place all curated indoor tabletop & hearth details cleanly on exact surfaces
+  const portraitMantel = buildFramedPortrait(mats, { w: 0.16, h: 0.21, variant: 0 });
+  portraitMantel.position.set(-17.78, 4.158, -2.62);
+  portraitMantel.rotation.y = -0.24;
+  detailGroup.add(portraitMantel);
+
+  const portraitStudy = buildFramedPortrait(mats, { w: 0.16, h: 0.21, variant: 1 });
+  portraitStudy.position.set(-7.92, 3.386, -8.40);
+  portraitStudy.rotation.y = 0.38;
+  detailGroup.add(portraitStudy);
+
+  const portraitVanity = buildFramedPortrait(mats, { w: 0.15, h: 0.19, variant: 2 });
+  portraitVanity.position.set(-17.10, 7.012, 3.55);
+  portraitVanity.rotation.y = 0.34;
+  detailGroup.add(portraitVanity);
+
+  const salonBooks = buildBookStack(mats, 3, 17);
+  salonBooks.position.set(-19.22, 3.125, 0.54);
+  salonBooks.rotation.y = 0.32;
+  detailGroup.add(salonBooks);
+
+  const studyBooks = buildBookStack(mats, 3, 41);
+  studyBooks.position.set(-6.90, 3.386, -8.10);
+  studyBooks.rotation.y = -0.26;
+  detailGroup.add(studyBooks);
+
+  const salonSlippers = buildPlushSlippers(mats, true);
+  salonSlippers.position.set(-18.28, 2.616, 1.48);
+  salonSlippers.rotation.y = -0.18;
+  detailGroup.add(salonSlippers);
+
+  const bedSlippers = buildPlushSlippers(mats, false);
+  bedSlippers.position.set(-18.18, 6.136, -7.20);
+  bedSlippers.rotation.y = 1.25;
+  detailGroup.add(bedSlippers);
+
+  const fruitBowl = buildFruitBowl(mats);
+  fruitBowl.position.set(-14.28, 3.519, -6.32);
+  detailGroup.add(fruitBowl);
+
+  const teaService = buildPorcelainTeaService(mats);
+  teaService.position.set(-18.82, 3.125, 0.72);
+  teaService.rotation.y = -0.30;
+  teaService.userData.dynamic = true;
+  detailGroup.add(teaService);
+
+  const wateringCan = buildWateringCan(mats);
+  wateringCan.position.set(-6.18, 2.60, 2.95);
+  wateringCan.rotation.y = -0.62;
+  detailGroup.add(wateringCan);
+
+  const sofaThrow = buildDrapedThrow({ width: 0.60, r: 0.125, dropFront: 0.44, dropBack: 0.34, folds: 5 });
+  sofaThrow.position.set(-17.56, 3.385, 2.16);
+  sofaThrow.rotation.y = Math.PI * 0.5;
+  detailGroup.add(sofaThrow);
+
+  const bedThrow = buildDrapedThrow({ width: 1.54, r: 0.085, dropFront: 0.24, dropBack: 0.28, folds: 7, mat: D.plushSage });
+  bedThrow.position.set(-16.80, 6.78, -6.54);
+  detailGroup.add(bedThrow);
+
+  const candleTrio = buildPillarCandleTrio(mats, candleFlameMat);
+  candleTrio.position.set(-19.06, 3.125, 0.34);
+  candleTrio.rotation.y = 0.18;
+  candleTrio.userData.dynamic = true;
+  detailGroup.add(candleTrio);
+
+  const utensilCrock = buildUtensilCrock(mats);
+  utensilCrock.position.set(-12.48, 3.528, -9.28);
+  detailGroup.add(utensilCrock);
+
+  const apothecaryJars = buildApothecaryJarRow(mats);
+  apothecaryJars.position.set(-17.36, 3.528, -9.28);
+  detailGroup.add(apothecaryJars);
+
+  const logBasket = buildLogBasket(mats);
+  logBasket.position.set(-19.44, 2.62, -2.50);
+  logBasket.rotation.y = 0.26;
+  detailGroup.add(logBasket);
+
+  const fireTools = buildFireToolStand(mats);
+  fireTools.position.set(-17.40, 2.62, -2.52);
+  fireTools.rotation.y = -0.24;
+  detailGroup.add(fireTools);
+
+  for (const [ox, oz, ry] of [
+    [-0.52, -0.31, 0],
+    [0.52, -0.31, 0],
+    [-0.52, 0.31, Math.PI],
+    [0.52, 0.31, Math.PI],
+  ]) {
+    const setting = buildPlaceSetting(mats);
+    setting.position.set(-12.65 + ox, 3.386, 1.15 + oz);
+    setting.rotation.y = ry;
+    detailGroup.add(setting);
+  }
+
+  const espresso = buildItalianLeverEspressoMachine({
+    chromeMat: mats.mirrorSilver,
+    brassMat: mats.brass,
+    walnutMat: mats.walnut,
+    porcelainMat: mats.zelligeTile,
+  });
+  espresso.position.set(-11.78, 3.528, -9.22);
+  espresso.rotation.y = -0.25;
+  espresso.userData.dynamic = true;
+  detailGroup.add(espresso);
+
+  // Mark animated refs dynamic so batchStaticMeshesByMaterial preserves independent pivots
+  if (refs.armoireDoors) {
+    for (const d of refs.armoireDoors) d.pivot.userData.dynamic = true;
+  }
+  for (const dr of [refs.salonDrapes, refs.nookDrapes]) {
+    if (!dr) continue;
+    for (const s of dr.sheers) s.mesh.userData.dynamic = true;
+  }
+
+  // Interactive states
+  const state = {
+    doorsOpen: true,
+    doorTarget: 1,
+    doorAnim: 1,
+    fireBoost: 0,
+    candlesLit: true,
+    gramophoneOn: false,
+    gramoTimer: 0,
+    salonDrapesOpen: true,
+    salonDrapeAnim: 1,
+    nookDrapesOpen: true,
+    nookDrapeAnim: 1,
+    fridgeOpen: false,
+    fridgeAnim: 0,
+    rangeActive: 0,
+    espressoActive: 0,
+    guitarActive: 0,
+    globeSpinSpeed: 0,
+    bedLampsOn: true,
+    armoireOpen: false,
+    armoireAnim: 0,
+    teaPourActive: 0,
+  };
+
+  function applyDrapeSlide(dr, openness) {
+    if (!dr) return;
+    const closedFrac = 1 - openness;
+    for (const r of dr.roses) {
+      const pull = -r.localSide * closedFrac * (dr.span * 0.24);
+      if (dr.axis === "x") r.holder.position.x = r.baseX + pull;
+      else r.holder.position.z = r.baseZ + pull;
+    }
+    for (const s of dr.sheers) {
+      const pull = -s.side * closedFrac * (dr.span * 0.16);
+      if (dr.axis === "x") s.mesh.position.x = s.baseX + pull;
+      else s.mesh.position.z = s.baseZ + pull;
+    }
+  }
+
+  function applyVillaInteractiveState(elapsed, dt, nightMix) {
+    // Front French doors smooth swing
+    state.doorAnim = lerp(state.doorAnim, state.doorTarget, 1 - Math.exp(-dt * 7));
+    if (refs.frontDoors) {
+      refs.frontDoors.left.rotation.y = lerp(0, refs.frontDoors.openL, state.doorAnim);
+      refs.frontDoors.right.rotation.y = lerp(0, refs.frontDoors.openR, state.doorAnim);
+    }
+
+    // Fireplace flare & mantel candles + table trio flames
+    state.fireBoost = Math.max(0, state.fireBoost - dt * 0.22);
+    const flameMul = state.candlesLit ? 1 + 0.14 * Math.sin(elapsed * 7.2) : 0;
+    candleFlameMat.emissiveIntensity = flameMul * lerp(1.5, 2.35, nightMix);
+    if (refs.mantelCandleMat) {
+      refs.mantelCandleMat.emissiveIntensity = (state.candlesLit ? 1.85 : 0.04) * (1 + 0.12 * Math.sin(elapsed * 6.8));
+    }
+    if (refs.mantelCandles) {
+      for (let i = 0; i < refs.mantelCandles.length; i += 1) {
+        const c = refs.mantelCandles[i];
+        c.visible = state.candlesLit;
+        c.scale.setScalar(state.candlesLit ? 0.92 + 0.12 * Math.sin(elapsed * 8.4 + i) : 0.01);
+      }
+    }
+    if (candleTrio.userData.flames) {
+      for (let i = 0; i < candleTrio.userData.flames.length; i += 1) {
+        const f = candleTrio.userData.flames[i];
+        f.visible = state.candlesLit;
+        f.scale.setScalar(state.candlesLit ? 0.9 + 0.14 * Math.sin(elapsed * 9.1 + i * 1.4) : 0.01);
+      }
+    }
+
+    // Gramophone turntable + tonearm
+    if (state.gramophoneOn && state.gramoTimer > 0) {
+      state.gramoTimer = Math.max(0, state.gramoTimer - dt);
+      if (state.gramoTimer === 0) state.gramophoneOn = false;
+    }
+    if (refs.gramophone?.userData.turntable) {
+      if (state.gramophoneOn) {
+        refs.gramophone.userData.turntable.rotation.y += dt * 3.2;
+        if (Math.random() < dt * 2.4) {
+          fx.spark(-16.55, 3.82, -2.15, (Math.random() - 0.5) * 0.35, 0.45, (Math.random() - 0.5) * 0.35, {
+            color: 0xffd79b,
+            life: 1.4,
+            size: 0.085,
+          });
+        }
+      }
+      if (refs.gramophone.userData.tonearm) {
+        const armTarget = state.gramophoneOn ? 0.24 : 0.0;
+        refs.gramophone.userData.tonearm.rotation.y = lerp(refs.gramophone.userData.tonearm.rotation.y, armTarget, 1 - Math.exp(-dt * 6));
+      }
+    }
+
+    // Curtains draw animation
+    state.salonDrapeAnim = lerp(state.salonDrapeAnim, state.salonDrapesOpen ? 1 : 0, 1 - Math.exp(-dt * 6));
+    state.nookDrapeAnim = lerp(state.nookDrapeAnim, state.nookDrapesOpen ? 1 : 0, 1 - Math.exp(-dt * 6));
+    applyDrapeSlide(refs.salonDrapes, state.salonDrapeAnim);
+    applyDrapeSlide(refs.nookDrapes, state.nookDrapeAnim);
+
+    // Tea service pour animation
+    if (state.teaPourActive > 0) {
+      state.teaPourActive = Math.max(0, state.teaPourActive - dt);
+      const wave = Math.sin(clamp(state.teaPourActive / 2.4, 0, 1) * Math.PI);
+      if (teaService.userData.teapot) {
+        teaService.userData.teapot.rotation.z = -0.58 * wave;
+        teaService.userData.teapot.position.y = 0.075 * wave;
+      }
+      if (teaService.userData.stream) teaService.userData.stream.visible = wave > 0.25;
+    } else if (teaService.userData.stream) {
+      teaService.userData.stream.visible = false;
+      if (teaService.userData.teapot) {
+        teaService.userData.teapot.rotation.z = lerp(teaService.userData.teapot.rotation.z, 0, 1 - Math.exp(-dt * 8));
+        teaService.userData.teapot.position.y = lerp(teaService.userData.teapot.position.y, 0, 1 - Math.exp(-dt * 8));
+      }
+    }
+
+    // Smeg fridge door
+    state.fridgeAnim = lerp(state.fridgeAnim, state.fridgeOpen ? 1 : 0, 1 - Math.exp(-dt * 7));
+    if (refs.fridge?.userData.lowerDoor) {
+      refs.fridge.userData.lowerDoor.rotation.y = -state.fridgeAnim * 1.32;
+      if (refs.fridge.userData.cavityMat) {
+        refs.fridge.userData.cavityMat.emissiveIntensity = lerp(0.15, 1.35, state.fridgeAnim);
+      }
+    }
+
+    // La Cornue range kettle steam & burner flame
+    if (state.rangeActive > 0) state.rangeActive = Math.max(0, state.rangeActive - dt);
+    if (refs.range?.userData.kettleFlame) {
+      refs.range.userData.kettleFlame.visible = state.rangeActive > 0;
+    }
+
+    // Espresso levers
+    if (state.espressoActive > 0) state.espressoActive = Math.max(0, state.espressoActive - dt);
+    if (espresso.userData.levers) {
+      const pull = state.espressoActive > 0 ? -0.45 : 0;
+      for (const lv of espresso.userData.levers) {
+        lv.rotation.x = lerp(lv.rotation.x, pull, 1 - Math.exp(-dt * 8));
+      }
+    }
+
+    // Study guitar shimmer & desk globe
+    if (state.guitarActive > 0) state.guitarActive = Math.max(0, state.guitarActive - dt);
+    if (refs.guitar?.userData.strings) {
+      refs.guitar.userData.strings.position.x = state.guitarActive > 0 ? Math.sin(elapsed * 48) * 0.0025 : 0;
+    }
+    if (refs.bureau?.userData.globeSpin && state.globeSpinSpeed > 0.01) {
+      refs.bureau.userData.globeSpin.rotation.y += state.globeSpinSpeed * dt;
+      state.globeSpinSpeed *= Math.exp(-dt * 0.85);
+    }
+
+    // 2F Bedside shades & Armoire doors
+    if (refs.bedShadeMat) {
+      refs.bedShadeMat.emissiveIntensity = state.bedLampsOn ? lerp(0.85, 2.6, nightMix) : 0.06;
+    }
+    state.armoireAnim = lerp(state.armoireAnim, state.armoireOpen ? 1 : 0, 1 - Math.exp(-dt * 6));
+    if (refs.armoireDoors) {
+      for (const d of refs.armoireDoors) {
+        d.pivot.rotation.y = d.side * (-1.35 * state.armoireAnim);
+      }
+    }
+
+    fx.update(dt, elapsed);
+  }
+
+  // 17 Rich Villa Interactables (paired smoothly with couple-mode actions & "E" prompts)
+  const interactables = [
+    {
+      id: "villa-front-doors",
+      label: "推开或掩上别墅法式大门",
+      position: new THREE.Vector3(-14.0, 2.60, 4.15),
+      radius: 2.2,
+      floorY: 2.60,
+      activate(ctx = {}) {
+        state.doorsOpen = !state.doorsOpen;
+        state.doorTarget = state.doorsOpen ? 1 : 0;
+        fx.burst(new THREE.Vector3(-14.0, 3.8, 4.0), { count: 18, colors: [0xfff0d6, 0xf8c8d8], speed: [0.3, 0.9], size: 0.06 });
+        ctx.audio?.playLetterUnfold?.();
+        return state.doorsOpen ? "法式双开大门敞开了，海风与花香迎面而来 🌿" : "轻轻掩上了法式大门 🏡";
+      },
+    },
+    {
+      id: "villa-salon-sofa",
+      label: "坐在客厅丝绒沙发上依偎喝茶",
+      position: new THREE.Vector3(-18.8, 2.60, 1.55),
+      radius: 2.3,
+      floorY: 2.60,
+      pose: {
+        type: "sit",
+        seats: [
+          { x: -19.22, y: 2.60 + 0.45, z: 2.02, yaw: Math.PI },
+          { x: -18.38, y: 2.60 + 0.45, z: 2.02, yaw: Math.PI },
+        ],
+      },
+      activate(ctx = {}) {
+        state.teaPourActive = 2.6;
+        fx.heart(new THREE.Vector3(-18.8, 3.9, 2.0), { count: 28, scale: 0.032, colors: [0xffb4c8, 0xfff0dc] });
+        ctx.audio?.playVendingClink?.();
+        return "靠在柔软的丝绒沙发里，给彼此斟上一杯热红茶 ☕";
+      },
+    },
+    {
+      id: "villa-fireplace",
+      label: "添一块橡木柴，让壁炉炉火更旺",
+      position: new THREE.Vector3(-18.4, 2.60, -2.20),
+      radius: 2.2,
+      floorY: 2.60,
+      activate(ctx = {}) {
+        state.fireBoost = 1.0;
+        fx.burst(new THREE.Vector3(-18.4, 2.95, -2.68), { count: 32, colors: [0xff8c38, 0xffd27a, 0xff541e], speed: [0.4, 1.2], up: 0.9, size: 0.075 });
+        ctx.audio?.playRoofChime?.(true);
+        return "壁炉里的橡木劈啪作响，暖融融的橘光映在脸上 🔥";
+      },
+    },
+    {
+      id: "villa-mantel-candles",
+      label: "点亮或吹熄壁炉与茶几蜡烛",
+      position: new THREE.Vector3(-18.4, 3.4, -2.25),
+      radius: 2.2,
+      floorY: 2.60,
+      activate(ctx = {}) {
+        state.candlesLit = !state.candlesLit;
+        fx.burst(new THREE.Vector3(-18.4, 4.3, -2.6), { count: 20, colors: [0xffe9a8, 0xffb36b], speed: [0.25, 0.7], size: 0.065 });
+        ctx.audio?.playPetalGlissando?.();
+        return state.candlesLit ? "跳跃的烛火亮了起来，客厅满是温柔光影 🕯️" : "轻轻吹熄了烛火 ✨";
+      },
+    },
+    {
+      id: "villa-gramophone",
+      label: "播放 1905 年黑胶留声机旋律",
+      position: new THREE.Vector3(-16.55, 2.60, -2.05),
+      radius: 2.1,
+      floorY: 2.60,
+      activate(ctx = {}) {
+        state.gramophoneOn = !state.gramophoneOn;
+        state.gramoTimer = state.gramophoneOn ? 18 : 0;
+        if (state.gramophoneOn) {
+          fx.burst(new THREE.Vector3(-16.55, 3.8, -2.15), { count: 24, colors: [0xffd89c, 0xf7b9ca], speed: [0.3, 0.85], up: 0.7, size: 0.07 });
+          ctx.audio?.playDuetArpeggio?.();
+        } else {
+          ctx.audio?.playVendingClink?.();
+        }
+        return state.gramophoneOn ? "金黄色的铜喇叭里流淌出旧日海岸华尔兹 🎵" : "轻轻抬起唱针，留声机缓缓停下 🎶";
+      },
+    },
+    {
+      id: "villa-salon-drapes",
+      label: "拉开或合上客厅蔷薇纱帘",
+      position: new THREE.Vector3(-19.6, 2.60, 3.45),
+      radius: 2.3,
+      floorY: 2.60,
+      activate(ctx = {}) {
+        state.salonDrapesOpen = !state.salonDrapesOpen;
+        fx.petalBurst(new THREE.Vector3(-19.6, 4.1, 3.7), { count: 16, radius: 0.6, floorY: 2.62, life: 3.5 });
+        ctx.audio?.playLetterUnfold?.();
+        return state.salonDrapesOpen ? "拉开了客厅的蕾丝蔷薇窗帘，海湾阳光倾泻进来 ☀️" : "拉上柔和的蔷薇帘幕，营造静谧午后 🎀";
+      },
+    },
+    {
+      id: "villa-dining-table",
+      label: "入座法式长桌享用马卡龙下午茶",
+      position: new THREE.Vector3(-12.65, 2.60, 1.15),
+      radius: 2.3,
+      floorY: 2.60,
+      pose: {
+        type: "sit",
+        seats: [
+          { x: -13.17, y: 2.60 + 0.44, z: 0.47, yaw: Math.PI },
+          { x: -12.13, y: 2.60 + 0.44, z: 1.83, yaw: 0 },
+        ],
+      },
+      activate(ctx = {}) {
+        fx.burst(new THREE.Vector3(-12.13, 3.65, 1.15), { count: 24, colors: [0xf7c5d0, 0xfff1c9, 0xa8cbb0], speed: [0.3, 0.85], size: 0.065 });
+        ctx.audio?.playVendingClink?.();
+        return "法式长桌上摆好了马卡龙甜点塔，今天想挑哪一颗 🧁";
+      },
+    },
+    {
+      id: "villa-fridge",
+      label: "打开薄荷绿复古冰箱找冰甜品",
+      position: new THREE.Vector3(-18.75, 2.60, -8.55),
+      radius: 2.1,
+      floorY: 2.60,
+      activate(ctx = {}) {
+        state.fridgeOpen = !state.fridgeOpen;
+        fx.burst(new THREE.Vector3(-18.75, 3.35, -8.85), { count: 18, colors: [0xd9f6ff, 0xffffff, 0xffd2e0], speed: [0.3, 0.75], size: 0.06 });
+        ctx.audio?.playVendingClink?.();
+        return state.fridgeOpen ? "薄荷绿复古冰箱里冰着玫瑰汽水与覆盆子慕斯 🍨" : "轻声关上了复古冰箱门 ❄️";
+      },
+    },
+    {
+      id: "villa-range",
+      label: "在 La Cornue 灶台煮一壶姜花红茶",
+      position: new THREE.Vector3(-13.60, 2.60, -8.45),
+      radius: 2.1,
+      floorY: 2.60,
+      activate(ctx = {}) {
+        state.rangeActive = 6.5;
+        fx.emit(4.5, 8, () => {
+          fx.spark(-13.22, 3.80, -9.08, (Math.random() - 0.5) * 0.14, 0.52, (Math.random() - 0.5) * 0.14, {
+            color: 0xfff5ea,
+            life: 1.1,
+            size: 0.08,
+          });
+        });
+        ctx.audio?.playFishRipple?.();
+        return "铜壶里的姜花红茶慢慢冒出暖香蒸汽 🫖";
+      },
+    },
+    {
+      id: "villa-espresso",
+      label: "用拉杆意式咖啡机萃取双份拿铁",
+      position: new THREE.Vector3(-11.78, 2.60, -8.48),
+      radius: 2.1,
+      floorY: 2.60,
+      activate(ctx = {}) {
+        state.espressoActive = 4.5;
+        fx.emit(3.6, 10, () => {
+          fx.spark(-11.78, 3.72, -9.12, (Math.random() - 0.5) * 0.12, 0.35, (Math.random() - 0.5) * 0.12, {
+            color: 0xf4dec4,
+            life: 0.9,
+            size: 0.065,
+          });
+        });
+        ctx.audio?.playVendingClink?.();
+        return "拉开黄铜萃取手柄，浓郁焦糖油脂咖啡香漫开 ☕";
+      },
+    },
+    {
+      id: "villa-guitar",
+      label: "在阳光花房里抱起木吉他弹唱",
+      position: new THREE.Vector3(-5.30, 2.60, -2.85),
+      radius: 2.2,
+      floorY: 2.60,
+      activate(ctx = {}) {
+        state.guitarActive = 4.5;
+        fx.burst(new THREE.Vector3(-4.82, 3.35, -2.85), { count: 24, colors: [0xffdf9e, 0xf6c2d2, 0xb8dcff], speed: [0.3, 0.9], up: 0.65, size: 0.07 });
+        ctx.audio?.playDuetArpeggio?.();
+        return "轻轻拨响琴弦，清亮的木吉他和弦在花房里回荡 🎸";
+      },
+    },
+    {
+      id: "villa-study-globe",
+      label: "转动书桌上的复古黄铜地球仪",
+      position: new THREE.Vector3(-6.85, 2.60, -7.55),
+      radius: 2.1,
+      floorY: 2.60,
+      activate(ctx = {}) {
+        state.globeSpinSpeed = 9.0;
+        fx.burst(new THREE.Vector3(-6.90, 3.72, -8.35), { count: 18, colors: [0x9fd8ff, 0xffe29e], speed: [0.28, 0.8], size: 0.06 });
+        ctx.audio?.playPetalGlissando?.();
+        return "拨动黄铜地球仪，约定好下次还要一起看遍海湾与远山 🌍";
+      },
+    },
+    {
+      id: "villa-love-letter",
+      label: "展读书桌上的火漆手写情书",
+      position: new THREE.Vector3(-7.40, 2.60, -7.55),
+      radius: 2.2,
+      floorY: 2.60,
+      activate(ctx = {}) {
+        fx.heart(new THREE.Vector3(-7.40, 3.75, -8.17), { count: 26, scale: 0.03, colors: [0xf7b6c8, 0xfff2dc] });
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("bloom:open-letter"));
+        } else {
+          ctx.audio?.playLetterUnfold?.();
+        }
+        return "拆开玫瑰火漆信笺，重温写给小贤贤的字字句句 💌";
+      },
+    },
+    {
+      id: "villa-master-bed",
+      label: "倚在二楼四柱帷幔床上小憩看海",
+      position: new THREE.Vector3(-16.80, 6.12, -5.95),
+      radius: 2.4,
+      floorY: 6.12,
+      pose: {
+        type: "lie",
+        seats: [
+          { x: -17.24, y: 6.12 + 0.62, z: -7.50, yaw: Math.PI },
+          { x: -16.36, y: 6.12 + 0.62, z: -7.50, yaw: Math.PI },
+        ],
+      },
+      activate(ctx = {}) {
+        fx.petalBurst(new THREE.Vector3(-16.80, 7.6, -7.45), { count: 24, radius: 0.9, floorY: 6.15, life: 4.5 });
+        ctx.audio?.playPetalGlissando?.();
+        return "薄纱帷幔轻轻垂落，海湾风声织进二楼的温柔美梦 🛏️";
+      },
+    },
+    {
+      id: "villa-bed-lamps",
+      label: "点亮或熄灭床头青瓷玫瑰台灯",
+      position: new THREE.Vector3(-15.14, 6.12, -7.80),
+      radius: 2.2,
+      floorY: 6.12,
+      activate(ctx = {}) {
+        state.bedLampsOn = !state.bedLampsOn;
+        fx.burst(new THREE.Vector3(-15.14, 7.22, -8.38), { count: 16, colors: [0xffe7b8, 0xf9cbd8], speed: [0.22, 0.65], size: 0.06 });
+        ctx.audio?.playRoofChime?.(state.bedLampsOn);
+        return state.bedLampsOn ? "两盏青瓷台灯洒下暖橘柔光 ✨" : "熄灭床头夜灯，只留月光在窗口徘徊 🌙";
+      },
+    },
+    {
+      id: "villa-armoire",
+      label: "打开二楼法式蔷薇衣橱欣赏礼裙",
+      position: new THREE.Vector3(-12.55, 6.12, -8.20),
+      radius: 2.2,
+      floorY: 6.12,
+      activate(ctx = {}) {
+        state.armoireOpen = !state.armoireOpen;
+        fx.burst(new THREE.Vector3(-12.55, 7.45, -8.72), { count: 22, colors: [0xf8d2dc, 0xe8d9ff, 0xfff4d6], speed: [0.3, 0.8], size: 0.065 });
+        ctx.audio?.playLetterUnfold?.();
+        return state.armoireOpen ? "衣橱门轻轻打开，满满挂着浅粉丝裙与蕾丝帽盒 👗" : "掩好蔷薇雕花衣橱 🎀";
+      },
+    },
+    {
+      id: "villa-nook-drapes",
+      label: "拉开或合上二楼观海窗帷幔",
+      position: new THREE.Vector3(-22.20, 6.12, -0.25),
+      radius: 2.3,
+      floorY: 6.12,
+      activate(ctx = {}) {
+        state.nookDrapesOpen = !state.nookDrapesOpen;
+        fx.petalBurst(new THREE.Vector3(-23.0, 7.6, -0.3), { count: 16, radius: 0.6, floorY: 6.15, life: 3.5 });
+        ctx.audio?.playLetterUnfold?.();
+        return state.nookDrapesOpen ? "拉开西窗蕾丝窗帘，整片落日海湾映入眼帘 🌊" : "合上观海纱帘，在茶角静静读一页诗 📖";
+      },
+    },
+  ];
+
+  return {
+    update: applyVillaInteractiveState,
+    setFireBoost(v) {
+      state.fireBoost = v;
+    },
+    getFireBoost() {
+      return state.fireBoost;
+    },
+    reset() {
+      state.doorsOpen = true;
+      state.doorTarget = 1;
+      state.doorAnim = 1;
+      state.fireBoost = 0;
+      state.candlesLit = true;
+      state.gramophoneOn = false;
+      state.gramoTimer = 0;
+      state.salonDrapesOpen = true;
+      state.salonDrapeAnim = 1;
+      state.nookDrapesOpen = true;
+      state.nookDrapeAnim = 1;
+      state.fridgeOpen = false;
+      state.fridgeAnim = 0;
+      state.rangeActive = 0;
+      state.espressoActive = 0;
+      state.guitarActive = 0;
+      state.globeSpinSpeed = 0;
+      state.bedLampsOn = true;
+      state.armoireOpen = false;
+      state.armoireAnim = 0;
+      state.teaPourActive = 0;
+      applyVillaInteractiveState(0, 0.016, 0);
+    },
+    interactables,
+  };
+}
+
 export function buildCoastalVilla() {
   const group = new THREE.Group();
   group.name = "coastal-villa";
@@ -2349,10 +3112,12 @@ export function buildCoastalVilla() {
   const emberState = { mesh: null };
 
   buildPlinthTerracesAndWalkZones(group, mats);
-  buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlantAnimList);
-  buildVintageSalonDiningKitchen(group, mats, emberState, hangingPlantAnimList);
-  buildConservatoryStudyAndLetter(group, mats, hangingPlantAnimList);
-  buildSecondFloorMasterSuite(group, mats, hangingPlantAnimList);
+  const refs = {};
+  buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlantAnimList, refs);
+  buildVintageSalonDiningKitchen(group, mats, emberState, hangingPlantAnimList, refs);
+  buildConservatoryStudyAndLetter(group, mats, hangingPlantAnimList, refs);
+  buildSecondFloorMasterSuite(group, mats, hangingPlantAnimList, refs);
+  const detailCtrl = buildInteriorDetailsAndInteractions(group, mats, emberState, refs);
 
   // Warm Vintage Interior Lighting (1F Grand Salon/Study + 2F Canopy Master Suite, zero shadow cost)
   const villa1FLight = new THREE.PointLight(0xffdfba, 4.8, 25.0, 1.35);
@@ -2377,8 +3142,12 @@ export function buildCoastalVilla() {
   batchStaticMeshesByMaterial(group, { skipSet: villaSkip, spatialBucketSize: 48 });
 
   let nightMix = 0.0;
+  let lastElapsed = null;
 
   function applyInteriorMotion(elapsed) {
+    const dt = lastElapsed === null ? 0.016 : Math.min(Math.max(elapsed - lastElapsed, 0), 0.1);
+    lastElapsed = elapsed;
+
     for (let i = 0; i < curtainAnimList.length; i += 1) {
       const item = curtainAnimList[i];
       const sway =
@@ -2398,14 +3167,16 @@ export function buildCoastalVilla() {
       0.10 * Math.sin(elapsed * 13.7 + 1.2) +
       0.06 * Math.cos(elapsed * 21.1);
     if (emberState.mesh) {
-      mats.emberGlow.emissiveIntensity = lerp(1.8, 2.6, nightMix) * flicker;
+      mats.emberGlow.emissiveIntensity = lerp(1.8 + detailCtrl.getFireBoost() * 1.2, 2.6 + detailCtrl.getFireBoost() * 1.4, nightMix) * flicker;
     }
+    detailCtrl.update(elapsed, dt, nightMix);
   }
   applyInteriorMotion(0.0);
 
   return {
     group,
     letterWorldPos: new THREE.Vector3(-7.40, 3.40, -8.17),
+    interactables: detailCtrl.interactables,
     update(elapsed) {
       applyInteriorMotion(elapsed);
     },
@@ -2421,6 +3192,8 @@ export function buildCoastalVilla() {
       mats.ceilPlaster.emissiveIntensity = lerp(0.34, 0.52, nightMix);
     },
     reset() {
+      lastElapsed = null;
+      detailCtrl.reset();
       applyInteriorMotion(0.0);
     },
     anchors: {

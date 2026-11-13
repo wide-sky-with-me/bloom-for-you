@@ -40,6 +40,8 @@ class IrisBayCoastalEstateTests(unittest.TestCase):
                 "modules/coastal-villa.js",
                 "modules/vintage-craft-props.js",
                 "modules/botanical-flora.js",
+                "modules/couple-characters.js",
+                "modules/couple-mode.js",
                 "assets/models/freshwater_shrimp.glb",
                 "assets/models/ryukin_goldfish.glb",
                 "assets/models/pond_koi.glb",
@@ -54,6 +56,15 @@ class IrisBayCoastalEstateTests(unittest.TestCase):
                 "assets/models/ph_coffee_table.glb",
                 "assets/models/ph_tea_set.glb",
                 "assets/models/ph_bistro_set.glb",
+                "assets/models/ph_cliff_01.glb",
+                "assets/models/ph_cliff_02.glb",
+                "assets/models/ph_coast_rocks.glb",
+                "assets/models/ph_coast_rocks_b.glb",
+                "assets/models/ph_moss_boulder.glb",
+                "assets/models/ph_coastal_shrub.glb",
+                "assets/models/ph_lifebuoy.glb",
+                "assets/models/ph_picnic_table.glb",
+                "assets/models/couple_parts.glb",
             ):
                 self.assertIn(mod, manifest["files"])
 
@@ -136,6 +147,15 @@ class IrisBayCoastalEstateTests(unittest.TestCase):
             "ph_watering_can",
             "ph_alarm_clock",
             "ph_oil_lamp",
+            "ph_cliff_01",
+            "ph_cliff_02",
+            "ph_coast_rocks",
+            "ph_coast_rocks_b",
+            "ph_moss_boulder",
+            "ph_coastal_shrub",
+            "ph_lifebuoy",
+            "ph_picnic_table",
+            "couple_parts",
         ):
             self.assertIn(f'"{model_key}":', text)
         self.assertIn("data:font/woff2;base64,", text)
@@ -162,7 +182,7 @@ class IrisBayCoastalEstateTests(unittest.TestCase):
             SITE / "audio.js",
             *sorted((SITE / "modules").glob("*.js")),
         ]
-        self.assertEqual(len(js_files), 12)
+        self.assertEqual(len(js_files), 14)
         for js_path in js_files:
             proc = subprocess.run(
                 [node, "--check", str(js_path)],

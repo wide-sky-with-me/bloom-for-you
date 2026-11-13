@@ -29,8 +29,9 @@ import {
   tagInteractive,
   enablePBRShadows,
   batchStaticMeshesByMaterial,
+  loadBundledGLB,
 } from "./pbr-kit.js";
-import { createRoseBouquet } from "./botanical-flora.js";
+import { createRoseBouquet, createInteractionFX, easeOutBack, seatFromLocal } from "./botanical-flora.js";
 import {
   createPillowedCushionGeo,
   createPlumpPillowGeo,
@@ -339,8 +340,8 @@ function buildCoastalTerrainAndHorizon(parent) {
   const cShallowBed = new THREE.Color(0x98927c);
   const cWetSand = new THREE.Color(0xb8a17c);
   const cDrySand = new THREE.Color(0xdfd0b0);
-  const cCliffLight = new THREE.Color(0x9c968a);
-  const cCliffDark = new THREE.Color(0x847f75);
+  const cCliffLight = new THREE.Color(0x5e5850);
+  const cCliffDark = new THREE.Color(0x413d38);
   const cGrassMid = new THREE.Color(0x577c42);
   const cGrassSun = new THREE.Color(0x698d4c);
   const cGrassDeep = new THREE.Color(0x4b6e3a);
@@ -358,11 +359,12 @@ function buildCoastalTerrainAndHorizon(parent) {
     const n2 = fbm2(x * 2.3 + 19.0, z * 2.3 - 11.0);
 
     const inQuay = x >= 8.0 && x <= 46.5 && z >= -26.2 && z <= 22.4;
+    const onSouthBeach = z > 15.0 || (z > 9.0 && x < 9.5);
 
     if (y < -0.25) {
       const depthT = smoothstep(-0.25, -4.4, y);
       tmpA.copy(cShallowBed).lerp(cDeepBed, depthT);
-    } else if (y < 1.55 && !inQuay) {
+    } else if (y < 1.55 && !inQuay && onSouthBeach) {
       const sandT = smoothstep(-0.25, 1.38, y);
       tmpA.copy(cWetSand).lerp(cDrySand, sandT);
       if (y > 1.15) {
@@ -370,6 +372,9 @@ function buildCoastalTerrainAndHorizon(parent) {
         tmpB.copy(cGrassMid).lerp(cGrassSun, clamp(n1 * 0.5 + 0.5, 0, 1));
         tmpA.lerp(tmpB, grassEdge);
       }
+    } else if (y < 1.35 && !inQuay) {
+      const shoreRockT = smoothstep(-0.25, 1.25, y);
+      tmpA.copy(cCliffDark).lerp(cGrassDeep, shoreRockT);
     } else if (inQuay && y < 1.52) {
       tmpA.copy(cQuayUnder);
     } else {
@@ -387,10 +392,10 @@ function buildCoastalTerrainAndHorizon(parent) {
       }
     }
 
-    // Steep coastal cliffs & rocky limestone slopes (normal.y < 0.76)
-    if (ny < 0.82 && y > -1.8) {
-      const rockWeight = smoothstep(0.82, 0.58, ny);
-      const strata = 0.5 + 0.5 * Math.sin(y * 2.3 + n2 * 2.2);
+    // Steep coastal cliffs & rocky limestone slopes (normal.y < 0.70)
+    if (ny < 0.70 && y > -1.8) {
+      const rockWeight = smoothstep(0.70, 0.42, ny);
+      const strata = 0.5 + 0.5 * Math.sin(y * 0.9 + n2 * 4.5);
       tmpB.copy(cCliffDark).lerp(cCliffLight, strata);
       tmpA.lerp(tmpB, rockWeight);
     }
@@ -419,6 +424,81 @@ function buildCoastalTerrainAndHorizon(parent) {
     normalScale: new THREE.Vector2(0.58, 0.58),
     metalness: 0.02,
   });
+  terrainMat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        varying vec3 vTerrainWorldPos;
+        varying vec3 vTerrainWorldNormal;`
+      )
+      .replace(
+        "#include <worldpos_vertex>",
+        `#include <worldpos_vertex>
+        vec4 tWp = modelMatrix * vec4(transformed, 1.0);
+        vTerrainWorldPos = tWp.xyz;
+        vTerrainWorldNormal = normalize(mat3(modelMatrix) * objectNormal);`
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        varying vec3 vTerrainWorldPos;
+        varying vec3 vTerrainWorldNormal;
+        float tHash(vec2 p) {
+          p = fract(p * vec2(123.34, 456.21));
+          p += dot(p, p + 45.32);
+          return fract(p.x * p.y);
+        }
+        float tNoise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(
+            mix(tHash(i), tHash(i + vec2(1.0, 0.0)), f.x),
+            mix(tHash(i + vec2(0.0, 1.0)), tHash(i + vec2(1.0, 1.0)), f.x),
+            f.y
+          );
+        }`
+      )
+      .replace(
+        "#include <color_fragment>",
+        `#include <color_fragment>
+        float slopeAmt = smoothstep(0.28, 0.56, 1.0 - clamp(vTerrainWorldNormal.y, 0.0, 1.0));
+        float rockMask = slopeAmt * smoothstep(0.45, 1.45, vTerrainWorldPos.y);
+        float macroNoise = tNoise(vTerrainWorldPos.xz * 0.14 + vec2(vTerrainWorldPos.y * 0.28));
+        float rockFissure = tNoise(vec2(vTerrainWorldPos.x * 0.42 + vTerrainWorldPos.z * 0.36, vTerrainWorldPos.y * 0.95));
+        float crevice = smoothstep(0.18, 0.84, macroNoise * 0.55 + rockFissure * 0.45);
+        // Linear-space weathered granite & dark limestone matching photogrammetry cliff rocks
+        vec3 cliffWarm = vec3(0.135, 0.122, 0.104);
+        vec3 cliffDark = vec3(0.052, 0.048, 0.044);
+        vec3 cliffColor = mix(cliffDark, cliffWarm, crevice);
+        // Subtle moss cap atop cliff ledges
+        float ledgeMoss = smoothstep(0.28, 0.52, vTerrainWorldNormal.y) * smoothstep(2.0, 6.0, vTerrainWorldPos.y) * smoothstep(0.42, 0.72, tNoise(vTerrainWorldPos.xz * 0.16));
+        cliffColor = mix(cliffColor, vec3(0.07, 0.14, 0.045), ledgeMoss * 0.65);
+        diffuseColor.rgb = mix(diffuseColor.rgb, cliffColor, rockMask * 0.86);
+
+        // Meadow natural grass patch variation & clover dappling
+        float grassMask = (1.0 - slopeAmt) * smoothstep(0.85, 1.65, vTerrainWorldPos.y);
+        float meadowMacro = tNoise(vTerrainWorldPos.xz * 0.075);
+        float meadowMicro = tNoise(vTerrainWorldPos.xz * 0.48);
+        vec3 meadowTint = mix(vec3(0.84, 0.92, 0.80), vec3(1.10, 1.06, 0.84), meadowMacro);
+        meadowTint *= 0.92 + 0.16 * meadowMicro;
+        diffuseColor.rgb *= mix(vec3(1.0), meadowTint, grassMask * 0.65);
+
+        // Tidal wet sand saturation near waterline
+        float wetSand = (1.0 - slopeAmt) * smoothstep(-0.4, 0.12, vTerrainWorldPos.y) * (1.0 - smoothstep(0.22, 0.75, vTerrainWorldPos.y));
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.64, 0.59, 0.54), wetSand * 0.85);`
+      )
+      .replace(
+        "#include <roughnessmap_fragment>",
+        `#include <roughnessmap_fragment>
+        float wetMaskR = (1.0 - smoothstep(0.28, 0.56, 1.0 - clamp(vTerrainWorldNormal.y, 0.0, 1.0)))
+          * smoothstep(-0.4, 0.12, vTerrainWorldPos.y)
+          * (1.0 - smoothstep(0.20, 0.62, vTerrainWorldPos.y));
+        roughnessFactor = mix(roughnessFactor, 0.22, wetMaskR * 0.88);`
+      );
+  };
 
   const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
   terrainMesh.receiveShadow = true;
@@ -464,37 +544,54 @@ function buildCourtyardAndTrails(parent, waterAnimList) {
   const brassMat = pbrMetalMat(0xcba358, { roughness: 0.26, metalness: 0.86 });
   const chromeMat = pbrMetalMat(0xe2e7eb, { roughness: 0.16, metalness: 0.92 });
 
-  // Paved Villa Front Flagstone Courtyard: X in [-20, +4], Z in [+6.8, +12.2], Y = +2.22m
-  const courtSlab = new THREE.Mesh(new THREE.BoxGeometry(24.0, 0.16, 5.4), flagstoneMat);
-  courtSlab.position.set(-8.0, 2.14, 9.5);
+  // Paved Villa Front Flagstone Courtyard: X in [-20, +1.5], Z in [+6.8, +12.2], Y = +2.22m
+  const courtSlab = new THREE.Mesh(new THREE.BoxGeometry(21.5, 0.16, 5.4), flagstoneMat);
+  courtSlab.position.set(-9.25, 2.14, 9.5);
   sec.add(courtSlab);
+  const courtBorderMat = limestoneMat;
+  for (const [bx, bz, bw, bd] of [
+    [-9.25, 12.26, 21.7, 0.18],
+    [1.56, 9.5, 0.18, 5.56],
+  ]) {
+    const curb = new THREE.Mesh(new THREE.BoxGeometry(bw, 0.20, bd), courtBorderMat);
+    curb.position.set(bx, 2.16, bz);
+    sec.add(curb);
+  }
 
-  // Connecting entrance walk south & fountain apron: X in [-16, -2], Z in [+2.0, +6.8]
-  const fountainApron = new THREE.Mesh(new THREE.BoxGeometry(14.0, 0.15, 5.2), flagstoneMat);
-  fountainApron.position.set(-9.0, 2.135, 4.4);
+  // Connecting entrance walk south & fountain apron + east landing bridging smoothly to Harbor Steps:
+  // X in [-16, +2.0], Z in [+1.8, +6.8]
+  const fountainApron = new THREE.Mesh(new THREE.BoxGeometry(18.0, 0.15, 5.2), flagstoneMat);
+  fountainApron.position.set(-7.0, 2.135, 4.4);
   sec.add(fountainApron);
 
   registerWalkZone((x, z) => {
     if (x >= -20.0 && x <= 4.0 && z >= 6.8 && z <= 12.2) return 2.22;
-    if (x >= -16.0 && x <= -2.0 && z >= 1.8 && z <= 6.8) return 2.21;
-    if (x >= 2.0 && x <= 10.0 && z >= -2.2 && z <= 8.2) {
-      return lerp(2.22, 1.36, smoothstep(2.0, 9.8, x));
+    if (x >= -16.0 && x <= 2.0 && z >= 1.8 && z <= 7.0) return 2.21;
+    if (x >= 2.0 && x <= 10.2 && z >= 1.8 && z <= 7.0) {
+      return lerp(2.22, 1.38, smoothstep(2.0, 10.2, x));
     }
     return null;
   });
 
-  // Stepped/sloped limestone ramp from Courtyard (X=+2, Y=2.22) to Harbor Quay (X=+10, Y=1.36)
+  // Grand stepped limestone stairway from East Courtyard Landing (X=+2, Y=2.22) cleanly down to Harbor Quay (X=+10.9, Y=1.38)
   const rampGeos = [];
-  const rampSteps = 10;
+  const rampSteps = 11;
   for (let i = 0; i < rampSteps; i += 1) {
     const t0 = i / rampSteps;
     const t1 = (i + 1) / rampSteps;
-    const xm = lerp(2.0, 10.0, (t0 + t1) * 0.5);
-    const ym = lerp(2.22, 1.36, smoothstep(0, 1, (t0 + t1) * 0.5));
-    const g = new THREE.BoxGeometry(0.92, 0.28, 5.4);
-    g.rotateZ(-0.105);
-    g.translate(xm, ym - 0.12, 3.2);
+    const xm = lerp(2.0, 10.9, (t0 + t1) * 0.5);
+    const stepY = i === rampSteps - 1
+      ? 1.40
+      : Math.max(lerp(2.22, 1.40, smoothstep(0, 1, (t0 + t1) * 0.5)), getWorldTerrainY(xm, 4.4) + 0.08);
+    const g = new THREE.BoxGeometry(0.92, 0.34, 5.2);
+    g.translate(xm, stepY - 0.16, 4.4);
     rampGeos.push(g);
+  }
+  for (const cz of [1.72, 7.08]) {
+    const stringer = new THREE.BoxGeometry(9.1, 0.42, 0.24);
+    stringer.rotateZ(-0.095);
+    stringer.translate(6.45, 1.85, cz);
+    rampGeos.push(stringer);
   }
 
   // Conformed natural limestone flagstone trails (West Gazebo + North Bridge & Windmill)
@@ -683,7 +780,7 @@ function buildCourtyardAndTrails(parent, waterAnimList) {
   sec.add(buildRosePergolaArch(-31.0, 2.22, 1.0, 0.78));
   parent.add(sec);
 
-  buildCourtyardProps(sec, { limestoneMat, cedarMat, brassMat, chromeMat });
+  return buildCourtyardProps(sec, { limestoneMat, cedarMat, brassMat, chromeMat });
 }
 
 function buildCourtyardProps(sec, { limestoneMat, cedarMat, brassMat, chromeMat }) {
@@ -732,10 +829,15 @@ function buildCourtyardProps(sec, { limestoneMat, cedarMat, brassMat, chromeMat 
   const peekEnv = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.008, 0.09), creamEnvMat);
   peekEnv.position.set(-0.02, 1.305, 0.31);
   peekEnv.rotation.set(0.22, 0.14, 0.05);
+  // Postal flag on its own hinge pivot (animated by the "raise flag" interaction)
+  const flagPivot = new THREE.Group();
+  flagPivot.position.set(0.182, 1.275, 0.16);
+  flagPivot.userData.noBatch = true;
   const flagStem = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.21, 0.018), flagCrimsonMat);
-  flagStem.position.set(0.182, 1.37, 0.16);
+  flagStem.position.set(0, 0.095, 0);
   const flagBanner = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.065, 0.095), flagCrimsonMat);
-  flagBanner.position.set(0.182, 1.455, 0.198);
+  flagBanner.position.set(0, 0.18, 0.038);
+  flagPivot.add(flagStem, flagBanner);
   const mbRose = new THREE.Mesh(new THREE.TorusKnotGeometry(0.032, 0.010, 32, 8), roseReliefMat);
   mbRose.position.set(-0.176, 1.26, 0.05);
   mbRose.rotation.y = Math.PI / 2;
@@ -751,8 +853,7 @@ function buildCourtyardProps(sec, { limestoneMat, cedarMat, brassMat, chromeMat 
     mbSlotHood,
     mbPlate,
     peekEnv,
-    flagStem,
-    flagBanner,
+    flagPivot,
     mbRose
   );
   tagInteractive(mailbox, "mailbox", "庭院玫瑰信箱");
@@ -810,7 +911,11 @@ function buildCourtyardProps(sec, { limestoneMat, cedarMat, brassMat, chromeMat 
     }
     return wg;
   };
-  bike.add(buildSpokedWheel(-0.55, true), buildSpokedWheel(0.55, false));
+  const rearWheel = buildSpokedWheel(-0.55, true);
+  const frontWheel = buildSpokedWheel(0.55, false);
+  rearWheel.userData.noBatch = true;
+  frontWheel.userData.noBatch = true;
+  bike.add(rearWheel, frontWheel);
 
   const addTube = (x1, y1, z1, x2, y2, z2, r, mat) => {
     const p1 = new THREE.Vector3(x1, y1, z1);
@@ -899,6 +1004,7 @@ function buildCourtyardProps(sec, { limestoneMat, cedarMat, brassMat, chromeMat 
   const bell = new THREE.Mesh(new THREE.SphereGeometry(0.024, 12, 10), brassMat);
   bell.scale.set(1, 0.72, 1);
   bell.position.set(0.34, 0.972, 0.12);
+  bell.userData.noBatch = true;
 
   // Chrome Vintage Headlamp on Front Fork Crown
   const headlamp = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.022, 0.068, 14), chromeMat);
@@ -943,6 +1049,16 @@ function buildCourtyardProps(sec, { limestoneMat, cedarMat, brassMat, chromeMat 
   bikeHolder.add(bike);
   tagInteractive(bikeHolder, "bicycle", "庭院复古单车");
   sec.add(bikeHolder);
+  // Fender is a child of the wheel group: keep fenders static by moving them out of the spinning group
+  for (const wg of [rearWheel, frontWheel]) {
+    const fenderParts = wg.children.filter((c) => c.geometry && c.geometry.type === "TorusGeometry" && c.material === mintPaint);
+    for (const f of fenderParts) {
+      wg.remove(f);
+      f.position.add(wg.position);
+      bike.add(f);
+    }
+  }
+  return { mailbox, flagPivot, bikeHolder, wheels: [rearWheel, frontWheel], bell };
 }
 
 // ---------------------------------------------------------------------------
@@ -1002,6 +1118,87 @@ function buildHarborQuayAndBoathouse(parent) {
   addDeckSlab(9.2, 46.0, -25.8, 19.2);
   addDeckSlab(9.2, 26.0, 19.2, 22.0);
   addDeckSlab(32.0, 46.0, 19.2, 22.0);
+
+  // Warm Teak Waterfront Promenade Apron framing East & South seawall + coastal stone planters
+  const promenadeE = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.032, 46.2), teakMat);
+  promenadeE.position.set(44.2, 1.372, -2.0);
+  const promenadeS1 = new THREE.Mesh(new THREE.BoxGeometry(15.2, 0.032, 2.1), teakMat);
+  promenadeS1.position.set(17.4, 1.372, 20.5);
+  const promenadeS2 = new THREE.Mesh(new THREE.BoxGeometry(12.2, 0.032, 2.1), teakMat);
+  promenadeS2.position.set(39.1, 1.372, 20.5);
+  sec.add(promenadeE, promenadeS1, promenadeS2);
+
+  // Raised limestone planter curbs framing the west quay entry & pergola garden + lush Mediterranean flower beds
+  const planterLeafMatA = new THREE.MeshStandardMaterial({ color: 0x3b6336, roughness: 0.84 });
+  const planterLeafMatB = new THREE.MeshStandardMaterial({ color: 0x527b47, roughness: 0.82 });
+  const planterLavMat = new THREE.MeshStandardMaterial({ color: 0x8d72b8, roughness: 0.76 });
+  const planterRng = mulberry32(1904);
+  for (const [px, pz, sx, sz] of [
+    [11.4, -14.8, 1.5, 4.4],
+    [11.4, 11.4, 1.5, 4.2],
+    [22.0, -17.2, 7.6, 1.35],
+  ]) {
+    registerBoxCollider(px - sx * 0.5, px + sx * 0.5, pz - sz * 0.5, pz + sz * 0.5);
+    const box = new THREE.Mesh(new THREE.BoxGeometry(sx, 0.44, sz), copingMat);
+    box.position.set(px, 1.58, pz);
+    const soil = new THREE.Mesh(
+      new THREE.BoxGeometry(sx - 0.24, 0.08, sz - 0.24),
+      new THREE.MeshStandardMaterial({ color: 0x3b2c20, roughness: 0.94 })
+    );
+    soil.position.set(px, 1.79, pz);
+    sec.add(box, soil);
+
+    const alongX = sx > sz;
+    const span = (alongX ? sx : sz) - 0.65;
+    const bushCnt = alongX ? 9 : 5;
+    for (let bi = 0; bi < bushCnt; bi += 1) {
+      const u = bushCnt > 1 ? bi / (bushCnt - 1) - 0.5 : 0;
+      const bx = px + (alongX ? u * span : (planterRng() - 0.5) * (sx * 0.34));
+      const bz = pz + (alongX ? (planterRng() - 0.5) * (sz * 0.32) : u * span);
+      const r = 0.28 + planterRng() * 0.14;
+      const mound = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(r, 1),
+        bi % 2 === 0 ? planterLeafMatA : planterLeafMatB
+      );
+      mound.scale.set(1.18, 0.76 + planterRng() * 0.25, 1.12);
+      mound.position.set(bx, 1.84 + r * 0.38, bz);
+      mound.rotation.y = planterRng() * Math.PI * 2;
+      sec.add(mound);
+
+      if (bi % 2 === 0) {
+        const rosePatch = createRoseBouquet({ count: 6, scale: 0.78 });
+        rosePatch.position.set(bx, 2.08, bz);
+        sec.add(rosePatch);
+      } else {
+        for (let lv = 0; lv < 3; lv += 1) {
+          const sp = new THREE.Mesh(new THREE.ConeGeometry(0.068, 0.34, 6), planterLavMat);
+          sp.position.set(bx + (lv - 1) * 0.11, 2.12, bz + (planterRng() - 0.5) * 0.14);
+          sp.rotation.z = (planterRng() - 0.5) * 0.28;
+          sec.add(sp);
+        }
+      }
+    }
+  }
+
+  // Nautical oak harbor barrels & dock crates along north-east wharf
+  const barrelMat = pbrWoodMat(0x7c4f2e, { roughness: 0.62 });
+  for (const [bx, bz] of [
+    [41.5, -22.2],
+    [42.2, -21.5],
+    [41.4, -21.1],
+    [34.8, 17.5],
+  ]) {
+    registerCircleCollider(bx, bz, 0.44);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.30, 0.78, 12), barrelMat);
+    barrel.position.set(bx, 1.75, bz);
+    for (const ry of [0.18, -0.18]) {
+      const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.322, 0.014, 6, 16), castIronMat);
+      hoop.rotation.x = Math.PI * 0.5;
+      hoop.position.set(bx, 1.75 + ry, bz);
+      sec.add(hoop);
+    }
+    sec.add(barrel);
+  }
 
   // Vertical Ashlar Granite Quay Seawalls (top Y = +1.38m down to Y = -4.5m -> height 5.88m, midY = -1.56m)
   const addSeawall = (cx, cz, sx, sz) => {
@@ -1263,9 +1460,10 @@ function buildQuayDetailsLandingAndCafe(
   buildBoathouseEspressoPergola(sec, { quayWallMat, castIronMat, brassMat, teakMat, lanternGlowMat });
 
   // Mediterranean Harborside Promenade Bistro Parasols, Limestone Floral Urns & Teak Benches
-  const creamCanvas = pbrFabricMat(0xf7f2e6, { roughness: 0.82, side: THREE.DoubleSide });
+  const creamCanvas = pbrFabricMat(0xe5d6be, { roughness: 0.9, side: THREE.DoubleSide });
   const terracottaPotMat = pbrPlasterMat(0xc46d4e, { roughness: 0.8 });
   const oliveLeafMat = new THREE.MeshStandardMaterial({ color: 0x526b46, roughness: 0.78 });
+  const oliveLeafMatB = new THREE.MeshStandardMaterial({ color: 0x3f5837, roughness: 0.82 });
 
   for (const [tx, tz] of [
     [16.2, 6.2],
@@ -1352,12 +1550,23 @@ function buildQuayDetailsLandingAndCafe(
     rim.position.y = 0.81;
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.08, 0.92, 8), teakMat);
     trunk.position.y = 1.18;
-    const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(0.56, 1), oliveLeafMat);
-    crown.scale.set(1.08, 0.86, 1.04);
-    crown.position.y = 1.78;
-    const blooms = createRoseBouquet({ count: 5, scale: 0.62 });
-    blooms.position.y = 0.82;
-    urn.add(plinth, pot, rim, trunk, crown, blooms);
+    const crownGroup = new THREE.Group();
+    crownGroup.position.y = 1.66;
+    for (const [cx, cy, cz, cr, mat] of [
+      [0, 0.14, 0, 0.44, oliveLeafMat],
+      [-0.24, -0.02, 0.16, 0.34, oliveLeafMatB],
+      [0.24, 0.04, -0.14, 0.35, oliveLeafMat],
+      [0.06, -0.06, -0.22, 0.30, oliveLeafMatB],
+      [-0.08, 0.30, 0.04, 0.28, oliveLeafMatB],
+    ]) {
+      const lobe = new THREE.Mesh(new THREE.IcosahedronGeometry(cr, 1), mat);
+      lobe.scale.set(1.06, 0.86, 1.02);
+      lobe.position.set(cx, cy, cz);
+      crownGroup.add(lobe);
+    }
+    const blooms = createRoseBouquet({ count: 7, scale: 0.72 });
+    blooms.position.y = 0.84;
+    urn.add(plinth, pot, rim, trunk, crownGroup, blooms);
     sec.add(urn);
   }
 }
@@ -1530,6 +1739,73 @@ function buildBoathouseEspressoPergola(
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.065, 10, 8), lanternGlowMat);
     bulb.position.set(px, 2.44, pz);
     cafe.add(cord, shade, bulb);
+  }
+
+  // Draped Mediterranean striped linen awning bays beneath the pergola rafters + bistro lights
+  const stripeCanvas = document.createElement("canvas");
+  stripeCanvas.width = 512;
+  stripeCanvas.height = 128;
+  const sCtx = stripeCanvas.getContext("2d");
+  sCtx.fillStyle = "#f7efe0";
+  sCtx.fillRect(0, 0, 512, 128);
+  for (let sx = 0; sx < 512; sx += 64) {
+    sCtx.fillStyle = "#c96f5d";
+    sCtx.fillRect(sx, 0, 30, 128);
+    sCtx.fillStyle = "#dfa391";
+    sCtx.fillRect(sx + 30, 0, 3, 128);
+  }
+  sCtx.fillStyle = "rgba(85, 65, 48, 0.05)";
+  for (let sy = 0; sy < 128; sy += 4) sCtx.fillRect(0, sy, 512, 1);
+  const awningTex = new THREE.CanvasTexture(stripeCanvas);
+  awningTex.wrapS = THREE.RepeatWrapping;
+  awningTex.wrapT = THREE.RepeatWrapping;
+  awningTex.repeat.set(3, 1);
+  awningTex.colorSpace = THREE.SRGBColorSpace;
+  const awningMat = new THREE.MeshStandardMaterial({
+    map: awningTex,
+    roughness: 0.9,
+    metalness: 0.02,
+    side: THREE.DoubleSide,
+  });
+
+  for (const slopeDir of [-1, 1]) {
+    const swGeo = new THREE.PlaneGeometry(11.4, 4.78, 48, 6);
+    swGeo.rotateX(-Math.PI * 0.5);
+    const pos = swGeo.attributes.position;
+    for (let i = 0; i < pos.count; i += 1) {
+      const px = pos.getX(i);
+      const bayPhase = ((px + 5.7) / 11.4) * 6.0 * Math.PI;
+      pos.setY(i, pos.getY(i) - Math.abs(Math.sin(bayPhase)) * 0.11);
+    }
+    swGeo.computeVertexNormals();
+    const swMesh = new THREE.Mesh(swGeo, awningMat);
+    swMesh.rotation.x = slopeDir * 0.258;
+    swMesh.position.set(0, 4.02, slopeDir * 2.38);
+    cafe.add(swMesh);
+
+    const valGeo = new THREE.PlaneGeometry(11.4, 0.28, 36, 1);
+    const valPos = valGeo.attributes.position;
+    for (let i = 0; i < valPos.count; i += 1) {
+      if (valPos.getY(i) < 0) {
+        const vx = valPos.getX(i);
+        valPos.setY(i, valPos.getY(i) - Math.abs(Math.sin(((vx + 5.7) / 11.4) * 12 * Math.PI)) * 0.05);
+      }
+    }
+    valGeo.computeVertexNormals();
+    const valance = new THREE.Mesh(valGeo, awningMat);
+    valance.position.set(0, 3.28, slopeDir * 4.74);
+    cafe.add(valance);
+  }
+
+  for (let i = 0; i < 14; i += 1) {
+    const u = i / 13;
+    const bx = lerp(-5.5, 5.5, u);
+    const droop = Math.sin(u * Math.PI * 5) * 0.08;
+    for (const bz of [-4.72, 4.72]) {
+      const eaveBulb = new THREE.Mesh(new THREE.SphereGeometry(0.052, 8, 6), lanternGlowMat);
+      eaveBulb.position.set(bx, 3.16 - Math.abs(droop), bz);
+      cafe.add(eaveBulb);
+    }
   }
 
   sec.add(cafe);
@@ -1918,32 +2194,20 @@ function buildBreakwaterAndLighthouse(parent) {
   sec.add(moleCore, moleTop, bastionCore, bastionTop);
 
   // Armored seaward coastal granite boulders along mole & circular bastion base
-  const rng = mulberry32(6803);
-  const riprapGeos = [];
-  for (let i = 0; i < 52; i += 1) {
-    const bx = 47.0 + rng() * 29.0;
-    const side = i % 2 === 0 ? -1 : 1;
-    const bz = 10.0 + side * (2.55 + rng() * 1.45);
-    const r = 0.65 + rng() * 0.85;
-    const g = createStratifiedCoastalRockGeo(r, 6800 + i, 18, 13);
-    g.scale(1.15, 0.72 + rng() * 0.3, 0.95);
-    g.rotateY(rng() * Math.PI * 2);
-    g.rotateZ((rng() - 0.5) * 0.5);
-    g.translate(bx, -0.35 + rng() * 0.65, bz);
-    riprapGeos.push(g);
+  // Cut-ashlar sloped limestone plinth skirting along breakwater & bastion base (clean toe, photo rocks armor perimeter)
+  const toeGeos = [];
+  for (let i = 0; i < 20; i += 1) {
+    const bx = 46.8 + i * 1.48;
+    for (const side of [-1, 1]) {
+      const blk = new THREE.BoxGeometry(1.42, 1.35, 0.85);
+      blk.translate(bx, -0.15, 10.0 + side * 2.55);
+      toeGeos.push(blk);
+    }
   }
-  for (let i = 0; i < 32; i += 1) {
-    const ang = (i / 32) * Math.PI * 2;
-    if (Math.cos(ang) < -0.78) continue;
-    const dist = 4.95 + rng() * 1.65;
-    const r = 0.75 + rng() * 0.95;
-    const g = createStratifiedCoastalRockGeo(r, 6900 + i, 18, 13);
-    g.scale(1.1, 0.75, 1.0);
-    g.rotateY(rng() * Math.PI);
-    g.translate(78.0 + Math.cos(ang) * dist, -0.3 + rng() * 0.65, 10.0 + Math.sin(ang) * dist);
-    riprapGeos.push(g);
-  }
-  sec.add(new THREE.Mesh(safeMerge(riprapGeos), boulderMat));
+  const bastionSkirt = new THREE.CylinderGeometry(5.15, 5.75, 1.55, 24);
+  bastionSkirt.translate(78.0, -0.22, 10.0);
+  toeGeos.push(bastionSkirt);
+  sec.add(new THREE.Mesh(safeMerge(toeGeos), boulderMat));
 
   // 13.5m Realistic Stone / Crimson-White Coastal Lighthouse at (+78, +1.38, +10)
   registerCircleCollider(78.0, 10.0, 2.5);
@@ -2299,27 +2563,7 @@ function buildCreekAndArchedBridge(parent, waterAnimList) {
   sec.add(creekMesh);
   waterAnimList.push({ map: creekWater.map, normalMap: creekWater.normalMap, vx: 0.02, vy: -0.28 });
 
-  // Mossy river boulders along both creek banks
-  const rng = mulberry32(4913);
-  const bankGeos = [];
-  for (let i = 0; i < 88; i += 1) {
-    const z = lerp(-108.0, -26.0, rng());
-    if (Math.abs(z + 44.0) < 3.2) continue; // Keep bridge abutments clear
-    const side = i % 2 === 0 ? -1 : 1;
-    const x = getCreekCenterX(z) + side * (2.25 + rng() * 1.45);
-    const r = 0.28 + rng() * 0.48;
-    const g = createStratifiedCoastalRockGeo(r, 4900 + i, 14, 11);
-    g.scale(1.2, 0.68, 0.95);
-    g.rotateY(rng() * Math.PI * 2);
-    g.translate(x, getWorldTerrainY(x, z) + r * 0.22, z);
-    bankGeos.push(g);
-  }
-  sec.add(
-    new THREE.Mesh(
-      safeMerge(bankGeos),
-      pbrStoneMat(0x7c8073, { repeatX: 2, repeatY: 2, roughness: 0.88 })
-    )
-  );
+  // Creek bank boulders & riparian shrubs are placed via photogrammetry instancing in buildCoastalPhotogrammetry()
 
   buildCedarArchedFootbridge(sec);
   parent.add(sec);
@@ -2417,8 +2661,8 @@ function buildWindmillCottagesAndIslet(parent) {
   wm.position.set(-52.0, 14.2, -68.0);
   wm.rotation.y = 0.52; // Facing southeast coastal breeze
 
-  const apron = new THREE.Mesh(new THREE.CylinderGeometry(4.8, 5.1, 0.65, 24), towerStone);
-  apron.position.y = -0.26;
+  const apron = new THREE.Mesh(new THREE.CylinderGeometry(3.3, 3.7, 0.92, 24), towerStone);
+  apron.position.y = -0.38;
   const tower = new THREE.Mesh(new THREE.CylinderGeometry(2.26, 3.28, 10.5, 24), towerStone);
   tower.position.y = 5.25;
   const doorArch = new THREE.Mesh(new THREE.BoxGeometry(0.42, 2.25, 1.32), cedarMat);
@@ -2520,40 +2764,39 @@ function buildWindmillCottagesAndIslet(parent) {
     cot.position.set(cx, cy, cz);
     cot.rotation.y = ry;
 
-    // Smooth 28-segment level stone terrace & mortared retaining wall grounded deep into slope
-    const terraceR = cw * 0.94;
-    const terrace = new THREE.Mesh(
-      new THREE.CylinderGeometry(terraceR, terraceR + 0.65, 2.35, 28),
-      towerStone
-    );
-    terrace.position.y = -1.12;
-    const terraceCoping = new THREE.Mesh(
-      new THREE.TorusGeometry(terraceR - 0.04, 0.14, 8, 28),
-      towerStone
-    );
-    terraceCoping.rotation.x = Math.PI / 2;
-    terraceCoping.position.y = 0.06;
-    const gardenWall = new THREE.Mesh(
-      new THREE.TorusGeometry(cw * 0.82, 0.2, 8, 24, Math.PI * 1.28),
-      towerStone
-    );
-    gardenWall.rotation.x = Math.PI / 2;
-    gardenWall.rotation.z = Math.PI * 0.86;
-    gardenWall.position.y = 0.24;
+    // Tightly tailored rectilinear limestone plinth & front doorstep patio (replaces wide circular pad)
+    const pw = cw + 0.96;
+    const pd = cd + 1.05;
+    const terrace = new THREE.Mesh(new THREE.BoxGeometry(pw, 2.38, pd), towerStone);
+    terrace.position.y = -1.16;
+    const terraceCoping = new THREE.Mesh(new THREE.BoxGeometry(pw + 0.14, 0.14, pd + 0.14), towerStone);
+    terraceCoping.position.y = 0.04;
+    const gardenWall = new THREE.Group();
+    const frontStoop = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.16, 1.35), towerStone);
+    frontStoop.position.set(0, 0.08, pd * 0.5 + 0.52);
+    gardenWall.add(frontStoop);
+    for (const sx of [-1.45, 1.45]) {
+      const cheek = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.44, 1.25), towerStone);
+      cheek.position.set(sx, 0.22, pd * 0.5 + 0.45);
+      gardenWall.add(cheek);
+    }
 
     // 4 Carved stone/terracotta drainage weep-spouts (排水口) protruding along downhill retaining wall
-    for (const spAng of [-0.68, -0.28, 0.28, 0.68]) {
-      const spX = Math.sin(spAng) * (terraceR + 0.18);
-      const spZ = Math.cos(spAng) * (terraceR + 0.18);
+    for (const wx of [-0.38, -0.14, 0.14, 0.38]) {
+      const spX = wx * pw;
+      const spZ = pd * 0.5 + 0.08;
       const corbel = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.12, 0.26), towerStone);
       corbel.position.set(spX, -0.46, spZ);
-      corbel.rotation.y = spAng;
       const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.065, 0.34, 10), roofMat);
       spout.rotation.x = Math.PI / 2 + 0.12;
-      spout.position.set(spX + Math.sin(spAng) * 0.08, -0.38, spZ + Math.cos(spAng) * 0.08);
-      spout.rotation.z = -spAng;
+      spout.position.set(spX, -0.38, spZ + 0.08);
       cot.add(corbel, spout);
     }
+
+    // Grounded masonry base beneath east kitchen garden planter
+    const kgPlinth = new THREE.Mesh(new THREE.BoxGeometry(2.25, 2.38, 2.75), towerStone);
+    kgPlinth.position.set(cw * 0.62, -1.16, -cd * 0.12);
+    cot.add(kgPlinth);
 
     // Stepped stone access stairs (上下步道) descending from front porch terrace down to meadow slope
     const stairStartZ = cd * 0.5 + 1.65;
@@ -2718,28 +2961,7 @@ function buildWindmillCottagesAndIslet(parent) {
     sec.add(cot);
   }
 
-  // Outer-Bay Limestone Sea-Stack Islet Rock Formations at (+58, 0, +56)
-  const rng = mulberry32(8319);
-  const isletGeos = [];
-  for (let i = 0; i < 34; i += 1) {
-    const a = rng() * Math.PI * 2;
-    const dist = i < 6 ? rng() * 3.2 : 3.0 + rng() * 7.4;
-    const rx = 58.0 + Math.cos(a) * dist;
-    const rz = 56.0 + Math.sin(a) * dist;
-    const rad = i < 6 ? 1.8 + rng() * 1.9 : 0.75 + rng() * 1.45;
-    const g = createStratifiedCoastalRockGeo(rad, 8300 + i, 18, 13);
-    const tall = i < 6 ? 1.65 + rng() * 1.15 : 0.68 + rng() * 0.55;
-    g.scale(1.0, tall, 0.92);
-    g.rotateY(rng() * Math.PI * 2);
-    g.translate(rx, getWorldTerrainY(rx, rz) + rad * tall * 0.34, rz);
-    isletGeos.push(g);
-  }
-  sec.add(
-    new THREE.Mesh(
-      safeMerge(isletGeos),
-      pbrStoneMat(0x9b9487, { repeatX: 3, repeatY: 3, roughness: 0.88 })
-    )
-  );
+  // Outer-bay sea-stack crags & shrubs are placed via photogrammetry in buildCoastalPhotogrammetry()
 
   parent.add(sec);
   return { sailsRotor, warmWinMat };
@@ -2963,6 +3185,7 @@ function buildGoldenBeachAndBoardwalk(parent) {
   }
 
   // Two Slatted Teak Steamer Deck Loungers + Slatted Teak Resort Side Table + Ribbed Valanced Market Parasol
+  const loungerSpots = [];
   const deckBrassMat = pbrMetalMat(0xcfa658, { roughness: 0.26, metalness: 0.88 });
   const drinkGlassMat = pbrGlassMat({ color: 0xe6f6fa, opacity: 0.42 });
   const citrusMat = new THREE.MeshStandardMaterial({ color: 0xf4a638, roughness: 0.45 });
@@ -2979,6 +3202,7 @@ function buildGoldenBeachAndBoardwalk(parent) {
     lounger.position.set(lx, deckY, lz);
     lounger.rotation.y = lyaw;
     deckGroup.add(lounger);
+    loungerSpots.push({ lx, lz, lyaw });
   }
   // Slatted Teak Resort Side Table + Two Iced Citrus Drinks + Ribbed Market Parasol
   const sideTbl = new THREE.Group();
@@ -3001,57 +3225,26 @@ function buildGoldenBeachAndBoardwalk(parent) {
     slice.position.set(gx + 0.03, 0.545, gz);
     sideTbl.add(glass, slice);
   }
+  const parasolCanvasMat = pbrFabricMat(0xe5d6be, { roughness: 0.9, side: THREE.DoubleSide });
   const deckParasol = buildResortMarketParasol({
     teakMat: cedarBeamMat,
-    canvasMat: linenMat,
+    canvasMat: parasolCanvasMat,
     brassMat: deckBrassMat,
     radius: 1.52,
     height: 2.46,
   });
   deckParasol.position.set(3.08, deckY, 35.85);
+  deckParasol.userData.noBatch = true;
   deckGroup.add(sideTbl, deckParasol);
 
   boardwalkGroup.add(deckGroup);
   tagInteractive(boardwalkGroup, "beach-boardwalk", "金色沙滩亲水木栈道");
   sec.add(boardwalkGroup);
 
-  // 4) Wave-Eroded Stratified Coastal Reef Rock Formations (海蚀礁石) framing West & East Cove Headlands
-  const reefRng = mulberry32(7419);
-  const dryReefGeos = [];
-  const wetReefGeos = [];
-  const reefClusters = [
-    // West sandy cove headland reef (X in [-35.5, -22.5], Z in [27.0, 36.8])
-    { cx: -31.5, cz: 31.2, count: 16, spreadX: 4.8, spreadZ: 3.6, scaleMin: 0.75, scaleMax: 2.1 },
-    { cx: -25.2, cz: 33.8, count: 12, spreadX: 3.4, spreadZ: 2.8, scaleMin: 0.55, scaleMax: 1.55 },
-    // East sandy cove reef shelves between boardwalk deck & harbor seawall (X in [6.8, 15.2], Z in [25.0, 33.5])
-    { cx: 10.6, cz: 29.2, count: 15, spreadX: 3.8, spreadZ: 3.2, scaleMin: 0.65, scaleMax: 1.85 },
-    { cx: 14.2, cz: 25.8, count: 10, spreadX: 2.6, spreadZ: 2.4, scaleMin: 0.55, scaleMax: 1.45 },
-  ];
-
-  let rSeed = 7500;
-  for (const cl of reefClusters) {
-    for (let i = 0; i < cl.count; i += 1) {
-      rSeed += 1;
-      const rx = cl.cx + (reefRng() - 0.5) * 2.0 * cl.spreadX;
-      const rz = cl.cz + (reefRng() - 0.5) * 2.0 * cl.spreadZ;
-      const rad = lerp(cl.scaleMin, cl.scaleMax, reefRng());
-      const gy = getWorldTerrainY(rx, rz);
-      const g = createStratifiedCoastalRockGeo(rad, rSeed, 20, 14);
-      g.scale(1.25 + reefRng() * 0.45, 0.52 + reefRng() * 0.36, 0.95 + reefRng() * 0.35);
-      g.rotateY(reefRng() * Math.PI * 2);
-      g.rotateZ((reefRng() - 0.5) * 0.16);
-      const ry = Math.max(gy + rad * 0.18, -0.22 + reefRng() * 0.35);
-      g.translate(rx, ry, rz);
-      if (ry < 0.42) wetReefGeos.push(g);
-      else dryReefGeos.push(g);
-    }
-  }
-  const dryReefMat = pbrStoneMat(0x8e8679, { repeatX: 3, repeatY: 3, roughness: 0.84 });
-  const wetReefMat = pbrStoneMat(0x56534d, { repeatX: 3, repeatY: 3, roughness: 0.38 });
-  if (dryReefGeos.length) sec.add(new THREE.Mesh(safeMerge(dryReefGeos), dryReefMat));
-  if (wetReefGeos.length) sec.add(new THREE.Mesh(safeMerge(wetReefGeos), wetReefMat));
+  // 4) Coastal cove reefs & basalt sea-shelves placed via photogrammetry in buildCoastalPhotogrammetry()
 
   parent.add(sec);
+  return { deckParasol, loungerSpots, deckY, stepBaseY, boardwalkTopY: evalBoardwalkY(0.54) };
 }
 
 // ---------------------------------------------------------------------------
@@ -3205,6 +3398,370 @@ function buildPathwayBollardLamps(parent) {
 }
 
 // ---------------------------------------------------------------------------
+// 9. Photogrammetry Coastal Cliffs, Reefs, Moss Boulders, Shrubs & Harbor Props
+// ---------------------------------------------------------------------------
+
+function normalizeCoastalGLTFMaterial(mat, { isFoliage = false, isCliff = false } = {}) {
+  if (!mat) return mat;
+  if (isFoliage) {
+    mat.alphaTest = 0.42;
+    mat.transparent = false;
+    mat.depthWrite = true;
+    mat.side = THREE.DoubleSide;
+    mat.roughness = 0.78;
+    mat.metalness = 0.0;
+  } else if (isCliff) {
+    mat.side = THREE.DoubleSide;
+    mat.roughness = Math.max(mat.roughness ?? 0.86, 0.78);
+    mat.metalness = 0.02;
+  } else {
+    mat.roughness = Math.max(mat.roughness ?? 0.65, 0.35);
+  }
+  mat.needsUpdate = true;
+  return mat;
+}
+
+function extractVariantMeshes(root, opts = {}) {
+  const parts = [];
+  root.updateMatrixWorld(true);
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.geometry) return;
+    const geo = obj.geometry.clone();
+    geo.applyMatrix4(obj.matrixWorld);
+    if (geo.attributes.color) geo.deleteAttribute("color");
+    if (!geo.attributes.normal) geo.computeVertexNormals();
+    const rawMat = Array.isArray(obj.material) ? obj.material[0] : obj.material;
+    const mat = normalizeCoastalGLTFMaterial(rawMat.clone(), opts);
+    parts.push({ geometry: geo, material: mat });
+  });
+  return parts;
+}
+
+function buildInstancedVariants(sec, parts, placements, { castShadow = true, receiveShadow = true } = {}) {
+  if (!parts.length || !placements.length) return;
+  const buckets = Array.from({ length: parts.length }, () => []);
+  for (let i = 0; i < placements.length; i += 1) {
+    const p = placements[i];
+    const idx = ((p.variant ?? i) % parts.length + parts.length) % parts.length;
+    buckets[idx].push(p);
+  }
+  const dummy = new THREE.Object3D();
+  for (let v = 0; v < parts.length; v += 1) {
+    const list = buckets[v];
+    if (!list.length) continue;
+    const { geometry, material } = parts[v];
+    const inst = new THREE.InstancedMesh(geometry, material, list.length);
+    for (let i = 0; i < list.length; i += 1) {
+      const p = list[i];
+      dummy.position.set(p.x, p.y, p.z);
+      dummy.rotation.set(p.rx || 0, p.ry || 0, p.rz || 0);
+      dummy.scale.set(p.sx ?? p.s ?? 1, p.sy ?? p.s ?? 1, p.sz ?? p.s ?? 1);
+      dummy.updateMatrix();
+      inst.setMatrixAt(i, dummy.matrix);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    inst.computeBoundingSphere();
+    inst.castShadow = castShadow;
+    inst.receiveShadow = receiveShadow;
+    sec.add(inst);
+  }
+}
+
+async function buildCoastalPhotogrammetry(group) {
+  if (group.getObjectByName("CoastalPhotogrammetry")) return;
+  const [
+    cliff01Gltf,
+    cliff02Gltf,
+    coastRocksGltf,
+    coastRocksBGltf,
+    mossBoulderGltf,
+    shrubGltf,
+    lifebuoyGltf,
+    picnicTableGltf,
+  ] = await Promise.all([
+    loadBundledGLB("ph_cliff_01", "./assets/models/ph_cliff_01.glb"),
+    loadBundledGLB("ph_cliff_02", "./assets/models/ph_cliff_02.glb"),
+    loadBundledGLB("ph_coast_rocks", "./assets/models/ph_coast_rocks.glb"),
+    loadBundledGLB("ph_coast_rocks_b", "./assets/models/ph_coast_rocks_b.glb"),
+    loadBundledGLB("ph_moss_boulder", "./assets/models/ph_moss_boulder.glb"),
+    loadBundledGLB("ph_coastal_shrub", "./assets/models/ph_coastal_shrub.glb"),
+    loadBundledGLB("ph_lifebuoy", "./assets/models/ph_lifebuoy.glb"),
+    loadBundledGLB("ph_picnic_table", "./assets/models/ph_picnic_table.glb"),
+  ]);
+
+  const sec = new THREE.Group();
+  sec.name = "CoastalPhotogrammetry";
+  const rng = mulberry32(9217);
+
+  const placeClone = (gltf, { x, y, z, ry = 0, rx = 0, rz = 0, sx = 1, sy = 1, sz = 1, isCliff = false }) => {
+    const obj = gltf.scene.clone(true);
+    obj.traverse((child) => {
+      if (!child.isMesh) return;
+      child.castShadow = true;
+      child.receiveShadow = true;
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach((m) => normalizeCoastalGLTFMaterial(m, { isCliff }));
+    });
+    obj.position.set(x, y, z);
+    obj.rotation.set(rx, ry, rz);
+    obj.scale.set(sx, sy, sz);
+    sec.add(obj);
+    return obj;
+  };
+
+  // 1) Sculpted photogrammetry coastal limestone cliffs along NE headland & Far-West cape
+  placeClone(cliff01Gltf, { x: 35.8, y: -0.45, z: -56.0, ry: Math.PI * 0.46, sx: 0.62, sy: 0.96, sz: 0.78, isCliff: true });
+  placeClone(cliff02Gltf, { x: 46.2, y: 0.40, z: -95.0, ry: Math.PI * 0.34, sx: 0.85, sy: 1.25, sz: 0.95, isCliff: true });
+  placeClone(cliff01Gltf, { x: -113.5, y: -0.35, z: -14.0, ry: -Math.PI * 0.50, sx: 0.66, sy: 1.02, sz: 0.76, isCliff: true });
+  placeClone(cliff02Gltf, { x: -96.0, y: -0.35, z: 39.0, ry: -Math.PI * 0.78, sx: 0.68, sy: 0.86, sz: 0.72, isCliff: true });
+
+  // 2) Stratified photogrammetry coastal rock shelves framing beach coves, NE point & East Islet
+  placeClone(coastRocksGltf, { x: -32.2, y: -0.35, z: 32.8, ry: 0.34, sx: 0.25, sy: 0.76, sz: 0.24, isCliff: true });
+  placeClone(coastRocksBGltf, { x: -44.0, y: -0.25, z: 42.5, ry: 0.85, sx: 0.42, sy: 0.82, sz: 0.36, isCliff: true });
+  placeClone(coastRocksBGltf, { x: 12.2, y: -0.55, z: 27.6, ry: -0.62, sx: 0.38, sy: 0.84, sz: 0.35, isCliff: true });
+  placeClone(coastRocksBGltf, { x: 42.8, y: -0.45, z: -78.5, ry: 0.48, sx: 0.52, sy: 1.02, sz: 0.48, isCliff: true });
+  placeClone(coastRocksBGltf, { x: 52.8, y: -0.35, z: -104.0, ry: 0.25, sx: 0.58, sy: 1.08, sz: 0.52, isCliff: true });
+  placeClone(coastRocksBGltf, { x: 58.2, y: -0.25, z: 56.8, ry: 0.45, sx: 0.56, sy: 0.96, sz: 0.52, isCliff: true });
+
+  // 3) GPU-instanced mossy boulders (6 variants) along creek, breakwater sea-toe, islet, windmill & coves
+  const boulderParts = extractVariantMeshes(mossBoulderGltf.scene, { isCliff: false });
+  const boulderPlacements = [];
+
+  for (let i = 0; i < 62; i += 1) {
+    const z = lerp(-108.0, -26.0, rng());
+    if (Math.abs(z + 44.0) < 3.4) continue;
+    const side = i % 2 === 0 ? -1 : 1;
+    const x = getCreekCenterX(z) + side * (2.25 + rng() * 1.45);
+    const s = 0.36 + rng() * 0.34;
+    boulderPlacements.push({
+      x,
+      y: getWorldTerrainY(x, z) - 0.14,
+      z,
+      ry: rng() * Math.PI * 2,
+      rx: (rng() - 0.5) * 0.14,
+      sx: s * (0.9 + rng() * 0.3),
+      sy: s * (0.68 + rng() * 0.28),
+      sz: s * (0.9 + rng() * 0.3),
+      variant: i,
+    });
+  }
+
+  for (let i = 0; i < 34; i += 1) {
+    const bx = 46.8 + rng() * 29.0;
+    const side = i % 2 === 0 ? -1 : 1;
+    const bz = 10.0 + side * (3.15 + rng() * 1.05);
+    const s = 0.58 + rng() * 0.42;
+    boulderPlacements.push({
+      x: bx,
+      y: -0.52 + rng() * 0.45,
+      z: bz,
+      ry: rng() * Math.PI * 2,
+      rx: (rng() - 0.5) * 0.25,
+      sx: s * 1.1,
+      sy: s * 0.72,
+      sz: s * 0.95,
+      variant: i + 1,
+    });
+  }
+  for (let i = 0; i < 20; i += 1) {
+    const ang = (i / 20) * Math.PI * 2;
+    if (Math.cos(ang) < -0.76) continue;
+    const dist = 5.35 + rng() * 1.25;
+    const s = 0.65 + rng() * 0.45;
+    boulderPlacements.push({
+      x: 78.0 + Math.cos(ang) * dist,
+      y: -0.45 + rng() * 0.42,
+      z: 10.0 + Math.sin(ang) * dist,
+      ry: rng() * Math.PI * 2,
+      sx: s,
+      sy: s * 0.75,
+      sz: s,
+      variant: i + 2,
+    });
+  }
+
+  for (let i = 0; i < 24; i += 1) {
+    const a = rng() * Math.PI * 2;
+    const dist = i < 6 ? 1.5 + rng() * 3.0 : 3.4 + rng() * 5.8;
+    const rx = 58.0 + Math.cos(a) * dist;
+    const rz = 56.0 + Math.sin(a) * dist;
+    const s = i < 6 ? 0.85 + rng() * 0.5 : 0.52 + rng() * 0.45;
+    boulderPlacements.push({
+      x: rx,
+      y: getWorldTerrainY(rx, rz) - 0.28,
+      z: rz,
+      ry: rng() * Math.PI * 2,
+      sx: s,
+      sy: s * (i < 6 ? 1.05 : 0.74),
+      sz: s,
+      variant: i + 3,
+    });
+  }
+
+  for (let i = 0; i < 14; i += 1) {
+    const ang = (i / 14) * Math.PI * 2;
+    if (Math.sin(ang) > 0.68 && Math.abs(Math.cos(ang)) < 0.65) continue;
+    const dist = 3.7 + rng() * 1.5;
+    const rx = -52.0 + Math.cos(ang) * dist;
+    const rz = -68.0 + Math.sin(ang) * dist;
+    const s = 0.42 + rng() * 0.34;
+    boulderPlacements.push({
+      x: rx,
+      y: getWorldTerrainY(rx, rz) - 0.14,
+      z: rz,
+      ry: rng() * Math.PI * 2,
+      sx: s,
+      sy: s * 0.72,
+      sz: s,
+      variant: i,
+    });
+  }
+
+  for (const [cx, cz, cnt] of [
+    [-25.5, 34.2, 6],
+    [13.5, 24.5, 6],
+    [40.8, -24.5, 6],
+  ]) {
+    for (let i = 0; i < cnt; i += 1) {
+      const rx = cx + (rng() - 0.5) * 4.6;
+      const rz = cz + (rng() - 0.5) * 3.8;
+      const s = 0.48 + rng() * 0.42;
+      boulderPlacements.push({
+        x: rx,
+        y: Math.max(-0.45, getWorldTerrainY(rx, rz) - 0.18),
+        z: rz,
+        ry: rng() * Math.PI * 2,
+        sx: s,
+        sy: s * 0.72,
+        sz: s,
+        variant: i,
+      });
+    }
+  }
+  buildInstancedVariants(sec, boulderParts, boulderPlacements);
+
+  // 4) GPU-instanced Mediterranean coastal shrubs (4 variants) for creek banks, cliffs, cottages & islet
+  const shrubParts = extractVariantMeshes(shrubGltf.scene, { isFoliage: true });
+  const shrubPlacements = [];
+
+  for (let i = 0; i < 32; i += 1) {
+    const z = lerp(-106.0, -27.0, rng());
+    if (Math.abs(z + 44.0) < 5.2) continue;
+    const side = i % 2 === 0 ? -1 : 1;
+    const x = getCreekCenterX(z) + side * (3.2 + rng() * 2.2);
+    const s = 0.50 + rng() * 0.28;
+    shrubPlacements.push({
+      x,
+      y: getWorldTerrainY(x, z) - 0.08,
+      z,
+      ry: rng() * Math.PI * 2,
+      sx: s,
+      sy: s * (0.85 + rng() * 0.22),
+      sz: s,
+      variant: i,
+    });
+  }
+
+  for (let i = 0; i < 24; i += 1) {
+    const z = lerp(-82.0, -26.0, rng());
+    const x = lerp(33.5, 38.2, rng());
+    const s = 0.78 + rng() * 0.52;
+    shrubPlacements.push({
+      x,
+      y: getWorldTerrainY(x, z) - 0.10,
+      z,
+      ry: rng() * Math.PI * 2,
+      sx: s,
+      sy: s,
+      sz: s,
+      variant: i + 1,
+    });
+  }
+
+  for (const [hx, hz, rad] of [
+    [-52.0, -68.0, 5.2],
+    [-78.0, -56.0, 6.2],
+    [-18.0, -82.0, 6.4],
+    [24.5, -68.0, 5.8],
+  ]) {
+    for (let i = 0; i < 5; i += 1) {
+      const a = rng() * Math.PI * 2;
+      if (Math.sin(a) > 0.45 && Math.abs(Math.cos(a)) < 0.7) continue;
+      const d = rad + rng() * 1.4;
+      const rx = hx + Math.cos(a) * d;
+      const rz = hz + Math.sin(a) * d;
+      const s = 0.72 + rng() * 0.42;
+      shrubPlacements.push({
+        x: rx,
+        y: getWorldTerrainY(rx, rz) - 0.08,
+        z: rz,
+        ry: rng() * Math.PI * 2,
+        sx: s,
+        sy: s,
+        sz: s,
+        variant: i,
+      });
+    }
+  }
+
+  for (let i = 0; i < 8; i += 1) {
+    const a = (i / 8) * Math.PI * 2 + rng() * 0.4;
+    const d = 1.0 + rng() * 3.6;
+    const rx = 58.0 + Math.cos(a) * d;
+    const rz = 56.0 + Math.sin(a) * d;
+    const s = 0.72 + rng() * 0.36;
+    shrubPlacements.push({
+      x: rx,
+      y: getWorldTerrainY(rx, rz) - 0.10,
+      z: rz,
+      ry: rng() * Math.PI * 2,
+      sx: s,
+      sy: s,
+      sz: s,
+      variant: i + 2,
+    });
+  }
+  buildInstancedVariants(sec, shrubParts, shrubPlacements);
+
+  // 5) Waterfront teak picnic tables on the NE harbor overlook
+  for (const [tx, tz, ry] of [
+    [29.0, -18.5, 0.18],
+    [37.5, -15.5, -0.22],
+  ]) {
+    placeClone(picnicTableGltf, { x: tx, y: 1.35, z: tz, ry, sx: 1, sy: 1, sz: 1 });
+    registerBoxCollider(tx - 1.15, tx + 1.15, tz - 1.5, tz + 1.5);
+  }
+
+  // 6) Maritime lifebuoys mounted on teak quay & breakwater stanchion posts
+  const postMat = pbrWoodMat(0x523926, { roughness: 0.74 });
+  const hookMat = pbrMetalMat(0xcba358, { roughness: 0.28, metalness: 0.84 });
+  for (const [lx, lz, ry, floorY] of [
+    [44.65, -18.5, -Math.PI * 0.5, 1.38],
+    [44.65, 0.4, -Math.PI * 0.5, 1.38],
+    [44.65, 17.5, -Math.PI * 0.5, 1.38],
+    [20.4, 20.75, Math.PI, 1.38],
+    [54.0, 7.85, Math.PI, 1.40],
+    [68.5, 12.15, 0.0, 1.40],
+  ]) {
+    const backX = -Math.sin(ry) * 0.12;
+    const backZ = -Math.cos(ry) * 0.12;
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.11, 1.24, 0.11), postMat);
+    post.position.set(lx + backX, floorY + 0.62, lz + backZ);
+    post.castShadow = true;
+    post.receiveShadow = true;
+    const peg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.12, 8), hookMat);
+    peg.rotation.x = Math.PI * 0.5;
+    peg.rotation.z = -ry;
+    peg.position.set(lx + backX * 0.4, floorY + 0.92, lz + backZ * 0.4);
+    sec.add(post, peg);
+    placeClone(lifebuoyGltf, { x: lx, y: floorY + 0.64, z: lz, ry, sx: 0.92, sy: 0.92, sz: 0.92 });
+  }
+
+  group.add(sec);
+  return sec;
+}
+
+// ---------------------------------------------------------------------------
 // Public Module Orchestrator & Real-Time PBR Animation Controller
 // ---------------------------------------------------------------------------
 
@@ -3214,14 +3771,14 @@ export function buildHarborAndEstate() {
 
   const waterAnimList = [];
   buildCoastalTerrainAndHorizon(group);
-  buildCourtyardAndTrails(group, waterAnimList);
+  const courtRefs = buildCourtyardAndTrails(group, waterAnimList);
   const harborLights = buildHarborQuayAndBoathouse(group);
   const boats = buildHarborFleet(group);
   const lighthouseAnim = buildBreakwaterAndLighthouse(group);
   const gazeboAnim = buildCliffsideGazebo(group);
   buildCreekAndArchedBridge(group, waterAnimList);
   const windmillAnim = buildWindmillCottagesAndIslet(group);
-  buildGoldenBeachAndBoardwalk(group);
+  const beachRefs = buildGoldenBeachAndBoardwalk(group);
   const bollardAnim = buildPathwayBollardLamps(group);
 
   enablePBRShadows(group);
@@ -3269,10 +3826,40 @@ export function buildHarborAndEstate() {
   }
   applyPosesAtZero();
 
+  const estateInteract = buildEstateInteractables(group, {
+    boats,
+    lighthouseAnim,
+    gazeboAnim,
+    windmillAnim,
+    harborLights,
+    courtRefs,
+    beachRefs,
+    hooks: {
+      boostWindmill: () => {
+        wmBoost = 1.35;
+      },
+      swingGazebo: () => {
+        swingAmpBoost = 0.34;
+      },
+      flashLighthouse: () => {
+        lhFlash = 1.4;
+      },
+      rockBoats: (amt = 1.25) => {
+        boatRockBoost = Math.max(boatRockBoost, amt);
+      },
+      getNightMix: () => nightMix,
+    },
+  });
+
   return {
     group,
+    interactables: estateInteract.interactables,
+    async loadCoastalPhotogrammetry() {
+      return buildCoastalPhotogrammetry(group);
+    },
     update(elapsed, dt) {
       const step = clamp(dt || 0.016, 0.001, 0.1);
+      estateInteract.update(elapsed, step);
 
       // Decay interactive animation impulses smoothly
       wmBoost = Math.max(0, wmBoost * Math.exp(-step * 0.65));
@@ -3335,6 +3922,7 @@ export function buildHarborAndEstate() {
       lhFlash = 0.0;
       boatRockBoost = 0.0;
       applyPosesAtZero();
+      estateInteract.reset();
     },
     boostWindmill() {
       wmBoost = 1.35;
@@ -3347,6 +3935,833 @@ export function buildHarborAndEstate() {
     },
     rockBoats() {
       boatRockBoost = 1.25;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// E-key Interactables for the Estate, Harbor, Beach, Lighthouse, Gazebo & Windmill.
+// Every effect is self-contained, animated in update(), and invisible (0 draw calls) at rest.
+// ---------------------------------------------------------------------------
+
+function createHeartShape(size = 1) {
+  const s = new THREE.Shape();
+  const k = size / 16;
+  for (let i = 0; i <= 48; i += 1) {
+    const t = (i / 48) * Math.PI * 2;
+    const x = 16 * Math.pow(Math.sin(t), 3) * k;
+    const y = (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) * k;
+    if (i === 0) s.moveTo(x, y);
+    else s.lineTo(x, y);
+  }
+  return s;
+}
+
+function buildEstateInteractables(group, { boats, lighthouseAnim, gazeboAnim, windmillAnim, harborLights, courtRefs, beachRefs, hooks }) {
+  const fx = createInteractionFX(group, { name: "EstateInteractionFX", maxSparks: 560, maxPetals: 220, maxRings: 16 });
+  const interactables = [];
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
+  const T = (x, z) => getWorldTerrainY(x, z);
+  const noRay = (o) => o.traverse((c) => { c.raycast = () => {}; });
+  const animators = [];
+  const tmpV = new THREE.Vector3();
+  const yawFacing = (dx, dz) => Math.atan2(-dx, -dz); // character yaw that faces direction (dx, dz)
+
+  const yacht = boats[0] ? boats[0].mesh : null;
+  const sloop = boats[1] ? boats[1].mesh : null;
+  const launch = boats[2] ? boats[2].mesh : null;
+
+  // --- 1. Mailbox: flag wiggle + a love letter floats out ------------------------
+  if (courtRefs && courtRefs.mailbox) {
+    const { mailbox, flagPivot } = courtRefs;
+    const envGroup = new THREE.Group();
+    const envBody = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 0.16, 0.012),
+      new THREE.MeshStandardMaterial({ color: 0xfff1f4, roughness: 0.7, emissive: 0x2a1418 })
+    );
+    const flapGeo = new THREE.BufferGeometry();
+    flapGeo.setAttribute("position", new THREE.Float32BufferAttribute([-0.12, 0.08, 0.007, 0.12, 0.08, 0.007, 0, -0.01, 0.007], 3));
+    flapGeo.computeVertexNormals();
+    const envFlap = new THREE.Mesh(flapGeo, new THREE.MeshStandardMaterial({ color: 0xf6c9d6, roughness: 0.7, side: THREE.DoubleSide }));
+    const seal = new THREE.Mesh(
+      new THREE.ShapeGeometry(createHeartShape(0.03)),
+      new THREE.MeshStandardMaterial({ color: 0xd2283f, roughness: 0.4, side: THREE.DoubleSide })
+    );
+    seal.position.set(0, -0.005, 0.009);
+    envGroup.add(envBody, envFlap, seal);
+    envGroup.visible = false;
+    noRay(envGroup);
+    mailbox.add(envGroup);
+    const mbFront = new THREE.Vector3(Math.sin(0.18), 0, Math.cos(0.18));
+    interactables.push({
+      id: "estate-mailbox-letter",
+      label: "拉起信箱小旗，取出情书",
+      position: V(-10.8 + mbFront.x * 1.0, 2.22, 9.4 + mbFront.z * 1.0),
+      radius: 1.8,
+      floorY: 2.22,
+      activate(ctx = {}) {
+        envGroup.visible = true;
+        fx.addTask(
+          6.5,
+          (u, dt, t) => {
+            flagPivot.rotation.x = -Math.sin(Math.min(1, t / 0.9) * Math.PI) * 1.45 + Math.sin(t * 9) * Math.exp(-t * 2) * 0.25;
+            const rise = easeOutBack(Math.min(1, t / 1.2));
+            envGroup.position.set(0, 1.32 + rise * 0.5 + Math.sin(t * 2.4) * 0.03, 0.34 + rise * 0.25);
+            envGroup.rotation.set(-0.15, Math.sin(t * 1.4) * 0.5, Math.sin(t * 1.9) * 0.08);
+            const fade = u > 0.85 ? 1 - (u - 0.85) / 0.15 : 1;
+            envGroup.scale.setScalar(Math.max(0.001, Math.min(1, t / 0.4)) * fade * 1.4);
+            if (Math.random() < dt * 12) {
+              envGroup.getWorldPosition(tmpV);
+              fx.spark(tmpV.x + (Math.random() - 0.5) * 0.3, tmpV.y, tmpV.z + (Math.random() - 0.5) * 0.3, 0, 0.3, 0, { color: 0xffc8d8, life: 1.1, size: 0.06 });
+            }
+          },
+          () => {
+            envGroup.visible = false;
+            flagPivot.rotation.x = 0;
+          }
+        );
+        fx.heart(V(-10.8 + mbFront.x * 0.5, 3.9, 9.4 + mbFront.z * 0.5), { count: 44, scale: 0.035, yaw: 0.18 });
+        ctx.audio?.playLetterUnfold?.();
+        return "小红旗一摇，一封粉色情书从信箱里飞了出来 💌";
+      },
+    });
+  }
+
+  // --- 2. Bicycle: ring the bell & spin the wheels --------------------------------
+  if (courtRefs && courtRefs.wheels) {
+    const { wheels, bell, bikeHolder } = courtRefs;
+    const spin = { v: 0 };
+    animators.push((elapsed, dt) => {
+      if (spin.v <= 0.001) return;
+      spin.v *= Math.exp(-dt * 0.55);
+      for (const w of wheels) w.rotation.z -= spin.v * dt;
+    });
+    const side = new THREE.Vector3(Math.sin(0.48), 0, Math.cos(0.48));
+    interactables.push({
+      id: "estate-bicycle-bell",
+      label: "按响车铃，转转车轮",
+      position: V(-18.6 + side.x * 1.05, 2.22, 9.6 + side.z * 1.05),
+      radius: 1.8,
+      floorY: 2.22,
+      activate(ctx = {}) {
+        spin.v = 14;
+        fx.addTask(1.2, (u, dt, t) => {
+          const w = Math.sin(t * 60) * Math.exp(-t * 4);
+          bell.scale.set(1 + w * 0.35, 0.72 * (1 + w * 0.35), 1 + w * 0.35);
+        }, () => bell.scale.set(1, 0.72, 1));
+        bell.getWorldPosition(tmpV);
+        for (let k = 0; k < 3; k += 1) {
+          fx.addTask(0.18 * k + 0.01, () => {}, () => {
+            fx.burst(tmpV, { count: 14, colors: [0xfff1a8, 0xffffff], speed: [0.4, 0.9], up: 1.5, gravity: -0.1, size: 0.06, life: 1.2 });
+          });
+        }
+        ctx.audio?.playTramBell?.();
+        return "叮铃铃——车轮呼呼地转了起来 🚲";
+      },
+    });
+    void bikeHolder;
+  }
+
+  // --- 3. Courtyard fountain wish -----------------------------------------------
+  {
+    const fcx = -4.5;
+    const fcz = 4.5;
+    const coin = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.034, 0.034, 0.007, 16),
+      new THREE.MeshStandardMaterial({ color: 0xf2c75c, metalness: 0.95, roughness: 0.22, emissive: 0x3a2804 })
+    );
+    coin.visible = false;
+    noRay(coin);
+    group.add(coin);
+    interactables.push({
+      id: "estate-fountain-wish",
+      label: "向喷泉投币许愿",
+      position: V(fcx, 2.22, 7.05),
+      radius: 2.0,
+      floorY: 2.22,
+      activate(ctx = {}) {
+        const sx = fcx;
+        const sy = 3.5;
+        const sz = 6.9;
+        const ex = fcx + (Math.random() - 0.5) * 1.6;
+        const ez = fcz + 0.9 + Math.random() * 0.5;
+        coin.visible = true;
+        fx.addTask(
+          0.9,
+          (u) => {
+            coin.position.set(lerp(sx, ex, u), lerp(sy, 2.64, u) + Math.sin(u * Math.PI) * 0.8, lerp(sz, ez, u));
+            coin.rotation.set(u * 16, 0, u * 6);
+          },
+          () => {
+            coin.visible = false;
+            const p = V(ex, 2.64, ez);
+            fx.ripple(p, { radius: 0.6, life: 1.4, opacity: 0.8 });
+            fx.ripple(p, { radius: 1.0, life: 1.8, delay: 0.2, opacity: 0.5 });
+            fx.burst(p, { count: 30, colors: [0xffe08a, 0xffffff], speed: [0.6, 1.4], up: 1.2, gravity: 0.6, size: 0.07, life: 1.6, flicker: 0.4 });
+            // jet surge: fountain crown shoots a glittering water column
+            fx.emit(2.6, 110, () => {
+              const a = Math.random() * Math.PI * 2;
+              const r = Math.random() * 0.25;
+              fx.spark(fcx, 2.2 + 2.62, fcz, Math.cos(a) * (0.5 + r * 3), 3.2 + Math.random() * 1.6, Math.sin(a) * (0.5 + r * 3), {
+                color: Math.random() < 0.7 ? 0xe6fbff : 0xfff1b8,
+                life: 1.4,
+                size: 0.07,
+                gravity: 4.2,
+                drag: 0.2,
+              });
+            });
+          }
+        );
+        ctx.audio?.playVendingClink?.();
+        return "硬币落入喷泉，水柱欢快地高高跃起 ⛲";
+      },
+    });
+  }
+
+  // --- 4. Lighthouse flash ---------------------------------------------------------
+  interactables.push({
+    id: "estate-lighthouse-flash",
+    label: "点亮灯塔，扫过海面",
+    position: V(73.6, 1.38, 10.0),
+    radius: 2.8,
+    floorY: 1.38,
+    activate(ctx = {}) {
+      hooks.flashLighthouse();
+      lighthouseAnim.rotor.getWorldPosition(tmpV);
+      const top = tmpV.clone();
+      for (let k = 0; k < 3; k += 1) {
+        fx.addTask(0.35 * k + 0.01, () => {}, () => {
+          fx.burst(top, { count: 50, colors: [0xfff4c2, 0xffe08a, 0xffffff], speed: [1.5, 3.5], up: 0.0, hemi: false, gravity: 0.3, size: 0.22, life: 2.0 });
+          fx.ripple(V(78, 1.4, 10), { radius: 4.2, life: 1.5, opacity: 0.6, color: 0xfff1c0 });
+        });
+      }
+      ctx.audio?.playLighthouseBell?.();
+      return "灯塔光束扫过海面，为远航的船只照亮归途 🗼";
+    },
+  });
+
+  // --- 5. Sloop: board, hoist the mainsail, rock -----------------------------------
+  if (sloop) {
+    const sailGeo = new THREE.BufferGeometry();
+    sailGeo.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, 0, 10.2, 0, -4.3, 0, 0], 3));
+    sailGeo.setAttribute("uv", new THREE.Float32BufferAttribute([0, 0, 0, 1, 1, 0], 2));
+    sailGeo.computeVertexNormals();
+    const sail = new THREE.Mesh(sailGeo, new THREE.MeshStandardMaterial({ color: 0xfbf7ee, roughness: 0.82, side: THREE.DoubleSide }));
+    sail.position.set(0.88, 2.42, 0);
+    sail.scale.set(1, 0.02, 1);
+    sail.visible = false;
+    noRay(sail);
+    sloop.add(sail);
+    const sailState = { up: 0, target: 0, hold: 0 };
+    animators.push((elapsed, dt) => {
+      if (sailState.hold > 0) {
+        sailState.hold -= dt;
+        if (sailState.hold <= 0) sailState.target = 0;
+      }
+      sailState.up += (sailState.target - sailState.up) * Math.min(1, dt * 1.2);
+      sail.visible = sailState.up > 0.03;
+      sail.scale.set(1 + Math.sin(elapsed * 1.3) * 0.03 * sailState.up, Math.max(0.02, sailState.up), 1);
+      sail.rotation.y = Math.sin(elapsed * 0.6) * 0.08 * sailState.up;
+    });
+    interactables.push({
+      id: "estate-sloop-sail",
+      label: "登上帆船，扬帆摇荡",
+      position: V(48.7, 1.15, 2.7),
+      radius: 2.8,
+      floorY: 1.15,
+      pose: {
+        type: "sit",
+        attachTo: sloop,
+        seats: [
+          { x: -2.2, y: 1.0, z: -0.66, yaw: Math.PI },
+          { x: -2.9, y: 1.0, z: -0.66, yaw: Math.PI },
+        ],
+      },
+      activate(ctx = {}) {
+        hooks.rockBoats(1.25);
+        sailState.target = 1;
+        sailState.hold = 22;
+        sloop.getWorldPosition(tmpV);
+        for (let k = 0; k < 4; k += 1) fx.ripple(V(tmpV.x, 0.04, tmpV.z), { radius: 3.5 + k * 1.2, life: 2.6, delay: k * 0.4, opacity: 0.5 });
+        ctx.audio?.playShipBell?.();
+        return "白帆缓缓升起，小船随着海浪轻轻摇晃 ⛵";
+      },
+    });
+  }
+
+  // --- 6. Launch dinghy ride ------------------------------------------------------
+  if (launch) {
+    interactables.push({
+      id: "estate-launch-ride",
+      label: "坐上小艇摇一摇",
+      position: V(32.0, 0.45, 24.2),
+      radius: 2.8,
+      floorY: 0.45,
+      pose: {
+        type: "sit",
+        attachTo: launch,
+        seats: [
+          { x: -0.65, y: 0.6, z: -0.42, yaw: -Math.PI / 2 },
+          { x: -0.65, y: 0.6, z: 0.42, yaw: -Math.PI / 2 },
+        ],
+      },
+      activate(ctx = {}) {
+        hooks.rockBoats(1.6);
+        launch.getWorldPosition(tmpV);
+        for (let k = 0; k < 4; k += 1) fx.ripple(V(tmpV.x, 0.04, tmpV.z), { radius: 2.4 + k * 1.0, life: 2.2, delay: k * 0.35, opacity: 0.55 });
+        fx.burst(V(tmpV.x + 3.0, 0.3, tmpV.z), { count: 40, colors: [0xe8fbff, 0xffffff], speed: [1.0, 2.2], up: 1.0, gravity: 4.0, size: 0.07, life: 1.0 });
+        ctx.audio?.playShipBell?.();
+        return "小艇左摇右晃，溅起一串晶莹的浪花 🚤";
+      },
+    });
+  }
+
+  // --- 7. Yacht horn ------------------------------------------------------------------
+  if (yacht) {
+    interactables.push({
+      id: "estate-yacht-horn",
+      label: "拉响游艇汽笛",
+      position: V(52.0, 1.15, -7.25),
+      radius: 2.4,
+      floorY: 1.15,
+      activate(ctx = {}) {
+        hooks.rockBoats(1.0);
+        const stack = V(-1.76, 3.7, 0);
+        yacht.localToWorld(stack);
+        fx.emit(2.0, 45, () => {
+          fx.spark(stack.x + (Math.random() - 0.5) * 0.2, stack.y, stack.z + (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.4, 1.4 + Math.random() * 0.6, (Math.random() - 0.5) * 0.4, {
+            color: 0xf4f6f8,
+            life: 1.8,
+            size: 0.2,
+            drag: 1.2,
+          });
+        });
+        yacht.getWorldPosition(tmpV);
+        for (let k = 0; k < 3; k += 1) fx.ripple(V(tmpV.x, 0.04, tmpV.z), { radius: 5 + k * 1.5, life: 2.6, delay: k * 0.45, opacity: 0.45 });
+        ctx.audio?.playShipBell?.();
+        return "呜——游艇汽笛声回荡在港湾 🛥️";
+      },
+    });
+  }
+
+  // --- 8. Windmill boost ------------------------------------------------------------
+  {
+    const dx = Math.cos(0.52);
+    const dz = -Math.sin(0.52);
+    const wx = -52.0 + dx * 5.1;
+    const wz = -68.0 + dz * 5.1;
+    interactables.push({
+      id: "estate-windmill-spin",
+      label: "推一把，让风车转起来",
+      position: V(wx, T(wx, wz), wz),
+      radius: 3.0,
+      activate(ctx = {}) {
+        hooks.boostWindmill();
+        windmillAnim.sailsRotor.getWorldPosition(tmpV);
+        fx.petalBurst(tmpV, { count: 70, radius: 2.5, up: 0.4, speed: [1.0, 2.6], floorY: T(wx, wz) + 0.03, life: 7, colors: [0xffffff, 0xd8c4ff, 0xfff0a8, 0xffc4d8] });
+        fx.burst(tmpV, { count: 40, colors: [0xfff6d8, 0xffffff], speed: [1.5, 3.0], hemi: false, up: 0, gravity: 0.4, size: 0.12, life: 1.6 });
+        ctx.audio?.playRoofChime?.(true);
+        return "风车呼呼地转起来，把花瓣吹向整片花海 🌬️";
+      },
+    });
+  }
+
+  // --- 9. Gazebo floral swing ---------------------------------------------------------
+  interactables.push({
+    id: "estate-gazebo-swing",
+    label: "坐上海岬花亭秋千",
+    position: V(-64.0 + 1.4, 8.08, 42.0 - 1.0),
+    radius: 2.6,
+    floorY: 8.08,
+    pose: {
+      type: "sit",
+      attachTo: gazeboAnim.swingPivot,
+      seats: [
+        { x: 0.04, y: -2.79, z: -0.42, yaw: -Math.PI / 2 },
+        { x: 0.04, y: -2.79, z: 0.42, yaw: -Math.PI / 2 },
+      ],
+    },
+    activate(ctx = {}) {
+      hooks.swingGazebo();
+      fx.addTask(3.0, (u) => {
+        gazeboAnim.globeMat.emissiveIntensity = Math.max(gazeboAnim.globeMat.emissiveIntensity, 3.4 * (1 - u));
+      });
+      fx.petalBurst(V(-64, 8.08 + 3.2, 42), { count: 60, radius: 1.8, up: 0.3, floorY: 8.1, life: 6.5 });
+      fx.heart(V(-64, 8.08 + 2.2, 42), { count: 48, scale: 0.05, yaw: 0.65 + Math.PI / 2 });
+      ctx.audio?.playPetalGlissando?.();
+      return "花亭秋千荡向大海，玫瑰花瓣随风飘洒 🌹";
+    },
+  });
+
+  // --- 10. Sit on the boardwalk steps facing the sea --------------------------------
+  if (beachRefs) {
+    const sb = beachRefs.stepBaseY;
+    const stepTop = sb - 0.36 + 0.055;
+    const cxs = -9.15 - 0.28;
+    const czs = 33.85 + 0.36;
+    const along = new THREE.Vector2(Math.cos(0.58), -Math.sin(0.58));
+    const face = new THREE.Vector2(-0.28, 0.36).normalize();
+    const yaw = yawFacing(face.x, face.y);
+    interactables.push({
+      id: "estate-boardwalk-steps-sit",
+      label: "坐在栈道台阶上看海",
+      position: V(-8.75, beachRefs.boardwalkTopY, 33.4),
+      radius: 1.9,
+      floorY: beachRefs.boardwalkTopY,
+      pose: {
+        type: "sit",
+        seats: [
+          { x: cxs - along.x * 0.36, y: stepTop, z: czs - along.y * 0.36, yaw },
+          { x: cxs + along.x * 0.36, y: stepTop, z: czs + along.y * 0.36, yaw },
+        ],
+      },
+      activate(ctx = {}) {
+        const sea = V(cxs + face.x * 6, 0.05, czs + face.y * 6);
+        for (let k = 0; k < 4; k += 1) fx.ripple(sea, { radius: 1.5 + k * 1.0, life: 2.8, delay: k * 0.6, opacity: 0.4 });
+        fx.heart(V(cxs + face.x * 1.5, stepTop + 1.4, czs + face.y * 1.5), { count: 44, scale: 0.04, yaw: Math.atan2(face.x, face.y) });
+        ctx.audio?.playShipBell?.();
+        return "并肩坐在栈道台阶上，听海浪一声声拍岸 🌊";
+      },
+    });
+
+    // --- 11. Lie on the teak deck loungers + pop the parasol open ---------------------
+    const loungerSeats = beachRefs.loungerSpots.map(({ lx, lz, lyaw }) => ({
+      x: lx + Math.sin(lyaw) * -0.15,
+      y: beachRefs.deckY + 0.4,
+      z: lz + Math.cos(lyaw) * -0.15,
+      yaw: Math.PI + lyaw,
+    }));
+    const parasol = beachRefs.deckParasol;
+    interactables.push({
+      id: "estate-deck-lounger",
+      label: "躺在躺椅上晒太阳",
+      position: V(3.08, beachRefs.deckY, 35.0),
+      radius: 2.0,
+      floorY: beachRefs.deckY,
+      pose: { type: "lie", seats: loungerSeats },
+      activate(ctx = {}) {
+        fx.addTask(1.6, (u) => {
+          const close = u < 0.3 ? 1 - u / 0.3 : 0;
+          const open = u >= 0.3 ? easeOutBack((u - 0.3) / 0.7) : 0;
+          const r = Math.max(0.15, close * 1 + open);
+          parasol.scale.set(r, 1, r);
+          parasol.rotation.y = u * Math.PI * 1.5;
+        }, () => parasol.scale.set(1, 1, 1));
+        fx.burst(V(3.08, beachRefs.deckY + 2.6, 35.85), { count: 50, colors: [0xfff4b8, 0xffe08a, 0xffffff], speed: [0.8, 2.0], hemi: false, up: 0.2, gravity: 0.3, size: 0.1, life: 1.8 });
+        ctx.audio?.playDuetArpeggio?.();
+        return "撑开遮阳伞，躺在躺椅上晒一场温柔的日光浴 ☀️";
+      },
+    });
+  }
+
+  // --- 12. Skip stones on the golden beach -------------------------------------------
+  {
+    const bx = -19.0;
+    let shoreZ = 40.0;
+    for (let z = 26; z < 62; z += 0.25) {
+      if (T(bx, z) < 0.06) {
+        shoreZ = z;
+        break;
+      }
+    }
+    const standZ = shoreZ - 1.6;
+    const stone = new THREE.Mesh(
+      new THREE.SphereGeometry(0.05, 10, 6),
+      new THREE.MeshStandardMaterial({ color: 0x8a8378, roughness: 0.6 })
+    );
+    stone.scale.set(1, 0.38, 0.8);
+    stone.visible = false;
+    noRay(stone);
+    group.add(stone);
+    interactables.push({
+      id: "estate-skip-stones",
+      label: "在海边打水漂",
+      position: V(bx, T(bx, standZ), standZ),
+      radius: 2.4,
+      activate(ctx = {}) {
+        const hops = 6;
+        const start = V(bx + 0.2, T(bx, standZ) + 1.0, standZ + 0.4);
+        const heading = (Math.random() - 0.5) * 0.5;
+        const dirX = Math.sin(heading);
+        const dirZ = Math.cos(heading);
+        const pts = [start];
+        let d = 2.4;
+        let acc = 0;
+        for (let h = 0; h < hops; h += 1) {
+          acc += d;
+          pts.push(V(start.x + dirX * acc, 0.02, standZ + 0.4 + dirZ * acc));
+          d *= 0.72;
+        }
+        const segDur = 0.32;
+        stone.visible = true;
+        fx.addTask(
+          segDur * hops,
+          (u) => {
+            const f = u * hops;
+            const i = Math.min(hops - 1, Math.floor(f));
+            const lu = f - i;
+            const a = pts[i];
+            const b = pts[i + 1];
+            const hgt = (i === 0 ? 0.4 : 0.5 * Math.pow(0.6, i)) * Math.sin(lu * Math.PI);
+            stone.position.set(lerp(a.x, b.x, lu), lerp(a.y, b.y, lu) + hgt, lerp(a.z, b.z, lu));
+            stone.rotation.y += 0.5;
+            if (!stone.userData.hit) stone.userData.hit = new Set();
+            if (lu > 0.92 && !stone.userData.hit.has(i)) {
+              stone.userData.hit.add(i);
+              fx.ripple(b, { radius: 0.9, life: 1.6, opacity: 0.75 });
+              fx.burst(b, { count: 10, colors: [0xffffff, 0xd8f4ff], speed: [0.5, 1.1], up: 1.5, gravity: 4, size: 0.05, life: 0.6 });
+            }
+          },
+          () => {
+            stone.visible = false;
+            stone.userData.hit = null;
+          }
+        );
+        ctx.audio?.playFishRipple?.();
+        return "石子在海面上跳了六下——水漂打得真漂亮 🪨";
+      },
+    });
+  }
+
+  // --- 13. Release a sky lantern from the over-water deck ------------------------------
+  {
+    const lanternGeo = new THREE.LatheGeometry(
+      [new THREE.Vector2(0.13, 0), new THREE.Vector2(0.2, 0.12), new THREE.Vector2(0.23, 0.32), new THREE.Vector2(0.2, 0.5), new THREE.Vector2(0.001, 0.56)],
+      14
+    );
+    const lanternMat = new THREE.MeshStandardMaterial({
+      color: 0xffd7a0,
+      emissive: new THREE.Color(0xff8a2a),
+      emissiveIntensity: 1.6,
+      roughness: 0.9,
+      side: THREE.DoubleSide,
+    });
+    const lanterns = [];
+    for (let i = 0; i < 5; i += 1) {
+      const m = new THREE.Mesh(lanternGeo, lanternMat);
+      m.visible = false;
+      noRay(m);
+      group.add(m);
+      lanterns.push({ mesh: m, t: 0, on: false });
+    }
+    let li = 0;
+    animators.push((elapsed, dt) => {
+      lanternMat.emissiveIntensity = 1.5 + Math.sin(elapsed * 13) * 0.15 + Math.sin(elapsed * 7.3) * 0.1;
+      for (const L of lanterns) {
+        if (!L.on) continue;
+        L.t += dt;
+        const t = L.t;
+        L.mesh.position.set(L.x + Math.sin(t * 0.4 + L.ph) * 0.6 + t * 0.12, L.y + Math.min(t, 1.5) * 0.4 + Math.max(0, t - 1.5) * 0.85, L.z + t * 0.35);
+        L.mesh.rotation.y = t * 0.3;
+        L.mesh.rotation.z = Math.sin(t * 0.9 + L.ph) * 0.08;
+        if (Math.random() < dt * 6) fx.spark(L.mesh.position.x, L.mesh.position.y + 0.05, L.mesh.position.z, 0, -0.2, 0, { color: 0xffb060, life: 0.8, size: 0.08 });
+        if (t > 40) {
+          L.on = false;
+          L.mesh.visible = false;
+        }
+      }
+    });
+    interactables.push({
+      id: "estate-sky-lantern",
+      label: "一起放飞孔明灯",
+      position: V(2.6, 1.18, 34.6),
+      radius: 2.4,
+      floorY: 1.18,
+      activate(ctx = {}) {
+        const L = lanterns[li % lanterns.length];
+        li += 1;
+        Object.assign(L, { on: true, t: 0, x: 2.6 + (Math.random() - 0.5) * 0.6, y: 1.18 + 1.2, z: 35.2, ph: Math.random() * 6 });
+        L.mesh.visible = true;
+        L.mesh.position.set(L.x, L.y, L.z);
+        fx.burst(V(L.x, L.y + 0.3, L.z), { count: 30, colors: [0xffc070, 0xfff0c0], speed: [0.4, 1.0], gravity: -0.2, size: 0.07, life: 1.6 });
+        ctx.audio?.playDuetArpeggio?.();
+        const n = ctx.actor === "ran" ? "小冉子" : "小贤贤";
+        return `${n}写下心愿，孔明灯缓缓飞向星空 🏮`;
+      },
+    });
+  }
+
+  // --- 14. Heart balloon on the harbor promenade -----------------------------------------
+  {
+    const heartGeo = new THREE.ExtrudeGeometry(createHeartShape(0.3), { depth: 0.12, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.04, bevelSegments: 3, curveSegments: 10 });
+    heartGeo.center();
+    heartGeo.rotateZ(Math.PI);
+    const heartMat = new THREE.MeshPhysicalMaterial({ color: 0xe8264f, roughness: 0.25, clearcoat: 1.0, clearcoatRoughness: 0.1, emissive: 0x3a0610 });
+    const stringGeo = new THREE.BufferGeometry().setFromPoints([V(0, -0.32, 0), V(0.04, -0.8, 0), V(-0.02, -1.3, 0)]);
+    const stringMat = new THREE.LineBasicMaterial({ color: 0xf6f0f0 });
+    const balloons = [];
+    for (let i = 0; i < 4; i += 1) {
+      const b = new THREE.Group();
+      b.add(new THREE.Mesh(heartGeo, heartMat), new THREE.Line(stringGeo, stringMat));
+      b.visible = false;
+      noRay(b);
+      group.add(b);
+      balloons.push({ g: b, on: false, t: 0 });
+    }
+    let bi = 0;
+    animators.push((elapsed, dt) => {
+      for (const B of balloons) {
+        if (!B.on) continue;
+        B.t += dt;
+        const t = B.t;
+        B.g.position.set(B.x + Math.sin(t * 0.7 + B.ph) * 0.5 - t * 0.15, B.y + t * 0.9 + Math.sin(t * 1.6) * 0.05, B.z + Math.cos(t * 0.5 + B.ph) * 0.4 + t * 0.2);
+        B.g.rotation.set(Math.sin(t * 1.1) * 0.12, Math.sin(t * 0.6 + B.ph) * 0.9, Math.sin(t * 1.4) * 0.1);
+        const s = Math.min(1, t / 0.4);
+        B.g.scale.setScalar(s);
+        if (t > 35) {
+          B.on = false;
+          B.g.visible = false;
+        }
+      }
+    });
+    interactables.push({
+      id: "estate-heart-balloon",
+      label: "放飞爱心气球",
+      position: V(22.4, 1.36, 11.9),
+      radius: 2.2,
+      floorY: 1.36,
+      activate(ctx = {}) {
+        const B = balloons[bi % balloons.length];
+        bi += 1;
+        Object.assign(B, { on: true, t: 0, x: 22.4, y: 1.36 + 2.2, z: 11.6, ph: Math.random() * 6 });
+        B.g.visible = true;
+        B.g.position.set(B.x, B.y, B.z);
+        fx.heart(V(B.x, B.y, B.z), { count: 40, scale: 0.04 });
+        ctx.audio?.playPetalGlissando?.();
+        return "红色爱心气球乘着海风飞上天空 🎈";
+      },
+    });
+  }
+
+  // --- 15. Harbor bistro date (sit at the parasol table) ----------------------------------
+  {
+    const tx = 16.2;
+    const tz = 6.2;
+    const seats = [0.4, 2.5].map((ca) => ({
+      x: tx + Math.cos(ca) * 0.96,
+      y: 1.36 + 0.48,
+      z: tz + Math.sin(ca) * 0.96,
+      yaw: Math.atan2(Math.cos(ca), Math.sin(ca)),
+    }));
+    interactables.push({
+      id: "estate-harbor-bistro-sit",
+      label: "在港湾小圆桌边约会",
+      position: V(tx, 1.36, tz + 1.75),
+      radius: 2.0,
+      floorY: 1.36,
+      pose: { type: "sit", seats },
+      activate(ctx = {}) {
+        const c = V(tx + 0.12, 1.36 + 0.95, tz - 0.08);
+        fx.petalBurst(c, { count: 30, radius: 0.15, up: 1.4, speed: [0.3, 0.8], floorY: 1.38, life: 5 });
+        fx.heart(V(tx, 1.36 + 1.7, tz), { count: 40, scale: 0.035 });
+        fx.burst(c, { count: 16, colors: [0xfff4c8, 0xffffff], speed: [0.3, 0.7], gravity: 0.1, size: 0.06, life: 1.2 });
+        ctx.audio?.playVendingClink?.();
+        return "碰杯——海风、阳光和你，刚刚好 🥂";
+      },
+    });
+  }
+
+  // --- 16. Boathouse espresso bar (sit on the oak benches) --------------------------------
+  {
+    const tx = 20.4;
+    const tz = -9.5;
+    interactables.push({
+      id: "estate-cafe-espresso",
+      label: "坐下来喝一杯咖啡",
+      position: V(21.9, 1.38, -8.1),
+      radius: 2.0,
+      floorY: 1.38,
+      pose: {
+        type: "sit",
+        seats: [
+          { x: tx, y: 1.85, z: tz + 1.05, yaw: 0 },
+          { x: tx, y: 1.85, z: tz - 1.05, yaw: Math.PI },
+        ],
+      },
+      activate(ctx = {}) {
+        fx.emit(5.0, 26, (i) => {
+          const off = i % 2 === 0 ? -0.08 : 0.1;
+          fx.spark(tx + off + (Math.random() - 0.5) * 0.04, 2.2, tz + (Math.random() - 0.5) * 0.04, (Math.random() - 0.5) * 0.06, 0.32 + Math.random() * 0.12, (Math.random() - 0.5) * 0.06, {
+            color: 0xf2f2f2,
+            life: 2.0,
+            size: 0.06,
+            drag: 0.2,
+          });
+        });
+        ctx.audio?.playVendingClink?.();
+        return "两杯拿铁冒着热气，拉花是一颗心 ☕";
+      },
+    });
+  }
+
+  // --- 17. Scatter petals from the creek footbridge -> they float downstream --------------
+  {
+    const bx = 8.4;
+    const bz = -44.0;
+    const deckY = T(bx, bz) + 1.85;
+    const creekY = (z) => T(getCreekCenterX(z), z) + 0.36 + 0.012;
+    const flowFn = (p, dt) => {
+      p.z += 0.75 * dt;
+      p.x += (getCreekCenterX(p.z) + p.wx - p.x) * Math.min(1, dt * 0.8);
+      p.y = creekY(p.z);
+      if (p.z > -26) p.life = Math.min(p.life, 0.5);
+    };
+    interactables.push({
+      id: "estate-creek-bridge-petals",
+      label: "在拱桥上撒下花瓣",
+      position: V(bx, deckY, bz),
+      radius: 2.2,
+      floorY: deckY,
+      activate(ctx = {}) {
+        const cx = getCreekCenterX(bz);
+        for (let i = 0; i < 60; i += 1) {
+          const sx = lerp(bx, cx, 0.6) + (Math.random() - 0.5) * 1.2;
+          const sz = bz + (Math.random() - 0.5) * 1.6;
+          const p = fx.petal(sx, deckY + 1.2 + Math.random() * 0.4, sz, (Math.random() - 0.5) * 0.6, 0.4 + Math.random() * 0.6, (Math.random() - 0.5) * 0.6, {
+            color: [0xfad4e0, 0xfff5f8, 0xeb7696, 0xf6c2d2][i % 4],
+            life: 18 + Math.random() * 6,
+            floorY: creekY(sz),
+            flowFn,
+            scale: 1.3,
+          });
+          p.wx = (Math.random() - 0.5) * 2.4;
+        }
+        ctx.audio?.playPetalGlissando?.();
+        return "花瓣落在溪面上，顺着流水慢慢漂远 🌸";
+      },
+    });
+  }
+
+  // --- 18. Festoon string lights along the harbor promenade --------------------------------
+  {
+    const postZ = [-21.5, -12.0, -2.5, 5.8, 17.5];
+    const hy = 1.36 + 3.32;
+    const per = 12;
+    const bulbPts = [];
+    const wirePts = [];
+    for (let s = 0; s < postZ.length - 1; s += 1) {
+      for (let k = 0; k <= per; k += 1) {
+        const u = k / per;
+        const z = lerp(postZ[s], postZ[s + 1], u);
+        const y = hy - Math.sin(u * Math.PI) * 0.75;
+        const x = 44.2 - 0.08;
+        wirePts.push(V(x, y, z));
+        if (k > 0 && k < per) bulbPts.push(V(x, y - 0.07, z));
+      }
+    }
+    const wire = new THREE.Line(new THREE.BufferGeometry().setFromPoints(wirePts), new THREE.LineBasicMaterial({ color: 0x2b2622 }));
+    noRay(wire);
+    group.add(wire);
+    const bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.065, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }), bulbPts.length);
+    bulbs.name = "HarborFestoonBulbs";
+    const off = new THREE.Color(0x6e6556);
+    const on = new THREE.Color(0xffd98a);
+    const dm = new THREE.Object3D();
+    bulbPts.forEach((p, i) => {
+      dm.position.copy(p);
+      dm.updateMatrix();
+      bulbs.setMatrixAt(i, dm.matrix);
+      bulbs.setColorAt(i, off);
+    });
+    bulbs.instanceColor.needsUpdate = true;
+    noRay(bulbs);
+    group.add(bulbs);
+    const lights = { lit: false, level: new Float32Array(bulbPts.length), chase: -1 };
+    const c = new THREE.Color();
+    animators.push((elapsed, dt) => {
+      let changed = false;
+      for (let i = 0; i < bulbPts.length; i += 1) {
+        const target = lights.lit && lights.chase >= i ? 1 : 0;
+        const lv = lights.level[i];
+        if (Math.abs(target - lv) > 0.002) {
+          lights.level[i] = lv + (target - lv) * Math.min(1, dt * 6);
+          changed = true;
+        }
+      }
+      if (lights.lit && lights.chase < bulbPts.length) {
+        lights.chase += dt * 22;
+        changed = true;
+      }
+      if (lights.lit) {
+        // gentle twinkle
+        for (let i = 0; i < bulbPts.length; i += 1) {
+          c.copy(off).lerp(on, lights.level[i] * (0.9 + 0.1 * Math.sin(elapsed * 3 + i * 1.7)));
+          bulbs.setColorAt(i, c);
+        }
+        bulbs.instanceColor.needsUpdate = true;
+      } else if (changed) {
+        for (let i = 0; i < bulbPts.length; i += 1) {
+          c.copy(off).lerp(on, lights.level[i]);
+          bulbs.setColorAt(i, c);
+        }
+        bulbs.instanceColor.needsUpdate = true;
+      }
+    });
+    interactables.push({
+      id: "estate-harbor-string-lights",
+      label: "点亮港湾串灯",
+      position: V(43.0, 1.36, 4.6),
+      radius: 2.6,
+      floorY: 1.36,
+      activate(ctx = {}) {
+        lights.lit = !lights.lit;
+        lights.chase = lights.lit ? 0 : -1;
+        if (lights.lit) {
+          harborLights.lanternGlowMat.emissiveIntensity = Math.max(harborLights.lanternGlowMat.emissiveIntensity, 2.6);
+          fx.burst(V(44.1, hy - 0.3, 5.8), { count: 40, colors: [0xffd98a, 0xfff4d0], speed: [0.6, 1.4], hemi: false, up: 0, gravity: 0.5, size: 0.08, life: 1.4 });
+        }
+        ctx.audio?.playRoofChime?.(lights.lit);
+        return lights.lit ? "一串暖黄的小灯沿着港湾依次亮起 ✨" : "串灯熄灭了，只剩月光与海浪 🌙";
+      },
+    });
+  }
+
+  // --- 19. Lie on the lighthouse bastion & watch shooting stars ---------------------------
+  interactables.push({
+    id: "estate-stargaze",
+    label: "躺在灯塔下看流星",
+    position: V(78.0, 1.38, 13.3),
+    radius: 2.2,
+    floorY: 1.38,
+    pose: {
+      type: "lie",
+      seats: [
+        { x: 77.45, y: 1.42, z: 13.5, yaw: Math.PI },
+        { x: 78.55, y: 1.42, z: 13.5, yaw: Math.PI },
+      ],
+    },
+    activate(ctx = {}) {
+      const night = hooks.getNightMix();
+      for (let m = 0; m < 4; m += 1) {
+        const sx = 40 + Math.random() * 60;
+        const sy = 34 + Math.random() * 16;
+        const sz = 55 + Math.random() * 30;
+        const vx = -(18 + Math.random() * 10);
+        const vy = -(6 + Math.random() * 4);
+        const streak = () =>
+          fx.addTask(0.9, (u) => {
+            const x = sx + vx * u;
+            const y = sy + vy * u;
+            for (let k = 0; k < 3; k += 1) {
+              fx.spark(x - vx * 0.012 * k, y - vy * 0.012 * k, sz, 0, 0, 0, { color: k === 0 ? 0xffffff : 0xcfe4ff, life: 0.55, size: 0.9 - k * 0.2, drag: 0 });
+            }
+          });
+        fx.addTask(m * 0.7 + 0.01, () => {}, streak); // stagger meteors
+      }
+      fx.burst(V(78, 3.0, 13.5), { count: 40, colors: [0xcfe4ff, 0xffffff, 0xfff1c0], speed: [0.3, 0.9], gravity: -0.05, size: 0.07, life: 3.5, flicker: 0.8 });
+      ctx.audio?.playDuetArpeggio?.();
+      return night > 0.4 ? "一颗流星划过夜空——快许愿！🌠" : "躺在灯塔下看云，等夜里的流星雨 🌠";
+    },
+  });
+
+  return {
+    interactables,
+    update(elapsed, dt) {
+      fx.update(dt, elapsed);
+      for (let i = 0; i < animators.length; i += 1) animators[i](elapsed, dt);
+    },
+    reset() {
+      fx.clear();
     },
   };
 }

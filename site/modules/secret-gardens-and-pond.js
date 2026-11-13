@@ -31,6 +31,7 @@ import {
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { createPillowedCushionGeo, createPlumpPillowGeo } from "./vintage-craft-props.js";
+import { createInteractionFX, easeOutBack } from "./botanical-flora.js";
 
 const MODEL_MANIFEST = {
   freshwater_shrimp: "./assets/models/freshwater_shrimp.glb",
@@ -527,7 +528,8 @@ function buildWatersideWeepingPalm(trunkMat, frondMat, height = 3.6, seed = 101)
       new THREE.Vector3(0, arch * 0.25, len * 0.78),
       new THREE.Vector3(0, -0.42, len),
     ]);
-    const spineGeo = new THREE.TubeGeometry(spineCurve, 7, 0.014, 5, false).toNonIndexed();
+    const rawSpine = new THREE.TubeGeometry(spineCurve, 7, 0.014, 5, false);
+    const spineGeo = rawSpine.index ? rawSpine.toNonIndexed() : rawSpine;
     spineGeo.applyMatrix4(rotMat);
     crownGeos.push(spineGeo);
 
@@ -536,7 +538,8 @@ function buildWatersideWeepingPalm(trunkMat, frondMat, height = 3.6, seed = 101)
       const pt = spineCurve.getPointAt(u);
       const bladeW = Math.sin(u * Math.PI) * 0.46;
       for (const side of [-1, 1]) {
-        const lg = new THREE.PlaneGeometry(0.058, bladeW).toNonIndexed();
+        const rawLg = new THREE.PlaneGeometry(0.058, bladeW);
+        const lg = rawLg.index ? rawLg.toNonIndexed() : rawLg;
         const m = new THREE.Matrix4().makeRotationFromEuler(
           new THREE.Euler(0.32 * u, 0, side * 1.12)
         );
@@ -1366,7 +1369,8 @@ function buildTwoPersonSwingZone(parent, animState) {
   const chainX = benchW * 0.5 + 0.06;
 
   // Articulated 3D Torus Link Chains merged into ONE single draw call!
-  const baseLinkGeo = new THREE.TorusGeometry(0.021, 0.0055, 6, 10).toNonIndexed();
+  const rawBaseLink = new THREE.TorusGeometry(0.021, 0.0055, 6, 10);
+  const baseLinkGeo = rawBaseLink.index ? rawBaseLink.toNonIndexed() : rawBaseLink;
   const chainGeos = [];
   const addLinkChain = (pStart, pEnd) => {
     const dir = pEnd.clone().sub(pStart);
@@ -1396,7 +1400,8 @@ function buildTwoPersonSwingZone(parent, animState) {
     const frontArm = new THREE.Vector3(sx * chainX, seatLocalY + 0.24, 0.25);
     const backArm = new THREE.Vector3(sx * chainX, seatLocalY + 0.44, -0.24);
 
-    const ringGeo = new THREE.TorusGeometry(0.032, 0.008, 8, 14).toNonIndexed();
+    const rawRing = new THREE.TorusGeometry(0.032, 0.008, 8, 14);
+    const ringGeo = rawRing.index ? rawRing.toNonIndexed() : rawRing;
     ringGeo.translate(splitNode.x, splitNode.y, splitNode.z);
     chainGeos.push(ringGeo);
 
@@ -1877,7 +1882,7 @@ function buildBeardedIrisClumps(parent) {
       );
     }
     blade.computeVertexNormals();
-    const g = blade.toNonIndexed();
+    const g = blade.index ? blade.toNonIndexed() : blade;
     g.rotateY(az);
     leafGeos.push(g);
   }
@@ -1888,10 +1893,12 @@ function buildBeardedIrisClumps(parent) {
     [0.045, -0.025, 0.54],
     [0.01, 0.045, 0.46],
   ]) {
-    const stalk = new THREE.CylinderGeometry(0.006, 0.009, sh, 6).toNonIndexed();
+    const rawStalk = new THREE.CylinderGeometry(0.006, 0.009, sh, 6);
+    const stalk = rawStalk.index ? rawStalk.toNonIndexed() : rawStalk;
     stalk.translate(sx, sh * 0.5, sz);
     leafGeos.push(stalk);
-    const calyx = new THREE.ConeGeometry(0.018, 0.055, 6).toNonIndexed();
+    const rawCalyx = new THREE.ConeGeometry(0.018, 0.055, 6);
+    const calyx = rawCalyx.index ? rawCalyx.toNonIndexed() : rawCalyx;
     calyx.translate(sx, sh, sz);
     leafGeos.push(calyx);
   }
@@ -2491,6 +2498,8 @@ function placeEstateAndVillaGLBFurniture(group, extracted) {
 // Public Builder Entrypoint
 // ---------------------------------------------------------------------------
 
+const _feedTmp = new THREE.Vector3();
+
 export async function buildSecretGardensAndPond({ villaGroup = null, onProgress = null } = {}) {
   const group = new THREE.Group();
   group.name = "SecretGardensAndCrystalPond";
@@ -2558,6 +2567,12 @@ export async function buildSecretGardensAndPond({ villaGroup = null, onProgress 
     swingPivot: null,
     swingBoost: 0,
     pondExcite: 0,
+    feedWeight: 0,
+    feedHold: 0,
+    feedX: POND_CONFIG.cx,
+    feedZ: POND_CONFIG.cz + 2.4,
+    shrimpBoost: 0,
+    waterfallBoost: 0,
   };
 
   buildMonetPondZone(group, models, extracted, animState);
@@ -2585,6 +2600,7 @@ export async function buildSecretGardensAndPond({ villaGroup = null, onProgress 
 
   const lookTarget = new THREE.Vector3();
   let nightMix = 0;
+  const gardenInteract = buildGardenInteractables(group, animState);
 
   function evalFishPos(s, t, outVec) {
     const a = t * s.speed + s.phase;
@@ -2620,10 +2636,18 @@ export async function buildSecretGardensAndPond({ villaGroup = null, onProgress 
   function update(elapsed, dt) {
     animState.swingBoost = Math.max(0, animState.swingBoost - dt * 0.28);
     animState.pondExcite = Math.max(0, animState.pondExcite - dt * 0.45);
+    if (animState.feedHold > 0) {
+      animState.feedHold = Math.max(0, animState.feedHold - dt);
+      animState.feedWeight = Math.min(1, animState.feedWeight + dt * 0.9);
+    } else {
+      animState.feedWeight = Math.max(0, animState.feedWeight - dt * 0.35);
+    }
+    animState.shrimpBoost = Math.max(0, animState.shrimpBoost - dt * 0.25);
+    animState.waterfallBoost = Math.max(0, animState.waterfallBoost - dt * 0.3);
 
     // 1. Waterfall & Pond Surface Ripples
     if (animState.waterfallMap) {
-      animState.waterfallMap.offset.y -= dt * 0.92;
+      animState.waterfallMap.offset.y -= dt * (0.92 + animState.waterfallBoost * 1.6);
     }
     if (animState.pondNormal) {
       animState.pondNormal.offset.x += dt * 0.035;
@@ -2651,6 +2675,22 @@ export async function buildSecretGardensAndPond({ villaGroup = null, onProgress 
       if (s.mixer && dt > 0) s.mixer.update(dt * speedMult);
       evalFishPos(s, effectiveT, s.wrapper.position);
       evalFishPos(s, effectiveT + 0.08, lookTarget);
+      if (animState.feedWeight > 0.001) {
+        // Swarm toward the floating food pellets and circle around them
+        const w = smoothstep(0, 1, animState.feedWeight) * (0.82 + 0.18 * Math.sin(i * 1.7));
+        const ring = 0.28 + (i % 5) * 0.16;
+        const ang = elapsed * (1.1 + (i % 3) * 0.35) * (i % 2 === 0 ? 1 : -1) + i * 0.9;
+        const fy = POND_CONFIG.waterY - 0.12 - (i % 3) * 0.06;
+        s.wrapper.position.lerp(
+          _feedTmp.set(animState.feedX + Math.cos(ang) * ring, fy, animState.feedZ + Math.sin(ang) * ring * 0.8),
+          w
+        );
+        const ang2 = ang + 0.12 * (i % 2 === 0 ? 1 : -1);
+        lookTarget.lerp(
+          _feedTmp.set(animState.feedX + Math.cos(ang2) * ring, fy, animState.feedZ + Math.sin(ang2) * ring * 0.8),
+          w
+        );
+      }
       if (lookTarget.distanceToSquared(s.wrapper.position) > 1e-6) {
         s.wrapper.lookAt(lookTarget);
       }
@@ -2668,7 +2708,9 @@ export async function buildSecretGardensAndPond({ villaGroup = null, onProgress 
         const a = elapsed * sh.speed + sh.phase;
         const nx = sh.baseX + Math.cos(a) * sh.roamR;
         const nz = sh.baseZ + Math.sin(a * 0.8) * sh.roamR * 0.72;
-        const hop = Math.max(0, Math.sin(elapsed * 1.9 + sh.phase) - 0.72) * 0.14;
+        const hop =
+          Math.max(0, Math.sin(elapsed * (1.9 + animState.shrimpBoost * 2.6) + sh.phase) - 0.72 + animState.shrimpBoost * 0.35) *
+          (0.14 + animState.shrimpBoost * 0.12);
         sh.wrapper.position.set(nx, sh.baseY + hop, nz);
         lookTarget.set(
           sh.baseX + Math.cos(a + 0.12) * sh.roamR,
@@ -2699,11 +2741,19 @@ export async function buildSecretGardensAndPond({ villaGroup = null, onProgress 
 
     // 6. Subtle Night Fireflies
     fireflies.update(elapsed, nightMix);
+
+    // 7. E-key interaction FX (coins, pellets, splashes, watering streams, sprouts ...)
+    gardenInteract.update(elapsed, dt, nightMix);
   }
 
   function reset() {
     animState.swingBoost = 0;
     animState.pondExcite = 0;
+    animState.feedWeight = 0;
+    animState.feedHold = 0;
+    animState.shrimpBoost = 0;
+    animState.waterfallBoost = 0;
+    gardenInteract.reset();
     if (animState.waterfallMap) animState.waterfallMap.offset.set(0, 0);
     if (animState.pondNormal) animState.pondNormal.offset.set(0, 0);
     for (let i = 0; i < animState.swimmers.length; i += 1) {
@@ -2727,6 +2777,7 @@ export async function buildSecretGardensAndPond({ villaGroup = null, onProgress 
 
   return {
     group,
+    interactables: gardenInteract.interactables,
     update,
     reset,
     setNightMix,
@@ -2738,4 +2789,469 @@ export async function buildSecretGardensAndPond({ villaGroup = null, onProgress 
       animState.pondExcite = 1.0;
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// E-key Interactables for the Secret Gardens: couple swing ride, koi feeding, wishing coin,
+// waterfall splash + rainbow, pond-side seat, shrimp teasing, watering flowers, bougainvillea
+// petal shower & firefly calling. All feedback is animated inside update(); idle cost = 0 draws.
+// ---------------------------------------------------------------------------
+function buildGardenInteractables(group, animState) {
+  const fx = createInteractionFX(group, { name: "GardenInteractionFX", maxSparks: 460, maxPetals: 220, maxRings: 14 });
+  const { cx: pcx, cz: pcz, waterY } = POND_CONFIG;
+  const { cx: scx, cz: scz, groundY: sgy } = SWING_CONFIG;
+  const interactables = [];
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
+  const noRay = (o) => o.traverse((c) => { c.raycast = () => {}; });
+  const dummy = new THREE.Object3D();
+
+  // --- shared pools: food pellets, wishing coins, sprouting flowers, rainbow ---
+  const PELLETS = 36;
+  const pelletInst = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.022, 6, 5),
+    new THREE.MeshStandardMaterial({ color: 0xb27a3c, roughness: 0.8 }),
+    PELLETS
+  );
+  pelletInst.name = "KoiFoodPellets";
+  pelletInst.frustumCulled = false;
+  pelletInst.visible = false;
+  noRay(pelletInst);
+  const pellets = [];
+  for (let i = 0; i < PELLETS; i += 1) pellets.push({ on: false });
+  group.add(pelletInst);
+
+  const COINS = 18;
+  const coinGeo = new THREE.CylinderGeometry(0.034, 0.034, 0.007, 16);
+  const coinMat = new THREE.MeshStandardMaterial({ color: 0xf2c75c, metalness: 0.95, roughness: 0.22, emissive: 0x3a2804 });
+  const coinInst = new THREE.InstancedMesh(coinGeo, coinMat, COINS);
+  coinInst.name = "PondWishingCoins";
+  coinInst.count = 0;
+  noRay(coinInst);
+  group.add(coinInst);
+  let coinCount = 0;
+  const flyCoin = new THREE.Mesh(coinGeo, coinMat);
+  flyCoin.visible = false;
+  noRay(flyCoin);
+  group.add(flyCoin);
+
+  const SPROUTS = 24;
+  const stemGeo = new THREE.CylinderGeometry(0.008, 0.012, 0.32, 5);
+  stemGeo.translate(0, 0.16, 0);
+  const bloomGeo = new THREE.IcosahedronGeometry(0.055, 1);
+  bloomGeo.scale(1, 0.55, 1);
+  bloomGeo.translate(0, 0.33, 0);
+  const sproutStem = new THREE.InstancedMesh(stemGeo, new THREE.MeshStandardMaterial({ color: 0x4f8a3e, roughness: 0.7 }), SPROUTS);
+  const sproutBloom = new THREE.InstancedMesh(bloomGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 }), SPROUTS);
+  sproutStem.count = 0;
+  sproutBloom.count = 0;
+  noRay(sproutStem);
+  noRay(sproutBloom);
+  group.add(sproutStem, sproutBloom);
+  const sprouts = [];
+  let sproutCursor = 0;
+  const sproutCols = [0xff7fa8, 0xffd1e0, 0xfff2a0, 0xc8a8ff, 0xffffff, 0xff9a6e];
+
+  // Rainbow arc over the waterfall plunge pool
+  const rbGeos = [];
+  const rbCols = [0xff4b4b, 0xff9a3c, 0xffe65c, 0x5fd16a, 0x4fa8ff, 0x8a6cff];
+  rbCols.forEach((hex, i) => {
+    const g = new THREE.TorusGeometry(1.9 - i * 0.07, 0.036, 4, 48, Math.PI);
+    const c = new THREE.Color(hex);
+    const arr = new Float32Array(g.attributes.position.count * 3);
+    for (let k = 0; k < g.attributes.position.count; k += 1) {
+      arr[k * 3] = c.r;
+      arr[k * 3 + 1] = c.g;
+      arr[k * 3 + 2] = c.b;
+    }
+    g.setAttribute("color", new THREE.BufferAttribute(arr, 3));
+    rbGeos.push(g);
+  });
+  const rainbow = new THREE.Mesh(
+    mergeGeometries(rbGeos, false),
+    new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+  );
+  rainbow.name = "WaterfallSplashRainbow";
+  rainbow.position.set(pcx, waterY, pcz - 2.2);
+  rainbow.visible = false;
+  noRay(rainbow);
+  group.add(rainbow);
+
+  // --- 1. Couple swing ride --------------------------------------------------
+  interactables.push({
+    id: "garden-swing-ride",
+    label: "一起荡秋千",
+    position: V(scx, sgy + 0.02, scz + 1.35),
+    radius: 1.7,
+    floorY: sgy + 0.02,
+    pose: {
+      type: "sit",
+      attachTo: animState.swingPivot,
+      seats: [
+        { x: -0.38, y: -1.68, z: 0.03, yaw: Math.PI },
+        { x: 0.38, y: -1.68, z: 0.03, yaw: Math.PI },
+      ],
+    },
+    activate(ctx = {}) {
+      animState.swingBoost = 1.0;
+      fx.heart(V(scx, sgy + 2.0, scz + 0.6), { count: 52, scale: 0.05, yaw: 0 });
+      fx.petalBurst(V(scx, sgy + 2.6, scz), {
+        count: 46,
+        radius: 1.6,
+        up: 0.4,
+        floorY: sgy + 0.04,
+        colors: [0xe0408a, 0xf26fb0, 0xffa8d2, 0xffffff],
+        life: 6,
+      });
+      ctx.audio?.playPetalGlissando?.();
+      return "秋千越荡越高，三角梅花瓣漫天飞舞 💞";
+    },
+  });
+
+  // --- 2. Feed the koi ---------------------------------------------------------
+  const feedStand = V(pcx - 1.9, 2.22, pcz + 4.35);
+  interactables.push({
+    id: "garden-koi-feed",
+    label: "撒鱼食喂锦鲤",
+    position: feedStand.clone(),
+    radius: 2.0,
+    floorY: 2.22,
+    activate(ctx = {}) {
+      const fxp = pcx - 1.0;
+      const fzp = pcz + 2.2;
+      animState.feedX = fxp;
+      animState.feedZ = fzp;
+      animState.feedHold = 9.0;
+      animState.pondExcite = Math.max(animState.pondExcite, 0.6);
+      pelletInst.visible = true;
+      for (let i = 0; i < PELLETS; i += 1) {
+        const a = Math.random() * Math.PI * 2;
+        const r = Math.sqrt(Math.random()) * 0.55;
+        Object.assign(pellets[i], {
+          on: true,
+          t: -i * 0.025,
+          sx: feedStand.x + (Math.random() - 0.5) * 0.2,
+          sy: feedStand.y + 1.15,
+          sz: feedStand.z - 0.3,
+          ex: fxp + Math.cos(a) * r,
+          ez: fzp + Math.sin(a) * r * 0.8,
+          ph: Math.random() * 6.28,
+          rippled: false,
+        });
+      }
+      for (let k = 0; k < 5; k += 1) fx.ripple(V(fxp, waterY, fzp), { radius: 0.6 + k * 0.25, life: 1.8, delay: 0.5 + k * 0.45, opacity: 0.55 });
+      ctx.audio?.playFishRipple?.();
+      return "锦鲤和金鱼争先恐后地游过来抢食 🐟";
+    },
+  });
+
+  // --- 3. Wishing coin -----------------------------------------------------------
+  const wishStand = V(pcx + 5.4 * 1.12, 2.22, pcz + 0.6);
+  interactables.push({
+    id: "garden-pond-wish",
+    label: "投一枚硬币许个愿",
+    position: wishStand.clone(),
+    radius: 2.0,
+    floorY: 2.22,
+    activate(ctx = {}) {
+      const sx = wishStand.x - 0.3;
+      const sy = wishStand.y + 1.3;
+      const sz = wishStand.z;
+      const ex = pcx + 2.2 + (Math.random() - 0.5) * 0.6;
+      const ez = pcz + 0.3 + (Math.random() - 0.5) * 0.8;
+      flyCoin.visible = true;
+      fx.addTask(
+        1.1,
+        (u) => {
+          flyCoin.position.set(lerp(sx, ex, u), lerp(sy, waterY, u) + Math.sin(u * Math.PI) * 1.1, lerp(sz, ez, u));
+          flyCoin.rotation.set(u * 18, 0, u * 7);
+          if (Math.random() < 0.5) fx.spark(flyCoin.position.x, flyCoin.position.y, flyCoin.position.z, 0, 0.1, 0, { color: 0xffe08a, life: 0.6, size: 0.05 });
+        },
+        () => {
+          flyCoin.visible = false;
+          const landing = V(ex, waterY, ez);
+          fx.ripple(landing, { radius: 0.9, life: 1.6, opacity: 0.8 });
+          fx.ripple(landing, { radius: 1.5, life: 2.2, delay: 0.25, opacity: 0.5 });
+          fx.burst(landing, { count: 30, colors: [0xdff6ff, 0xffffff], speed: [0.8, 1.8], up: 1.4, gravity: 3.5, size: 0.06, life: 0.9 });
+          fx.emit(2.4, 40, () => {
+            fx.spark(ex + (Math.random() - 0.5) * 0.4, waterY + 0.05, ez + (Math.random() - 0.5) * 0.4, 0, 0.9 + Math.random() * 0.8, 0, {
+              color: Math.random() < 0.5 ? 0xffe08a : 0xfff6d8,
+              life: 2.2,
+              size: 0.08,
+              drag: 0.2,
+              flicker: 0.5,
+            });
+          });
+          const bedY = Math.max(POND_CONFIG.bedY + 0.06, getWorldTerrainY(ex, ez) + 0.012);
+          const slot = coinCount % COINS;
+          coinCount += 1;
+          coinInst.count = Math.min(COINS, coinCount);
+          const yaw = Math.random() * 6.28;
+          fx.addTask(2.0, (u) => {
+            dummy.position.set(ex + Math.sin(u * 9) * 0.04, lerp(waterY - 0.02, bedY, u), ez);
+            dummy.rotation.set(Math.sin(u * 14) * (1 - u) * 0.9, yaw, 0);
+            dummy.scale.setScalar(1);
+            dummy.updateMatrix();
+            coinInst.setMatrixAt(slot, dummy.matrix);
+            coinInst.instanceMatrix.needsUpdate = true;
+          });
+        }
+      );
+      ctx.audio?.playVendingClink?.();
+      return "叮——硬币沉入池底，愿望已被锦鲤收下 ✨";
+    },
+  });
+
+  // --- 4. Waterfall splash + rainbow ---------------------------------------------
+  interactables.push({
+    id: "garden-waterfall-splash",
+    label: "在瀑布边撩水嬉戏",
+    position: V(pcx + 5.4, 2.22, pcz - 1.4),
+    radius: 2.6,
+    floorY: 2.22,
+    activate(ctx = {}) {
+      const plunge = V(pcx, waterY + 0.05, pcz - 3.0);
+      animState.waterfallBoost = 1.0;
+      animState.pondExcite = Math.max(animState.pondExcite, 0.8);
+      fx.emit(2.2, 90, () => {
+        const a = Math.random() * Math.PI * 2;
+        const sp = 1.2 + Math.random() * 2.2;
+        fx.spark(plunge.x + Math.cos(a) * 0.5, plunge.y, plunge.z + Math.sin(a) * 0.4, Math.cos(a) * sp * 0.6, 1.6 + Math.random() * 2.2, Math.sin(a) * sp * 0.6 + 0.8, {
+          color: Math.random() < 0.6 ? 0xe8fbff : 0xbfe9ff,
+          life: 1.2,
+          size: 0.07,
+          gravity: 5.0,
+          drag: 0.4,
+        });
+      });
+      for (let k = 0; k < 4; k += 1) fx.ripple(plunge, { radius: 1.2 + k * 0.5, life: 2.0, delay: k * 0.35, opacity: 0.7 });
+      rainbow.visible = true;
+      fx.addTask(
+        7.0,
+        (u) => {
+          rainbow.material.opacity = 0.55 * smoothstep(0, 0.15, u) * (1 - smoothstep(0.7, 1.0, u));
+          rainbow.scale.setScalar(0.85 + 0.15 * smoothstep(0, 0.3, u));
+        },
+        () => {
+          rainbow.visible = false;
+        }
+      );
+      ctx.audio?.playFishRipple?.();
+      return "水花四溅，瀑布前架起一道小彩虹 🌈";
+    },
+  });
+
+  // --- 5. Sit together on the pond-side viewing stone -------------------------------
+  const sitX = pcx + 1.6;
+  const sitZ = pcz + 4.1 + 0.32;
+  interactables.push({
+    id: "garden-pond-sit",
+    label: "坐在池畔石上看鱼",
+    position: V(sitX, 2.22, sitZ + 0.35),
+    radius: 1.8,
+    floorY: 2.22,
+    pose: {
+      type: "sit",
+      seats: [
+        { x: sitX - 0.32, y: 2.29, z: sitZ, yaw: 0 },
+        { x: sitX + 0.32, y: 2.29, z: sitZ, yaw: 0 },
+      ],
+    },
+    activate(ctx = {}) {
+      animState.pondExcite = Math.max(animState.pondExcite, 0.7);
+      for (let k = 0; k < 3; k += 1) fx.ripple(V(sitX, waterY, sitZ - 1.6), { radius: 0.8 + k * 0.4, life: 2.4, delay: k * 0.6, opacity: 0.45 });
+      fx.heart(V(sitX, 3.2, sitZ - 0.4), { count: 40, scale: 0.035 });
+      ctx.audio?.playFishRipple?.();
+      return "肩并肩坐在池边，看睡莲下的金鱼游来游去 🪷";
+    },
+  });
+
+  // --- 6. Tease the river shrimp ------------------------------------------------
+  interactables.push({
+    id: "garden-shrimp-tease",
+    label: "逗一逗河虾",
+    position: V(pcx - 5.4 * 1.15, 2.22, pcz + 0.4),
+    radius: 2.0,
+    floorY: 2.22,
+    activate(ctx = {}) {
+      animState.shrimpBoost = 1.0;
+      for (const sh of animState.shrimpActors) {
+        if (Math.random() < 0.7) {
+          fx.ripple(V(sh.wrapper.position.x, waterY, sh.wrapper.position.z), { radius: 0.35, life: 1.2, opacity: 0.5, delay: Math.random() * 0.8 });
+        }
+      }
+      fx.burst(V(pcx - 3.6, waterY + 0.05, pcz + 0.4), { count: 24, colors: [0xdff6ff, 0xffffff], speed: [0.5, 1.2], up: 1.2, gravity: 3.0, size: 0.05, life: 0.8 });
+      ctx.audio?.playFishRipple?.();
+      return "河虾们一蹦一跳地弹开了 🦐";
+    },
+  });
+
+  // --- 7. Water the flowers with the galvanized can ---------------------------------
+  const canX = -24.2;
+  const canZ = 16.8;
+  interactables.push({
+    id: "garden-water-flowers",
+    label: "提起水壶浇浇花",
+    position: V(canX - 0.3, sgy + 0.02, canZ + 0.8),
+    radius: 1.8,
+    floorY: sgy + 0.02,
+    activate(ctx = {}) {
+      const spout = V(canX - 0.25, sgy + 0.62, canZ - 0.05);
+      const tx = canX - 1.25;
+      const tz = canZ - 0.35;
+      fx.emit(2.6, 70, () => {
+        fx.spark(spout.x, spout.y, spout.z, -1.05 + (Math.random() - 0.5) * 0.25, 0.9 + Math.random() * 0.3, -0.25 + (Math.random() - 0.5) * 0.25, {
+          color: Math.random() < 0.5 ? 0xbfe6ff : 0xffffff,
+          life: 0.75,
+          size: 0.045,
+          gravity: 6.0,
+          drag: 0.1,
+        });
+      });
+      fx.addTask(1.0, () => {}, () => {
+        for (let k = 0; k < 6; k += 1) {
+          const slot = sprouts.length < SPROUTS ? sprouts.length : sproutCursor++ % SPROUTS;
+          const a = Math.random() * Math.PI * 2;
+          const r = 0.15 + Math.random() * 0.75;
+          const sp = { x: tx + Math.cos(a) * r, z: tz + Math.sin(a) * r, age: 0, delay: k * 0.22, s: 0.8 + Math.random() * 0.6, yaw: Math.random() * 6.28 };
+          sprouts[slot] = sp;
+          sproutBloom.setColorAt(slot, new THREE.Color(sproutCols[(slot + k) % sproutCols.length]));
+        }
+        sproutBloom.instanceColor.needsUpdate = true;
+        sproutStem.count = sprouts.length;
+        sproutBloom.count = sprouts.length;
+        fx.burst(V(tx, sgy + 0.4, tz), { count: 40, colors: [0xc8ffb0, 0xfff6c8, 0xffffff], speed: [0.3, 1.0], gravity: 0.2, size: 0.06, life: 1.8 });
+      });
+      ctx.audio?.playDuetArpeggio?.();
+      return "浇过水的花圃里，冒出了一簇簇新开的小花 🌼";
+    },
+  });
+
+  // --- 8. Bougainvillea petal shower under the floral trellis -------------------------
+  interactables.push({
+    id: "garden-bougainvillea-shower",
+    label: "摇落三角梅花雨",
+    position: V(scx + 1.6, sgy + 0.02, scz + 3.0),
+    radius: 1.6,
+    floorY: sgy + 0.02,
+    activate(ctx = {}) {
+      fx.emit(3.0, 55, () => {
+        const px = scx + (Math.random() - 0.5) * 4.2;
+        const pz = scz + (Math.random() - 0.5) * 5.6;
+        fx.petal(px, sgy + 3.6 + Math.random() * 0.6, pz, (Math.random() - 0.5) * 0.3, -0.1, (Math.random() - 0.5) * 0.3, {
+          color: [0xd6287a, 0xee4f9a, 0xff86c0, 0xb6247a, 0xffffff][Math.floor(Math.random() * 5)],
+          life: 8,
+          floorY: sgy + 0.03,
+          scale: 1.3,
+        });
+      });
+      ctx.audio?.playPetalGlissando?.();
+      return "紫红色的三角梅像雨一样飘落 🌺";
+    },
+  });
+
+  // --- 9. Call the fireflies ---------------------------------------------------
+  interactables.push({
+    id: "garden-firefly-call",
+    label: "轻声唤来萤火虫",
+    position: V(scx, sgy + 0.02, scz + 6.2),
+    radius: 2.2,
+    floorY: sgy + 0.02,
+    activate(ctx = {}) {
+      const ox = scx;
+      const oz = scz + 5.2;
+      for (let i = 0; i < 46; i += 1) {
+        const a = (i / 46) * Math.PI * 2;
+        const r = 0.6 + Math.random() * 2.4;
+        fx.spark(ox + Math.cos(a) * r, sgy + 0.3 + Math.random() * 0.6, oz + Math.sin(a) * r, -Math.sin(a) * 0.35, 0.18 + Math.random() * 0.22, Math.cos(a) * 0.35, {
+          color: Math.random() < 0.7 ? 0xf6ff8a : 0xfff2b0,
+          life: 6 + Math.random() * 3,
+          size: 0.075,
+          drag: 0.05,
+          flicker: 0.8,
+        });
+      }
+      ctx.audio?.playDuetArpeggio?.();
+      return "点点萤火从草丛里升起，绕着你们打转 ✨";
+    },
+  });
+
+  function update(elapsed, dt) {
+    if (!(dt > 0)) return;
+    fx.update(dt, elapsed);
+
+    // food pellets: arc into the pond, float, slowly dissolve
+    let anyPellet = false;
+    for (let i = 0; i < PELLETS; i += 1) {
+      const p = pellets[i];
+      if (!p.on) continue;
+      p.t += dt;
+      anyPellet = true;
+      const flight = 0.9;
+      let x;
+      let y;
+      let z;
+      let s = 1;
+      if (p.t < 0) {
+        s = 0.0001;
+        x = p.sx;
+        y = p.sy;
+        z = p.sz;
+      } else if (p.t < flight) {
+        const u = p.t / flight;
+        x = lerp(p.sx, p.ex, u);
+        z = lerp(p.sz, p.ez, u);
+        y = lerp(p.sy, waterY, u) + Math.sin(u * Math.PI) * 0.6;
+      } else {
+        if (!p.rippled) {
+          p.rippled = true;
+          if (i % 4 === 0) fx.ripple(V(p.ex, waterY, p.ez), { radius: 0.3, life: 1.0, opacity: 0.5 });
+        }
+        const age = p.t - flight;
+        x = p.ex + Math.sin(age * 0.8 + p.ph) * 0.05;
+        z = p.ez + Math.cos(age * 0.7 + p.ph) * 0.05;
+        y = waterY + 0.006 + Math.sin(age * 3 + p.ph) * 0.004;
+        s = Math.max(0, 1 - Math.max(0, age - 5.5) / 3.0);
+        if (s <= 0) p.on = false;
+      }
+      dummy.position.set(x, y, z);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.setScalar(Math.max(0.0001, s));
+      dummy.updateMatrix();
+      pelletInst.setMatrixAt(i, dummy.matrix);
+    }
+    if (anyPellet) pelletInst.instanceMatrix.needsUpdate = true;
+    pelletInst.visible = anyPellet;
+
+    // sprouting flowers grow with a springy pop and sway gently
+    if (sprouts.length) {
+      for (let i = 0; i < sprouts.length; i += 1) {
+        const sp = sprouts[i];
+        sp.age += dt;
+        const g = sp.age < sp.delay ? 0 : easeOutBack(Math.min(1, (sp.age - sp.delay) / 0.9));
+        dummy.position.set(sp.x, sgy + 0.01, sp.z);
+        dummy.rotation.set(Math.sin(elapsed * 1.6 + i) * 0.06, sp.yaw, Math.cos(elapsed * 1.3 + i) * 0.06);
+        dummy.scale.setScalar(Math.max(0.0001, g * sp.s));
+        dummy.updateMatrix();
+        sproutStem.setMatrixAt(i, dummy.matrix);
+        sproutBloom.setMatrixAt(i, dummy.matrix);
+      }
+      sproutStem.instanceMatrix.needsUpdate = true;
+      sproutBloom.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  function reset() {
+    fx.clear();
+    for (const p of pellets) p.on = false;
+    pelletInst.visible = false;
+    coinCount = 0;
+    coinInst.count = 0;
+    flyCoin.visible = false;
+    sprouts.length = 0;
+    sproutStem.count = 0;
+    sproutBloom.count = 0;
+    rainbow.visible = false;
+  }
+
+  return { interactables, update, reset };
 }

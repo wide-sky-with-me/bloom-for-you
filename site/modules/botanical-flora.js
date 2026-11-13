@@ -747,7 +747,7 @@ function buildCurvedBranchTube(points, rBase, rTip, rings = 8, radSegs = 7, root
   geo.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
   geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   geo.setIndex(idx);
-  return geo.toNonIndexed();
+  return geo.index ? geo.toNonIndexed() : geo;
 }
 
 function createCamberedFrondCard(size, pos, dir, roll, shade, rng) {
@@ -763,7 +763,7 @@ function createCamberedFrondCard(size, pos, dir, roll, shade, rng) {
   }
   card.computeVertexNormals();
 
-  const nonIdx = card.toNonIndexed();
+  const nonIdx = card.index ? card.toNonIndexed() : card.clone();
   card.dispose();
 
   const quat = new THREE.Quaternion().setFromUnitVectors(_upVec, dir.clone().normalize());
@@ -1085,6 +1085,7 @@ function buildAllBotanicalTrees(group, uTimeRef) {
         arch: getTreeArchetype(sp, vIdx, isFar),
         mats: matLookup[sp],
         matrices: [],
+        spots: [],
       });
     }
     const y = getWorldTerrainY(x, z);
@@ -1094,6 +1095,7 @@ function buildAllBotanicalTrees(group, uTimeRef) {
     holder.scale.setScalar(scale);
     holder.updateMatrix();
     instBuckets.get(key).matrices.push(holder.matrix.clone());
+    instBuckets.get(key).spots.push({ x, z, y: y - 0.06, scale });
     if (registerCol) {
       registerCircleCollider(x, z, 0.36);
     }
@@ -1139,6 +1141,7 @@ function buildAllBotanicalTrees(group, uTimeRef) {
   });
 
   const farCanopyMeshes = [];
+  const treeRefs = [];
   for (const bucket of instBuckets.values()) {
     const cnt = bucket.matrices.length;
     if (!cnt) continue;
@@ -1165,10 +1168,13 @@ function buildAllBotanicalTrees(group, uTimeRef) {
     barkInst.computeBoundingSphere();
     canopyInst.computeBoundingSphere();
     treeGroup.add(barkInst, canopyInst);
+    for (let k = 0; k < cnt; k += 1) {
+      treeRefs.push({ sp: bucket.sp, ...bucket.spots[k], barkInst, canopyInst, k, matrix: bucket.matrices[k] });
+    }
   }
 
   group.add(treeGroup);
-  return { count: placedTrees.length + isletSpots.length, farCanopyMeshes };
+  return { count: placedTrees.length + isletSpots.length, farCanopyMeshes, treeRefs };
 }
 
 // ---------------------------------------------------------------------------
@@ -1269,7 +1275,7 @@ export function createSculptedRoseBloomGeo() {
       g.setAttribute("color", new THREE.Float32BufferAttribute(cols, 3));
       g.setIndex(idx);
       g.computeVertexNormals();
-      petalGeos.push(g.toNonIndexed());
+      petalGeos.push(g.index ? g.toNonIndexed() : g.clone());
       g.dispose();
     }
 
@@ -1304,7 +1310,7 @@ function createRoseStemAndFoliageGeo(stemLen = 0.24) {
         pa.setXYZ(i, pa.getX(i) * (1.0 - v * 0.88), y * 0.25, v * 0.048 - v * v * 0.016);
       }
       sep.computeVertexNormals();
-      const nonIdx = sep.toNonIndexed();
+      const nonIdx = sep.index ? sep.toNonIndexed() : sep.clone();
       sep.dispose();
       nonIdx.applyMatrix4(new THREE.Matrix4().makeRotationY(sa));
       parts.push(nonIdx);
@@ -1331,7 +1337,7 @@ function createRoseStemAndFoliageGeo(stemLen = 0.24) {
           ba.setXYZ(i, bx * serr * 1.15, -nv * nv * 0.010, by);
         }
         blade.computeVertexNormals();
-        const bNon = blade.toNonIndexed();
+        const bNon = blade.index ? blade.toNonIndexed() : blade.clone();
         blade.dispose();
         const m = new THREE.Matrix4()
           .makeRotationY(yaw)
@@ -1430,7 +1436,7 @@ export function createRoseBouquet({ count = 9, scale = 1.0 } = {}) {
   return bouquet;
 }
 
-export function buildSculptedRoseCluster(placements, group, uTimeRef) {
+export function buildSculptedRoseCluster(placements, group, uTimeRef, registry = null) {
   const bloomGeo = createSculptedRoseBloomGeo();
   const stemGeo = createRoseStemAndFoliageGeo(0.22);
   const { petalMats, stemMat } = getRoseMaterials();
@@ -1465,6 +1471,7 @@ export function buildSculptedRoseCluster(placements, group, uTimeRef) {
     dummy.scale.setScalar(p.scale);
     dummy.updateMatrix();
     buckets[p.colorIdx % buckets.length].push(dummy.matrix.clone());
+    if (registry) registry[i] = { x: p.x, y: p.y, z: p.z, bucket: p.colorIdx % buckets.length, k: buckets[p.colorIdx % buckets.length].length - 1 };
 
     dummy.scale.setScalar(p.scale * 0.95);
     dummy.updateMatrix();
@@ -1487,12 +1494,25 @@ export function buildSculptedRoseCluster(placements, group, uTimeRef) {
     inst.castShadow = true;
     inst.receiveShadow = true;
     group.add(inst);
+    if (registry) {
+      for (let r = 0; r < registry.length; r += 1) {
+        if (registry[r] && registry[r].bucket === idx) registry[r].bloomInst = inst;
+      }
+    }
   });
 
   const stemInst = new THREE.InstancedMesh(stemGeo, stemMat, stemTransforms.length);
   for (let k = 0; k < stemTransforms.length; k += 1) stemInst.setMatrixAt(k, stemTransforms[k]);
   stemInst.instanceMatrix.needsUpdate = true;
   group.add(stemInst);
+  if (registry) {
+    for (let r = 0; r < registry.length; r += 1) {
+      if (registry[r]) {
+        registry[r].stemInst = stemInst;
+        registry[r].stemK = r;
+      }
+    }
+  }
 
   if (leafSprayTransforms.length > 0) {
     const sprayPlane = new THREE.PlaneGeometry(1.0, 1.0, 2, 2);
@@ -1637,9 +1657,10 @@ function buildEstateRoseGardens(group, uTimeRef) {
     );
   }
 
-  const count = buildSculptedRoseCluster(roses, roseGroup, uTimeRef);
+  const registry = [];
+  const count = buildSculptedRoseCluster(roses, roseGroup, uTimeRef, registry);
   group.add(roseGroup);
-  return count;
+  return { count, registry };
 }
 
 // ---------------------------------------------------------------------------
@@ -2266,6 +2287,7 @@ function buildHydrangeaShrubs(group, uTimeRef) {
   corymbInst.instanceColor.needsUpdate = true;
   hydGroup.add(moundInst, corymbInst);
   group.add(hydGroup);
+  return { spots, corymbInst, corymbsPerShrub, hydPalette };
 }
 
 function buildDriftingPetals(group) {
@@ -2407,16 +2429,503 @@ function buildDriftingPetals(group) {
   return { updatePetals, triggerBurst, resetPetals, setPetalRatio };
 }
 
+// ---------------------------------------------------------------------------
+// Shared Lightweight Interaction FX Kit (used by flora, harbor estate & secret gardens)
+// - Glow sparks (1 Points draw call), fluttering petals (1 InstancedMesh), ripple rings (small pool)
+// - Generic timed tasks for bespoke prop animations (coins, lanterns, balloons, flags ...)
+// Every pool hides itself when idle so it costs zero draw calls at rest.
+// ---------------------------------------------------------------------------
+
+const _fxColor = new THREE.Color();
+const _fxDummy = new THREE.Object3D();
+
+function _fxPick(arr, i) {
+  if (Array.isArray(arr)) return arr[i % arr.length];
+  return arr;
+}
+
+export function createInteractionFX(parent, { name = "InteractionFX", maxSparks = 420, maxPetals = 200, maxRings = 12 } = {}) {
+  const root = new THREE.Group();
+  root.name = name;
+  root.userData.noBatch = true;
+  parent.add(root);
+  const rng = mulberry32(77031 + maxSparks);
+
+  // --- 1. Glow sparks -------------------------------------------------------
+  const sPos = new Float32Array(maxSparks * 3);
+  const sCol = new Float32Array(maxSparks * 3);
+  const sSize = new Float32Array(maxSparks);
+  const sAlpha = new Float32Array(maxSparks);
+  const sparks = [];
+  for (let i = 0; i < maxSparks; i += 1) {
+    sparks.push({ on: false, x: 0, y: -999, z: 0, vx: 0, vy: 0, vz: 0, life: 0, max: 1, size: 0.1, grav: 0, drag: 0, flick: 0, ph: 0 });
+    sPos[i * 3 + 1] = -999;
+  }
+  const sGeo = new THREE.BufferGeometry();
+  sGeo.setAttribute("position", new THREE.BufferAttribute(sPos, 3).setUsage(THREE.DynamicDrawUsage));
+  sGeo.setAttribute("aColor", new THREE.BufferAttribute(sCol, 3).setUsage(THREE.DynamicDrawUsage));
+  sGeo.setAttribute("aSize", new THREE.BufferAttribute(sSize, 1).setUsage(THREE.DynamicDrawUsage));
+  sGeo.setAttribute("aAlpha", new THREE.BufferAttribute(sAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+  const sMat = new THREE.ShaderMaterial({
+    uniforms: {},
+    vertexShader: /* glsl */ `
+      attribute vec3 aColor;
+      attribute float aSize;
+      attribute float aAlpha;
+      varying vec3 vCol;
+      varying float vAlpha;
+      void main() {
+        vCol = aColor;
+        vAlpha = aAlpha;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = clamp(aSize * 620.0 / max(0.5, -mv.z), 1.5, 72.0);
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying vec3 vCol;
+      varying float vAlpha;
+      void main() {
+        float d = length(gl_PointCoord - vec2(0.5));
+        if (d > 0.5) discard;
+        float core = exp(-d * d * 30.0);
+        float halo = pow(max(0.0, 1.0 - d * 2.0), 2.0) * 0.55;
+        float a = (core + halo) * vAlpha;
+        if (a < 0.01) discard;
+        gl_FragColor = vec4(mix(vCol, vec3(1.0), core * 0.55) * a, a);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const points = new THREE.Points(sGeo, sMat);
+  points.name = `${name}_Sparks`;
+  points.frustumCulled = false;
+  points.visible = false;
+  points.renderOrder = 6;
+  points.raycast = () => {};
+  root.add(points);
+  let sparkCursor = 0;
+  let sparkActive = 0;
+
+  function spark(x, y, z, vx, vy, vz, o = {}) {
+    let idx = -1;
+    for (let k = 0; k < maxSparks; k += 1) {
+      const c = (sparkCursor + k) % maxSparks;
+      if (!sparks[c].on) {
+        idx = c;
+        break;
+      }
+    }
+    if (idx < 0) idx = sparkCursor;
+    sparkCursor = (idx + 1) % maxSparks;
+    const s = sparks[idx];
+    if (!s.on) sparkActive += 1;
+    s.on = true;
+    s.x = x; s.y = y; s.z = z;
+    s.vx = vx; s.vy = vy; s.vz = vz;
+    s.max = o.life ?? 1.4;
+    s.life = s.max;
+    s.size = o.size ?? 0.09;
+    s.grav = o.gravity ?? 0.0;
+    s.drag = o.drag ?? 0.6;
+    s.flick = o.flicker ?? 0.0;
+    s.ph = rng() * 6.28;
+    _fxColor.set(o.color ?? 0xfff1c8);
+    sCol[idx * 3] = _fxColor.r;
+    sCol[idx * 3 + 1] = _fxColor.g;
+    sCol[idx * 3 + 2] = _fxColor.b;
+    points.visible = true;
+    return s;
+  }
+
+  function burst(origin, o = {}) {
+    const n = o.count ?? 40;
+    const [smin, smax] = o.speed ?? [0.6, 1.8];
+    const up = o.up ?? 0.6;
+    const spread = o.spread ?? 0.12;
+    const colors = o.colors ?? [0xfff1c8, 0xffc4d6, 0xffffff];
+    for (let i = 0; i < n; i += 1) {
+      const th = rng() * Math.PI * 2;
+      const ph = Math.acos(1 - 2 * rng());
+      let dx = Math.sin(ph) * Math.cos(th);
+      let dy = Math.cos(ph);
+      let dz = Math.sin(ph) * Math.sin(th);
+      if (o.hemi !== false) dy = Math.abs(dy);
+      dy += up;
+      const len = Math.hypot(dx, dy, dz) || 1;
+      const sp = smin + (smax - smin) * rng();
+      spark(
+        origin.x + (rng() - 0.5) * spread,
+        origin.y + (rng() - 0.5) * spread,
+        origin.z + (rng() - 0.5) * spread,
+        (dx / len) * sp,
+        (dy / len) * sp,
+        (dz / len) * sp,
+        {
+          color: _fxPick(colors, i),
+          life: (o.life ?? 1.6) * (0.7 + rng() * 0.6),
+          size: (o.size ?? 0.09) * (0.7 + rng() * 0.6),
+          gravity: o.gravity ?? 0.9,
+          drag: o.drag ?? 0.9,
+          flicker: o.flicker ?? 0.0,
+        }
+      );
+    }
+  }
+
+  // Heart outline of sparks expanding in a vertical plane whose normal faces `yaw` (yaw=0 -> +Z normal)
+  function heart(origin, o = {}) {
+    const n = o.count ?? 48;
+    const scale = o.scale ?? 0.05;
+    const yaw = o.yaw ?? 0;
+    const cy = Math.cos(yaw);
+    const sy = Math.sin(yaw);
+    for (let i = 0; i < n; i += 1) {
+      const t = (i / n) * Math.PI * 2;
+      const hx = 16 * Math.pow(Math.sin(t), 3);
+      const hy = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+      const vx = hx * scale * cy;
+      const vz = -hx * scale * sy;
+      spark(origin.x, origin.y, origin.z, vx, hy * scale + (o.rise ?? 0.25), vz, {
+        color: _fxPick(o.colors ?? [0xff5c8a, 0xff8fb1, 0xffd1dc], i),
+        life: o.life ?? 1.8,
+        size: o.size ?? 0.11,
+        gravity: 0.0,
+        drag: o.drag ?? 1.35,
+        flicker: 0.25,
+      });
+    }
+  }
+
+  // --- 2. Fluttering petals ---------------------------------------------------
+  const pGeo = new THREE.PlaneGeometry(0.075, 0.095, 2, 2);
+  {
+    const pa = pGeo.attributes.position;
+    for (let i = 0; i < pa.count; i += 1) {
+      const x = pa.getX(i);
+      const y = pa.getY(i);
+      const v = (y + 0.0475) / 0.095;
+      const env = Math.sin(Math.pow(clamp(v, 0.02, 0.98), 0.75) * Math.PI);
+      pa.setXYZ(i, x * (0.3 + 0.85 * env), y, 0.016 * (1.0 - v * v) - 0.012 * Math.abs(x * 12.0));
+    }
+    pGeo.computeVertexNormals();
+  }
+  const pMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.0, side: THREE.DoubleSide });
+  const petalInst = new THREE.InstancedMesh(pGeo, pMat, maxPetals);
+  petalInst.name = `${name}_Petals`;
+  petalInst.frustumCulled = false;
+  petalInst.castShadow = false;
+  petalInst.receiveShadow = false;
+  petalInst.visible = false;
+  petalInst.raycast = () => {};
+  const petals = [];
+  _fxDummy.position.set(0, -999, 0);
+  _fxDummy.scale.setScalar(0.0001);
+  _fxDummy.updateMatrix();
+  for (let i = 0; i < maxPetals; i += 1) {
+    petals.push({ on: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0, max: 1, floorY: -50, wx: 0, wz: 0, ph: 0, spin: 1, sc: 1, landed: false });
+    petalInst.setMatrixAt(i, _fxDummy.matrix);
+    petalInst.setColorAt(i, _fxColor.set(0xffffff));
+  }
+  petalInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  root.add(petalInst);
+  let petalCursor = 0;
+  let petalActive = 0;
+
+  function petal(x, y, z, vx, vy, vz, o = {}) {
+    let idx = -1;
+    for (let k = 0; k < maxPetals; k += 1) {
+      const c = (petalCursor + k) % maxPetals;
+      if (!petals[c].on) {
+        idx = c;
+        break;
+      }
+    }
+    if (idx < 0) idx = petalCursor;
+    petalCursor = (idx + 1) % maxPetals;
+    const p = petals[idx];
+    if (!p.on) petalActive += 1;
+    p.on = true;
+    p.x = x; p.y = y; p.z = z;
+    p.vx = vx; p.vy = vy; p.vz = vz;
+    p.max = o.life ?? 5.0;
+    p.life = p.max;
+    p.floorY = o.floorY ?? -50;
+    p.wx = o.driftX ?? 0;
+    p.wz = o.driftZ ?? 0;
+    p.flowFn = o.flowFn || null;
+    p.ph = rng() * 6.28;
+    p.spin = 1.2 + rng() * 2.4;
+    p.sc = (o.scale ?? 1.0) * (0.8 + rng() * 0.5);
+    p.landed = false;
+    petalInst.setColorAt(idx, _fxColor.set(o.color ?? 0xf6a8c0));
+    petalInst.instanceColor.needsUpdate = true;
+    petalInst.visible = true;
+    return p;
+  }
+
+  function petalBurst(origin, o = {}) {
+    const n = o.count ?? 40;
+    const colors = o.colors ?? [0xfad4e0, 0xfff5f8, 0xeb7696, 0xc92a49, 0xf6c2d2];
+    const [smin, smax] = o.speed ?? [0.4, 1.4];
+    const radius = o.radius ?? 0.2;
+    for (let i = 0; i < n; i += 1) {
+      const th = rng() * Math.PI * 2;
+      const r = rng() * radius;
+      const sp = smin + (smax - smin) * rng();
+      petal(
+        origin.x + Math.cos(th) * r,
+        origin.y + (rng() - 0.3) * (o.height ?? 0.3),
+        origin.z + Math.sin(th) * r,
+        Math.cos(th) * sp,
+        (o.up ?? 1.2) * (0.5 + rng()),
+        Math.sin(th) * sp,
+        {
+          color: _fxPick(colors, i),
+          life: (o.life ?? 5.0) * (0.75 + rng() * 0.5),
+          floorY: o.floorY,
+          driftX: o.driftX,
+          driftZ: o.driftZ,
+          flowFn: o.flowFn,
+          scale: o.scale,
+        }
+      );
+    }
+  }
+
+  // --- 3. Ripple rings ------------------------------------------------------
+  const ringGeo = new THREE.RingGeometry(0.86, 1.0, 40);
+  ringGeo.rotateX(-Math.PI / 2);
+  const rings = [];
+  for (let i = 0; i < maxRings; i += 1) {
+    const m = new THREE.Mesh(
+      ringGeo,
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide })
+    );
+    m.visible = false;
+    m.renderOrder = 5;
+    m.raycast = () => {};
+    root.add(m);
+    rings.push({ mesh: m, on: false, t: 0, dur: 1, r0: 0.1, r1: 1, op: 0.6 });
+  }
+  let ringCursor = 0;
+  function ripple(pos, o = {}) {
+    const r = rings[ringCursor];
+    ringCursor = (ringCursor + 1) % maxRings;
+    r.on = true;
+    r.t = 0;
+    r.dur = o.life ?? 1.6;
+    r.r0 = o.r0 ?? 0.08;
+    r.r1 = o.radius ?? 1.1;
+    r.op = o.opacity ?? 0.7;
+    r.delay = o.delay ?? 0;
+    r.mesh.material.color.set(o.color ?? 0xffffff);
+    r.mesh.position.set(pos.x, pos.y + 0.012, pos.z);
+    r.mesh.visible = false;
+  }
+
+  // --- 4. Generic timed tasks -----------------------------------------------
+  const tasks = [];
+  function addTask(duration, fn, onDone) {
+    const task = { t: 0, dur: Math.max(0.001, duration), fn, onDone, dead: false };
+    tasks.push(task);
+    return task;
+  }
+  // Continuous emitter helper: calls spawnFn(i, u) `rate` times per second for `duration` seconds
+  function emit(duration, rate, spawnFn) {
+    let acc = 0;
+    let i = 0;
+    return addTask(duration, (u, dt) => {
+      acc += dt * rate;
+      while (acc >= 1) {
+        acc -= 1;
+        spawnFn(i, u);
+        i += 1;
+      }
+    });
+  }
+
+  function update(dt, elapsed = 0) {
+    const step = Math.min(Math.max(dt || 0, 0), 0.1);
+    if (step <= 0) return;
+
+    for (let i = tasks.length - 1; i >= 0; i -= 1) {
+      const task = tasks[i];
+      task.t += step;
+      const u = Math.min(1, task.t / task.dur);
+      const keep = task.fn(u, step, task.t, elapsed);
+      if (u >= 1 || keep === false || task.dead) {
+        tasks.splice(i, 1);
+        if (task.onDone) task.onDone();
+      }
+    }
+
+    if (sparkActive > 0) {
+      sparkActive = 0;
+      for (let i = 0; i < maxSparks; i += 1) {
+        const s = sparks[i];
+        if (!s.on) continue;
+        s.life -= step;
+        if (s.life <= 0) {
+          s.on = false;
+          sAlpha[i] = 0;
+          sPos[i * 3 + 1] = -999;
+          continue;
+        }
+        sparkActive += 1;
+        const damp = Math.exp(-s.drag * step);
+        s.vx *= damp;
+        s.vz *= damp;
+        s.vy = s.vy * damp - s.grav * step;
+        s.x += s.vx * step;
+        s.y += s.vy * step;
+        s.z += s.vz * step;
+        const u = s.life / s.max;
+        const fadeIn = Math.min(1, (1 - u) * 10);
+        let a = Math.min(1, u * 2.2) * fadeIn;
+        if (s.flick > 0) a *= 1 - s.flick + s.flick * (0.5 + 0.5 * Math.sin(elapsed * 23 + s.ph));
+        sAlpha[i] = a;
+        sSize[i] = s.size;
+        sPos[i * 3] = s.x;
+        sPos[i * 3 + 1] = s.y;
+        sPos[i * 3 + 2] = s.z;
+      }
+      sGeo.attributes.position.needsUpdate = true;
+      sGeo.attributes.aColor.needsUpdate = true;
+      sGeo.attributes.aSize.needsUpdate = true;
+      sGeo.attributes.aAlpha.needsUpdate = true;
+      points.visible = sparkActive > 0;
+    }
+
+    if (petalActive > 0) {
+      petalActive = 0;
+      for (let i = 0; i < maxPetals; i += 1) {
+        const p = petals[i];
+        if (!p.on) continue;
+        p.life -= step;
+        if (p.life <= 0) {
+          p.on = false;
+          _fxDummy.position.set(0, -999, 0);
+          _fxDummy.scale.setScalar(0.0001);
+          _fxDummy.updateMatrix();
+          petalInst.setMatrixAt(i, _fxDummy.matrix);
+          continue;
+        }
+        petalActive += 1;
+        if (!p.landed) {
+          const damp = Math.exp(-1.6 * step);
+          p.vx = p.vx * damp + Math.sin(elapsed * 1.7 + p.ph) * 0.6 * step;
+          p.vz = p.vz * damp + Math.cos(elapsed * 1.3 + p.ph) * 0.6 * step;
+          p.vy = Math.max(-0.55, p.vy * damp - 1.4 * step);
+          p.x += p.vx * step;
+          p.y += p.vy * step;
+          p.z += p.vz * step;
+          if (p.y <= p.floorY) {
+            p.y = p.floorY;
+            p.landed = true;
+          }
+        } else if (p.flowFn) {
+          p.flowFn(p, step);
+        } else {
+          p.x += p.wx * step;
+          p.z += p.wz * step;
+        }
+        const fade = Math.min(1, p.life / 0.8);
+        const tumble = p.landed ? 0 : 1;
+        _fxDummy.position.set(p.x, p.y + (p.landed ? 0.01 : 0), p.z);
+        _fxDummy.rotation.set(
+          p.landed ? -Math.PI / 2 : Math.sin(elapsed * p.spin + p.ph) * 1.2,
+          p.ph + elapsed * 0.3 * tumble,
+          Math.cos(elapsed * p.spin * 0.8 + p.ph) * 0.9 * tumble
+        );
+        _fxDummy.scale.setScalar(p.sc * fade);
+        _fxDummy.updateMatrix();
+        petalInst.setMatrixAt(i, _fxDummy.matrix);
+      }
+      petalInst.instanceMatrix.needsUpdate = true;
+      petalInst.visible = petalActive > 0;
+    }
+
+    for (let i = 0; i < rings.length; i += 1) {
+      const r = rings[i];
+      if (!r.on) continue;
+      if (r.delay > 0) {
+        r.delay -= step;
+        continue;
+      }
+      r.t += step;
+      const u = r.t / r.dur;
+      if (u >= 1) {
+        r.on = false;
+        r.mesh.visible = false;
+        continue;
+      }
+      r.mesh.visible = true;
+      const e = 1 - Math.pow(1 - u, 2.2);
+      r.mesh.scale.setScalar(lerp(r.r0, r.r1, e));
+      r.mesh.material.opacity = r.op * (1 - u) * Math.min(1, u * 8);
+    }
+  }
+
+  function clear() {
+    tasks.length = 0;
+    for (let i = 0; i < maxSparks; i += 1) {
+      sparks[i].on = false;
+      sAlpha[i] = 0;
+      sPos[i * 3 + 1] = -999;
+    }
+    sGeo.attributes.position.needsUpdate = true;
+    sGeo.attributes.aAlpha.needsUpdate = true;
+    sparkActive = 0;
+    points.visible = false;
+    _fxDummy.position.set(0, -999, 0);
+    _fxDummy.scale.setScalar(0.0001);
+    _fxDummy.updateMatrix();
+    for (let i = 0; i < maxPetals; i += 1) {
+      petals[i].on = false;
+      petalInst.setMatrixAt(i, _fxDummy.matrix);
+    }
+    petalInst.instanceMatrix.needsUpdate = true;
+    petalActive = 0;
+    petalInst.visible = false;
+    for (let i = 0; i < rings.length; i += 1) {
+      rings[i].on = false;
+      rings[i].mesh.visible = false;
+    }
+  }
+
+  return { root, spark, burst, heart, petal, petalBurst, ripple, addTask, emit, update, clear, rng };
+}
+
+// Small helpers shared by the interactable builders
+export function seatFromLocal(obj, lx, ly, lz, lyaw = 0) {
+  obj.updateWorldMatrix(true, false);
+  const v = new THREE.Vector3(lx, ly, lz).applyMatrix4(obj.matrixWorld);
+  const q = new THREE.Quaternion();
+  obj.getWorldQuaternion(q);
+  const e = new THREE.Euler().setFromQuaternion(q, "YXZ");
+  return { x: v.x, y: v.y, z: v.z, yaw: e.y + lyaw };
+}
+
+export function easeOutBack(u) {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(u - 1, 3) + c1 * Math.pow(u - 1, 2);
+}
+
 export function buildBotanicalFlora(opts = {}) {
   const group = new THREE.Group();
   group.name = "BotanicalFloraRoot";
   const uTimeRef = { value: 0.0 };
 
-  buildAllBotanicalTrees(group, uTimeRef);
-  buildEstateRoseGardens(group, uTimeRef);
+  const treeInfo = buildAllBotanicalTrees(group, uTimeRef);
+  const roseInfo = buildEstateRoseGardens(group, uTimeRef);
   const scalableMeadowMeshes = buildMeadowAndFlowerSea(group, uTimeRef);
-  buildHydrangeaShrubs(group, uTimeRef);
+  const hydInfo = buildHydrangeaShrubs(group, uTimeRef);
   const petals = buildDriftingPetals(group);
+  const floraInteract = buildFloraInteractables(group, { treeInfo, roseInfo, hydInfo, petals });
 
   if (opts.parent) {
     opts.parent.add(group);
@@ -2424,10 +2933,12 @@ export function buildBotanicalFlora(opts = {}) {
 
   return {
     group,
+    interactables: floraInteract.interactables,
     update(elapsed = 0.0, dt = 0.016) {
       const safeDt = typeof dt === "number" && dt >= 0.0 ? Math.min(dt, 0.1) : 0.016;
       uTimeRef.value = elapsed;
       petals.updatePetals(elapsed, safeDt);
+      floraInteract.update(elapsed, safeDt);
     },
     setQualityTier(tier) {
       const ratio = tier === "low" ? 0.34 : tier === "medium" ? 0.64 : 1.0;
@@ -2440,9 +2951,483 @@ export function buildBotanicalFlora(opts = {}) {
     reset() {
       uTimeRef.value = 0.0;
       petals.resetPetals();
+      floraInteract.reset();
     },
     burstPetals(origin) {
       petals.triggerBurst(origin);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Flora E-key Interactables: pick a rose, smell the rose arch, recolor hydrangeas,
+// shake a cherry tree, lie in the flower sea (butterflies) & weave a flower crown.
+// ---------------------------------------------------------------------------
+
+function buildButterflySwarm(parent, count = 10) {
+  const wingTex = makeCanvasTex(
+    64,
+    64,
+    (ctx, w, h) => {
+      ctx.clearRect(0, 0, w, h);
+      const grd = ctx.createRadialGradient(4, h * 0.5, 2, 4, h * 0.5, w);
+      grd.addColorStop(0, "#ffffff");
+      grd.addColorStop(0.65, "#f2f2f2");
+      grd.addColorStop(1, "#9a9a9a");
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.moveTo(2, h * 0.5);
+      ctx.bezierCurveTo(w * 0.35, -h * 0.05, w * 1.02, h * 0.05, w * 0.9, h * 0.42);
+      ctx.bezierCurveTo(w * 0.8, h * 0.52, w * 0.85, h * 0.6, w * 0.78, h * 0.78);
+      ctx.bezierCurveTo(w * 0.6, h * 1.02, w * 0.25, h * 0.86, 2, h * 0.52);
+      ctx.fill();
+      ctx.fillStyle = "rgba(60,40,60,0.55)";
+      ctx.beginPath();
+      ctx.arc(w * 0.62, h * 0.3, 5, 0, Math.PI * 2);
+      ctx.fill();
+    },
+    { wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping }
+  );
+  const wingGeo = new THREE.PlaneGeometry(0.11, 0.11);
+  wingGeo.translate(0.055, 0, 0);
+  wingGeo.rotateX(-Math.PI / 2);
+  const wingMat = new THREE.MeshStandardMaterial({
+    map: wingTex,
+    alphaTest: 0.4,
+    side: THREE.DoubleSide,
+    roughness: 0.6,
+    emissive: new THREE.Color(0x221822),
+  });
+  const inst = new THREE.InstancedMesh(wingGeo, wingMat, count * 2);
+  inst.name = "InteractionButterflies";
+  inst.frustumCulled = false;
+  inst.visible = false;
+  inst.raycast = () => {};
+  const palette = [0xffb3d1, 0xfff1a6, 0xb9d8ff, 0xffffff, 0xd7b8ff, 0xffc58a];
+  const col = new THREE.Color();
+  for (let i = 0; i < count * 2; i += 1) {
+    inst.setColorAt(i, col.set(palette[Math.floor(i / 2) % palette.length]));
+  }
+  inst.instanceColor.needsUpdate = true;
+  parent.add(inst);
+
+  const bugs = [];
+  for (let i = 0; i < count; i += 1) bugs.push({ ph: i * 1.37, r: 0.6 + (i % 4) * 0.35, h: 0.5 + (i % 3) * 0.35, sp: 0.8 + (i % 5) * 0.18 });
+  const dummy = new THREE.Object3D();
+  const state = { t: 0, life: 0, cx: 0, cy: 0, cz: 0 };
+
+  return {
+    spawn(cx, cy, cz, life = 14) {
+      state.cx = cx;
+      state.cy = cy;
+      state.cz = cz;
+      state.life = life;
+      state.t = 0;
+      inst.visible = true;
+    },
+    update(elapsed, dt) {
+      if (state.life <= 0) return;
+      state.t += dt;
+      state.life -= dt;
+      const intro = Math.min(1, state.t / 1.5);
+      const outro = Math.min(1, Math.max(0, state.life) / 2.0);
+      for (let i = 0; i < count; i += 1) {
+        const b = bugs[i];
+        const a = state.t * b.sp + b.ph;
+        const rr = b.r * (0.4 + 0.6 * intro) + (1 - outro) * 4.0;
+        const x = state.cx + Math.cos(a) * rr + Math.sin(a * 2.3) * 0.25;
+        const z = state.cz + Math.sin(a * 0.9) * rr;
+        const y = state.cy + b.h + Math.sin(a * 3.1) * 0.22 + (1 - outro) * 3.0;
+        const heading = Math.atan2(-Math.sin(a) * rr, Math.cos(a * 0.9) * rr * 0.9);
+        const flap = Math.sin(elapsed * 26 + b.ph * 3) * 1.05;
+        const s = Math.min(intro * 1.4, 1) * outro;
+        for (let side = 0; side < 2; side += 1) {
+          dummy.position.set(x, y, z);
+          dummy.rotation.set(0, heading, 0);
+          dummy.rotateZ(side === 0 ? flap : Math.PI - flap);
+          dummy.scale.set(s, s, side === 0 ? s : -s);
+          dummy.updateMatrix();
+          inst.setMatrixAt(i * 2 + side, dummy.matrix);
+        }
+      }
+      inst.instanceMatrix.needsUpdate = true;
+      if (state.life <= 0) inst.visible = false;
+    },
+    clear() {
+      state.life = 0;
+      inst.visible = false;
+    },
+  };
+}
+
+function buildFloraInteractables(group, { treeInfo, roseInfo, hydInfo, petals }) {
+  const fx = createInteractionFX(group, { name: "FloraInteractionFX", maxSparks: 360, maxPetals: 220, maxRings: 4 });
+  const butterflies = buildButterflySwarm(group, 10);
+  const interactables = [];
+  const zeroMat = new THREE.Matrix4().makeScale(0.0001, 0.0001, 0.0001);
+  const tmpM = new THREE.Matrix4();
+  const tmpM2 = new THREE.Matrix4();
+  const persistent = []; // bespoke per-frame animators
+
+  const terrainPt = (x, z, lift = 0) => new THREE.Vector3(x, getWorldTerrainY(x, z) + lift, z);
+
+  // --- 1. Pick a rose from the villa front bed ---------------------------------
+  const registry = (roseInfo && roseInfo.registry) || [];
+  const bedRoses = registry
+    .filter((r) => r && r.bloomInst && r.z > 6.4 && r.z < 8.0 && r.x > -22.6 && r.x < -18.4)
+    .sort((a, b) => Math.abs(a.x + 20.5) - Math.abs(b.x + 20.5));
+  const pickState = { next: 0 };
+  const pickedBouquets = [];
+  const setRoseScale = (r, s) => {
+    if (!r.baseBloom) {
+      r.baseBloom = new THREE.Matrix4();
+      r.bloomInst.getMatrixAt(r.k, r.baseBloom);
+      r.baseStem = new THREE.Matrix4();
+      r.stemInst.getMatrixAt(r.stemK, r.baseStem);
+    }
+    if (s <= 0.001) {
+      r.bloomInst.setMatrixAt(r.k, zeroMat);
+      r.stemInst.setMatrixAt(r.stemK, zeroMat);
+    } else {
+      tmpM2.makeScale(s, s, s);
+      tmpM.copy(r.baseBloom).multiply(tmpM2);
+      r.bloomInst.setMatrixAt(r.k, tmpM);
+      tmpM.copy(r.baseStem).multiply(tmpM2);
+      r.stemInst.setMatrixAt(r.stemK, tmpM);
+    }
+    r.bloomInst.instanceMatrix.needsUpdate = true;
+    r.stemInst.instanceMatrix.needsUpdate = true;
+  };
+  interactables.push({
+    id: "flora-rose-pick",
+    label: "摘一朵玫瑰送给TA",
+    position: new THREE.Vector3(-20.5, 2.22, 8.05),
+    radius: 2.0,
+    floorY: 2.22,
+    activate(ctx = {}) {
+      const r = bedRoses.length ? bedRoses[pickState.next % bedRoses.length] : null;
+      pickState.next += 1;
+      const ox = r ? r.x : -20.5;
+      const oy = r ? r.y : 2.7;
+      const oz = r ? r.z : 7.2;
+      if (r) setRoseScale(r, 0);
+      const bq = createRoseBouquet({ count: 3, scale: 1.25 });
+      bq.position.set(ox, oy - 0.25, oz);
+      bq.traverse((c) => {
+        c.castShadow = false;
+        c.raycast = () => {};
+      });
+      group.add(bq);
+      pickedBouquets.push(bq);
+      fx.petalBurst(new THREE.Vector3(ox, oy, oz), { count: 26, up: 1.0, speed: [0.3, 0.9], floorY: 2.24, life: 4.5 });
+      fx.burst(new THREE.Vector3(ox, oy, oz), { count: 26, colors: [0xffd6e4, 0xfff4c8], speed: [0.4, 1.1], gravity: 0.2, size: 0.07 });
+      const tx = ox;
+      const tz = oz + 0.85;
+      fx.addTask(
+        6.0,
+        (u, dt, t) => {
+          const rise = Math.min(1, t / 1.4);
+          const e = easeOutBack(rise);
+          bq.position.set(lerp(ox, tx, e), oy - 0.25 + e * 1.15 + Math.sin(t * 2.2) * 0.04 * rise, lerp(oz, tz, e));
+          bq.rotation.set(0.25 * Math.sin(t * 1.7), t * 1.6, 0.18 * Math.cos(t * 1.3));
+          const shrink = u > 0.8 ? 1 - (u - 0.8) / 0.2 : 1;
+          bq.scale.setScalar(1.25 * Math.max(0.001, shrink));
+          if (Math.random() < dt * 14) {
+            fx.spark(bq.position.x + (Math.random() - 0.5) * 0.3, bq.position.y + 0.25, bq.position.z + (Math.random() - 0.5) * 0.3, 0, 0.25, 0, {
+              color: 0xffc8da,
+              life: 1.1,
+              size: 0.06,
+            });
+          }
+        },
+        () => {
+          fx.heart(bq.position.clone().add(new THREE.Vector3(0, 0.3, 0)), { scale: 0.035, count: 44 });
+          group.remove(bq);
+          const idx = pickedBouquets.indexOf(bq);
+          if (idx >= 0) pickedBouquets.splice(idx, 1);
+        }
+      );
+      if (r) {
+        // regrow the picked rose after a while with a gentle sprout animation
+        fx.addTask(16.0, (u) => {
+          if (u > 0.88) setRoseScale(r, easeOutBack((u - 0.88) / 0.12));
+        }, () => setRoseScale(r, 1));
+      }
+      ctx.audio?.playPetalGlissando?.();
+      return ctx.actor === "ran" ? "小冉子摘下一朵带露的玫瑰，悄悄递给小贤贤 🌹" : "小贤贤摘下一朵玫瑰，花瓣轻轻飘落 🌹";
+    },
+  });
+
+  // --- 2. Smell the climbing-rose arch over the front walk ----------------------
+  interactables.push({
+    id: "flora-rose-arch-smell",
+    label: "闻一闻拱门玫瑰花香",
+    position: new THREE.Vector3(-14.0, 2.22, 9.9),
+    radius: 2.2,
+    floorY: 2.22,
+    activate(ctx = {}) {
+      const cx = -14.0;
+      const cz = 9.6;
+      fx.emit(3.2, 60, (i) => {
+        const side = i % 2 === 0 ? -1 : 1;
+        const a = i * 0.45;
+        fx.spark(cx + side * (1.35 + Math.cos(a) * 0.2), 2.6 + Math.random() * 1.6, cz + Math.sin(a) * 0.3, -side * 0.35, 0.45, Math.cos(a) * 0.25, {
+          color: i % 3 === 0 ? 0xfff0f6 : 0xff9ec0,
+          life: 2.4,
+          size: 0.075,
+          drag: 0.3,
+          flicker: 0.3,
+        });
+      });
+      fx.petalBurst(new THREE.Vector3(cx, 5.2, cz), { count: 48, radius: 1.5, up: 0.2, speed: [0.1, 0.5], floorY: 2.24, life: 6.0 });
+      petals.triggerBurst({ x: cx, y: 4.6, z: cz });
+      ctx.audio?.playPetalGlissando?.();
+      return "深吸一口气——是大马士革玫瑰的甜香 🌸";
+    },
+  });
+
+  // --- 3. Hydrangea colour change along the west gazebo trail -------------------
+  if (hydInfo && hydInfo.spots.length) {
+    const target = { x: -43.5, z: 14.5 };
+    let best = 0;
+    let bestD = Infinity;
+    hydInfo.spots.forEach((sp, i) => {
+      const d = Math.hypot(sp.x - target.x, sp.z - target.z);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    });
+    const hs = hydInfo.spots[best];
+    const group3 = hydInfo.spots
+      .map((sp, i) => ({ i, d: Math.hypot(sp.x - hs.x, sp.z - hs.z) }))
+      .filter((o) => o.d < 4.2)
+      .map((o) => o.i);
+    const palette = [0x6a96e2, 0xd889c8, 0xf28aa8, 0xf6f4ec, 0x8f7fe8];
+    let paletteIdx = 0;
+    // stand on the trail side of the shrub
+    const trailDir = new THREE.Vector2(-49.0 + 38.0, 20.0 - 8.0).normalize();
+    const toShrub = new THREE.Vector2(hs.x + 38.0, hs.z - 8.0);
+    const along = toShrub.dot(trailDir);
+    const footX = -38.0 + trailDir.x * along;
+    const footZ = 8.0 + trailDir.y * along;
+    const standX = lerp(hs.x, footX, 0.55);
+    const standZ = lerp(hs.z, footZ, 0.55);
+    interactables.push({
+      id: "flora-hydrangea-color",
+      label: "轻抚绣球花，看它变色",
+      position: terrainPt(standX, standZ),
+      radius: 2.4,
+      activate(ctx = {}) {
+        paletteIdx = (paletteIdx + 1) % palette.length;
+        const inst = hydInfo.corymbInst;
+        const per = hydInfo.corymbsPerShrub;
+        const from = [];
+        const to = new THREE.Color(palette[paletteIdx]);
+        const c = new THREE.Color();
+        for (const si of group3) {
+          for (let k = 0; k < per; k += 1) {
+            inst.getColorAt(si * per + k, c);
+            from.push(c.clone());
+          }
+        }
+        fx.addTask(1.6, (u) => {
+          let n = 0;
+          for (const si of group3) {
+            for (let k = 0; k < per; k += 1) {
+              const jitter = ((k * 37) % 7) / 60;
+              c.copy(from[n]).lerp(to, smoothstep(0, 1, u)).offsetHSL(jitter - 0.05, 0, 0);
+              inst.setColorAt(si * per + k, c);
+              n += 1;
+            }
+          }
+          inst.instanceColor.needsUpdate = true;
+        });
+        const y = getWorldTerrainY(hs.x, hs.z);
+        fx.burst(new THREE.Vector3(hs.x, y + 0.7, hs.z), { count: 50, colors: [palette[paletteIdx], 0xffffff], speed: [0.5, 1.4], gravity: 0.3, size: 0.08 });
+        ctx.audio?.playDuetArpeggio?.();
+        const names = ["湖水蓝", "丁香紫", "蔷薇粉", "月光白", "星夜紫"];
+        return `绣球花悄悄变成了${names[paletteIdx]} 💠`;
+      },
+    });
+  }
+
+  // --- 4. Shake a flowering cherry tree near the swing garden ------------------
+  const trees = (treeInfo && treeInfo.treeRefs) || [];
+  const cherries = trees.filter((t) => t.sp === "cherry");
+  if (cherries.length) {
+    let ct = cherries[0];
+    let bd = Infinity;
+    for (const t of cherries) {
+      const d = Math.hypot(t.x + 24.5, t.z - 14.5);
+      if (d < bd) {
+        bd = d;
+        ct = t;
+      }
+    }
+    const shake = { amp: 0 };
+    const tilt = new THREE.Matrix4();
+    persistent.push((elapsed, dt) => {
+      if (shake.amp <= 0) return;
+      shake.amp = Math.max(0, shake.amp - dt * 0.32);
+      const a = shake.amp * Math.sin(elapsed * 17.0);
+      const b = shake.amp * 0.6 * Math.cos(elapsed * 13.0);
+      tilt.makeRotationFromEuler(new THREE.Euler(a * 0.05, 0, b * 0.05));
+      tmpM.copy(ct.matrix).multiply(tilt);
+      ct.barkInst.setMatrixAt(ct.k, tmpM);
+      ct.canopyInst.setMatrixAt(ct.k, tmpM);
+      ct.barkInst.instanceMatrix.needsUpdate = true;
+      ct.canopyInst.instanceMatrix.needsUpdate = true;
+    });
+    // Stand point: 1.9 m from the trunk toward the swing garden path
+    const dirX = -28.5 - ct.x;
+    const dirZ = 17.0 - ct.z;
+    const dl = Math.hypot(dirX, dirZ) || 1;
+    const sx = ct.x + (dirX / dl) * 1.9;
+    const sz = ct.z + (dirZ / dl) * 1.9;
+    interactables.push({
+      id: "flora-cherry-shake",
+      label: "摇一摇樱花树",
+      position: terrainPt(sx, sz),
+      radius: 2.4,
+      activate(ctx = {}) {
+        shake.amp = 1.0;
+        const ty = ct.y;
+        const sc = ct.scale || 1;
+        fx.emit(3.5, 46, () => {
+          const th = Math.random() * Math.PI * 2;
+          const r = Math.sqrt(Math.random()) * 2.6 * sc;
+          const px = ct.x + Math.cos(th) * r;
+          const pz = ct.z + Math.sin(th) * r;
+          fx.petal(px, ty + (3.0 + Math.random() * 2.2) * sc, pz, (Math.random() - 0.5) * 0.4, -0.1, (Math.random() - 0.5) * 0.4, {
+            color: Math.random() < 0.5 ? 0xffd9e6 : 0xfff6f9,
+            life: 9.0,
+            floorY: getWorldTerrainY(px, pz) + 0.03,
+          });
+        });
+        ctx.audio?.playPetalGlissando?.();
+        return "樱花雨簌簌落下，落了你们满肩 🌸";
+      },
+    });
+  }
+
+  // --- 5. Lie down together in the coastal flower sea (butterflies) -------------
+  {
+    const lx = -46.2;
+    const lz = 24.0;
+    const ly = getWorldTerrainY(lx, lz);
+    interactables.push({
+      id: "flora-meadow-lie",
+      label: "在花海里并肩躺一躺",
+      position: new THREE.Vector3(lx, ly, lz),
+      radius: 2.6,
+      pose: {
+        type: "lie",
+        seats: [
+          { x: lx - 0.42, y: getWorldTerrainY(lx - 0.42, lz) + 0.04, z: lz, yaw: Math.PI },
+          { x: lx + 0.42, y: getWorldTerrainY(lx + 0.42, lz) + 0.04, z: lz, yaw: Math.PI },
+        ],
+      },
+      activate(ctx = {}) {
+        butterflies.spawn(lx, ly + 0.2, lz, 16);
+        fx.petalBurst(new THREE.Vector3(lx, ly + 0.4, lz), {
+          count: 40,
+          radius: 1.2,
+          up: 1.6,
+          speed: [0.3, 1.0],
+          floorY: ly + 0.05,
+          life: 6,
+          colors: [0xffffff, 0xfff2a8, 0xb8d4ff, 0xf6c2d2],
+        });
+        ctx.audio?.playDuetArpeggio?.();
+        return "蝴蝶在花海里围着你们翩翩起舞 🦋";
+      },
+    });
+  }
+
+  // --- 6. Weave a flower crown in the meadow ------------------------------------
+  {
+    const cx = -50.5;
+    const cz = 27.5;
+    const cy = getWorldTerrainY(cx, cz);
+    const crown = new THREE.Group();
+    crown.name = "WovenFlowerCrown";
+    const vine = new THREE.Mesh(
+      new THREE.TorusGeometry(0.13, 0.012, 6, 28),
+      new THREE.MeshStandardMaterial({ color: 0x5f8a4a, roughness: 0.7 })
+    );
+    vine.rotation.x = Math.PI / 2;
+    crown.add(vine);
+    const bloomGeo = new THREE.SphereGeometry(0.026, 8, 6);
+    const bloomCols = [0xffffff, 0xffb7cf, 0xfff0a0, 0xc9b5ff, 0xff8fae];
+    const bloomInst = new THREE.InstancedMesh(
+      bloomGeo,
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, emissive: 0x221016 }),
+      14
+    );
+    const dm = new THREE.Object3D();
+    for (let i = 0; i < 14; i += 1) {
+      const a = (i / 14) * Math.PI * 2;
+      dm.position.set(Math.cos(a) * 0.13, 0.012, Math.sin(a) * 0.13);
+      dm.scale.set(1, 0.6, 1);
+      dm.updateMatrix();
+      bloomInst.setMatrixAt(i, dm.matrix);
+      bloomInst.setColorAt(i, new THREE.Color(bloomCols[i % bloomCols.length]));
+    }
+    crown.add(bloomInst);
+    crown.visible = false;
+    crown.traverse((c) => {
+      c.raycast = () => {};
+    });
+    group.add(crown);
+    interactables.push({
+      id: "flora-flower-crown",
+      label: "编一顶野花花环",
+      position: new THREE.Vector3(cx, cy, cz),
+      radius: 2.4,
+      activate(ctx = {}) {
+        crown.visible = true;
+        fx.burst(new THREE.Vector3(cx, cy + 0.4, cz), { count: 36, colors: bloomCols, speed: [0.4, 1.2], gravity: 0.25, size: 0.07 });
+        fx.addTask(
+          7.0,
+          (u, dt, t) => {
+            const grow = easeOutBack(Math.min(1, t / 1.0));
+            const fade = u > 0.85 ? 1 - (u - 0.85) / 0.15 : 1;
+            crown.scale.setScalar(Math.max(0.001, grow * fade * 2.2));
+            crown.position.set(cx, cy + 0.3 + Math.min(1, t / 1.4) * 1.1 + Math.sin(t * 2.0) * 0.05, cz);
+            crown.rotation.set(0.35 * Math.sin(t * 1.3), t * 1.2, 0.2 * Math.cos(t * 1.1));
+            if (Math.random() < dt * 10) {
+              fx.spark(crown.position.x + (Math.random() - 0.5) * 0.5, crown.position.y, crown.position.z + (Math.random() - 0.5) * 0.5, 0, 0.3, 0, {
+                color: 0xfff6c8,
+                life: 1.0,
+                size: 0.06,
+              });
+            }
+          },
+          () => {
+            crown.visible = false;
+            fx.heart(crown.position.clone(), { scale: 0.03, count: 40, colors: [0xffffff, 0xffc9dc] });
+          }
+        );
+        ctx.audio?.playDuetArpeggio?.();
+        return ctx.actor === "ran" ? "小冉子编好花环，戴在小贤贤头上 👑" : "小贤贤编了一顶雏菊花环 👑";
+      },
+    });
+  }
+
+  return {
+    interactables,
+    update(elapsed, dt) {
+      fx.update(dt, elapsed);
+      butterflies.update(elapsed, dt);
+      for (let i = 0; i < persistent.length; i += 1) persistent[i](elapsed, dt);
+    },
+    reset() {
+      fx.clear();
+      butterflies.clear();
+      for (const bq of pickedBouquets) group.remove(bq);
+      pickedBouquets.length = 0;
+      for (const r of bedRoses) if (r.baseBloom) setRoseScale(r, 1);
     },
   };
 }

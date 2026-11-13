@@ -415,3 +415,102 @@ body {
     padding: 4px 8px;
   }
 }
+
+
+/* ------------------------------------------------------------------ */
+/* 小贤贤 & 小冉子 Couple Roaming UI                                    */
+/* ------------------------------------------------------------------ */
+.couple-panel {
+  position: fixed;
+  top: max(14px, env(safe-area-inset-top));
+  left: 14px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-width: min(360px, calc(100vw - 28px));
+  padding: 11px 12px;
+  border-radius: 18px;
+  background: rgba(255, 249, 245, 0.78);
+  border: 1px solid rgba(214, 150, 160, 0.35);
+  box-shadow: 0 10px 30px rgba(120, 70, 70, 0.16);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  font-size: 12.5px;
+}
+.couple-panel[hidden] { display: none; }
+.couple-row { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.couple-who { justify-content: space-between; }
+.couple-heart { color: #e0607e; font-size: 16px; animation: couple-beat 1.2s ease-in-out infinite; }
+@keyframes couple-beat { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.3); } 30% { transform: scale(1); } }
+.couple-btn {
+  appearance: none;
+  border: 1px solid rgba(190, 130, 140, 0.35);
+  background: rgba(255, 255, 255, 0.7);
+  color: #6b4148;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.12s, color 0.2s;
+}
+.couple-btn:hover { background: #fff; transform: translateY(-1px); }
+.couple-btn.is-active { background: linear-gradient(135deg, #f3a6b6, #e48197); color: #fff; border-color: transparent; }
+.couple-char { flex: 1; font-weight: 600; }
+.couple-exit { margin-left: auto; color: #8a6a6e; }
+.couple-interact { background: rgba(143, 174, 149, 0.25); }
+.couple-prompt {
+  position: fixed;
+  left: 50%;
+  bottom: 118px;
+  transform: translateX(-50%);
+  z-index: 30;
+  padding: 7px 16px;
+  border-radius: 999px;
+  background: rgba(60, 38, 44, 0.66);
+  color: #fff;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+}
+.couple-prompt[hidden] { display: none; }
+.couple-prompt kbd {
+  display: inline-block;
+  min-width: 20px;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: #fff;
+  color: #b04c64;
+  font-weight: 700;
+  font-family: inherit;
+  text-align: center;
+}
+.couple-toast {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translate(-50%, -12px);
+  z-index: 31;
+  max-width: min(560px, calc(100vw - 40px));
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: rgba(255, 246, 242, 0.92);
+  color: #8c3f52;
+  font-size: 14px;
+  box-shadow: 0 8px 24px rgba(140, 70, 80, 0.18);
+  opacity: 0;
+  transition: opacity 0.3s, transform 0.3s;
+  pointer-events: none;
+  text-align: center;
+}
+.couple-toast.is-show { opacity: 1; transform: translate(-50%, 0); }
+.couple-toast[hidden] { display: none; }
+.explore-couple { background: linear-gradient(135deg, rgba(243, 166, 182, 0.4), rgba(228, 129, 151, 0.3)); }
+body.is-couple-mode #diorama-canvas { cursor: grab; }
+@media (max-width: 640px) {
+  .couple-panel { font-size: 11.5px; padding: 9px; top: 8px; left: 8px; }
+  .couple-btn { padding: 4px 8px; }
+  .couple-prompt { bottom: 140px; }
+}

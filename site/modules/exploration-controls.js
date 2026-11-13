@@ -96,6 +96,7 @@ export function findNearestWalkableSpot(targetX, targetZ, maxRadius = 11.0, refY
 
 export function createExplorationControls(camera, domElement, opts = {}) {
   let mode = "aerial"; // Default to panoramic overlook ("默认俯瞰角度")
+  let enabled = true; // disabled while couple roaming mode drives the camera
   const onModeChange = opts.onModeChange || (() => {});
 
   // Walk state (camera yaw = 0 looks toward -Z, yaw = PI looks toward +Z)
@@ -405,7 +406,7 @@ export function createExplorationControls(camera, domElement, opts = {}) {
       ].includes(e.code)
     ) {
       keys.add(e.code);
-      if (mode === "walk") {
+      if (mode === "walk" && enabled) {
         activeFlight = null;
         walkWaypoints = [];
         desiredEyeHeight = DEFAULT_EYE_HEIGHT;
@@ -447,6 +448,7 @@ export function createExplorationControls(camera, domElement, opts = {}) {
       movedPx += Math.hypot(dx, dy);
       lastPos = { x: e.clientX, y: e.clientY };
 
+      if (!enabled) return;
       if (movedPx > 5 && activeFlight) {
         activeFlight = null;
       }
@@ -461,8 +463,8 @@ export function createExplorationControls(camera, domElement, opts = {}) {
         desiredAerialSpherical.phi = clamp(
           desiredAerialSpherical.phi -
             (dy / Math.max(320, domElement.clientHeight)) * Math.PI * 1.15,
-          0.18,
-          1.42
+          0.08,
+          1.53
         );
       } else if (dragType === "pan") {
         const panScale = desiredAerialSpherical.radius * 0.0014;
@@ -473,8 +475,8 @@ export function createExplorationControls(camera, domElement, opts = {}) {
         const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
         desiredAerialTarget.addScaledVector(right, -dx * panScale);
         desiredAerialTarget.addScaledVector(fwd, dy * panScale);
-        desiredAerialTarget.x = clamp(desiredAerialTarget.x, -110, 110);
-        desiredAerialTarget.z = clamp(desiredAerialTarget.z, -110, 110);
+        desiredAerialTarget.x = clamp(desiredAerialTarget.x, -180, 180);
+        desiredAerialTarget.z = clamp(desiredAerialTarget.z, -180, 180);
       }
     } else if (touches.size === 2) {
       const pts = Array.from(touches.values());
@@ -482,8 +484,8 @@ export function createExplorationControls(camera, domElement, opts = {}) {
       if (lastPinch > 4 && mode === "aerial") {
         desiredAerialSpherical.radius = clamp(
           desiredAerialSpherical.radius * (lastPinch / Math.max(4, dist)),
-          18.0,
-          215.0
+          4.0,
+          260.0
         );
       }
       lastPinch = dist;
@@ -502,13 +504,14 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     "wheel",
     (e) => {
       e.preventDefault();
+      if (!enabled) return;
       if (mode === "aerial") {
         activeFlight = null;
         const factor = Math.exp(clamp(e.deltaY, -160, 160) * 0.0014);
         desiredAerialSpherical.radius = clamp(
           desiredAerialSpherical.radius * factor,
-          18.0,
-          215.0
+          4.0,
+          260.0
         );
       } else {
         activeFlight = null;
@@ -570,7 +573,30 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     onModeChange(mode);
   }
 
+  // "点哪看哪": orbit-focus any clicked point in aerial view (no preset snapping)
+  function focusOn(point, radius = null) {
+    activeFlight = null;
+    if (mode !== "aerial") setMode("aerial");
+    desiredAerialTarget.set(point.x, point.y, point.z);
+    const r = radius ?? clamp(desiredAerialSpherical.radius * 0.45, 9.0, 40.0);
+    desiredAerialSpherical.radius = r;
+    desiredAerialSpherical.phi = clamp(desiredAerialSpherical.phi, 0.55, 1.25);
+  }
+
+  // Smoothly turn the walking head to look at any point
+  function lookAtPoint(point) {
+    if (mode !== "walk") return focusOn(point);
+    const eyeY = walkPos.y + currentEyeHeight;
+    const dx = point.x - walkPos.x;
+    const dz = point.z - walkPos.z;
+    const targetYaw = Math.atan2(-dx, -dz);
+    desiredYaw = yaw + shortestAngleDelta(yaw, targetYaw);
+    desiredPitch = clamp(Math.atan2(point.y - eyeY, Math.hypot(dx, dz)), -1.28, 1.18);
+    walkWaypoints = [];
+  }
+
   function update(dt) {
+    if (!enabled) return;
     if (activeFlight) {
       activeFlight.elapsed += dt;
       const u = clamp(activeFlight.elapsed / activeFlight.duration, 0, 1);
@@ -672,7 +698,7 @@ export function createExplorationControls(camera, domElement, opts = {}) {
       _tmpOffset.setFromSpherical(aerialSpherical);
       camera.position.copy(aerialTarget).add(_tmpOffset);
       camera.lookAt(aerialTarget);
-      const minAerialY = Math.max(2.2, getWorldTerrainY(camera.position.x, camera.position.z) + 1.5);
+      const minAerialY = Math.max(1.2, getWorldTerrainY(camera.position.x, camera.position.z) + 0.9);
       if (camera.position.y < minAerialY) {
         camera.position.y = minAerialY;
         camera.lookAt(aerialTarget);
@@ -693,6 +719,17 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     getStateSnapshot,
     restoreStateSnapshot,
     getMode: () => mode,
+    focusOn,
+    lookAtPoint,
+    setEnabled(v) {
+      enabled = Boolean(v);
+      keys.clear();
+      if (!enabled) {
+        activeFlight = null;
+        walkWaypoints = [];
+      }
+    },
+    isEnabled: () => enabled,
     getEyeHeight: () => currentEyeHeight,
     getWalkPosition: () => walkPos.clone(),
     wasClickGesture: () => movedPx < 6,

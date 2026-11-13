@@ -2,6 +2,7 @@
 // Unified 260m x 260m Coastal Peninsula Elevation, Walkable Surface & Collision Kit.
 
 import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 export { THREE, mergeGeometries };
@@ -834,4 +835,62 @@ export function batchStaticMeshesByMaterial(
     mergedRemovedCount += bucket.meshes.length - 1;
   }
   return mergedRemovedCount;
+}
+
+export function ensureNonIndexed(geo) {
+  if (!geo) return geo;
+  return geo.index ? geo.toNonIndexed() : geo;
+}
+
+const _glbLoader = new GLTFLoader();
+const _glbPromiseCache = new Map();
+
+async function decodeGzipBase64ToArrayBuffer(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) {
+    bytes[i] = bin.charCodeAt(i);
+  }
+  if (typeof DecompressionStream !== "undefined") {
+    const ds = new DecompressionStream("gzip");
+    const stream = new Blob([bytes]).stream().pipeThrough(ds);
+    return await new Response(stream).arrayBuffer();
+  }
+  return bytes.buffer;
+}
+
+export function loadBundledGLB(key, url) {
+  const cacheKey = `${key}::${url || ""}`;
+  if (_glbPromiseCache.has(cacheKey)) return _glbPromiseCache.get(cacheKey);
+  const promise = new Promise((resolve) => {
+    const inlineStore =
+      typeof window !== "undefined" && window.__INLINE_GLB_GZIP_B64__
+        ? window.__INLINE_GLB_GZIP_B64__
+        : null;
+    if (inlineStore && inlineStore[key]) {
+      decodeGzipBase64ToArrayBuffer(inlineStore[key])
+        .then((ab) => {
+          _glbLoader.parse(
+            ab,
+            "",
+            (gltf) => resolve(gltf),
+            () => resolve(null)
+          );
+        })
+        .catch(() => resolve(null));
+      return;
+    }
+    if (!url) {
+      resolve(null);
+      return;
+    }
+    _glbLoader.load(
+      url,
+      (gltf) => resolve(gltf),
+      undefined,
+      () => resolve(null)
+    );
+  });
+  _glbPromiseCache.set(cacheKey, promise);
+  return promise;
 }

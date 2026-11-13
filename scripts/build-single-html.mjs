@@ -53,6 +53,15 @@ const MODEL_FILES = {
   ph_watering_can: "ph_watering_can.glb",
   ph_alarm_clock: "ph_alarm_clock.glb",
   ph_oil_lamp: "ph_oil_lamp.glb",
+  ph_cliff_01: "ph_cliff_01.glb",
+  ph_cliff_02: "ph_cliff_02.glb",
+  ph_coast_rocks: "ph_coast_rocks.glb",
+  ph_coast_rocks_b: "ph_coast_rocks_b.glb",
+  ph_moss_boulder: "ph_moss_boulder.glb",
+  ph_coastal_shrub: "ph_coastal_shrub.glb",
+  ph_lifebuoy: "ph_lifebuoy.glb",
+  ph_picnic_table: "ph_picnic_table.glb",
+  couple_parts: "couple_parts.glb",
 };
 
 function escapeInlineScript(code) {

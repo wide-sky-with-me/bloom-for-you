@@ -27,6 +27,8 @@ import { buildSecretGardensAndPond } from "./modules/secret-gardens-and-pond.js"
 import { buildDistantHorizon } from "./modules/distant-horizon.js";
 import { resolveGiftConfig } from "./modules/gift-config.js";
 import { createHarborAudio } from "./audio.js";
+import { preloadCoupleParts } from "./modules/couple-characters.js";
+import { createCoupleMode } from "./modules/couple-mode.js";
 
 function populateLetterModal(gift) {
   if (!gift) return;
@@ -106,7 +108,7 @@ async function init() {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.04;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   if (isSoftware) {
     renderer.shadowMap.autoUpdate = false;
     renderer.shadowMap.needsUpdate = true;
@@ -175,12 +177,16 @@ async function init() {
   const flora = buildBotanicalFlora();
   worldRoot.add(flora.group);
 
-  const secretGardens = await buildSecretGardensAndPond({
-    villaGroup: villa.group,
-    onProgress(ratio) {
-      setLoadingProgress(0.68 + ratio * 0.28, "正在唤醒叠石瀑布、睡莲锦鲤河虾与繁花双人秋千…");
-    },
-  });
+  const [secretGardens] = await Promise.all([
+    buildSecretGardensAndPond({
+      villaGroup: villa.group,
+      onProgress(ratio) {
+        setLoadingProgress(0.68 + ratio * 0.28, "正在唤醒叠石瀑布、海蚀岩礁、双人建模与繁花秋千…");
+      },
+    }),
+    preloadCoupleParts(),
+    estate.loadCoastalPhotogrammetry(),
+  ]);
   worldRoot.add(secretGardens.group);
 
   // Build explicit raycast target whitelist (Section 七.8):
@@ -227,8 +233,8 @@ async function init() {
       if (exploreHint) {
         exploreHint.textContent =
           nextMode === "aerial"
-            ? "点击任意景致深入探索 · 拖拽旋转俯瞰 · 按 ` 查看性能统计"
-            : "WASD / 点击地面自由漫步 · 靠近书桌信笺自动展开 · 按 Esc 返回全景";
+            ? "点哪看哪 · 双击深入漫步 · 拖拽旋转 · 右键平移 · 滚轮缩放"
+            : "WASD / 点击地面自由漫步 · 点哪看哪 · 按 Esc 返回全景";
       }
       if (nextMode === "aerial") {
         markActivePill("aerialOverlook");
@@ -240,6 +246,48 @@ async function init() {
   const audio = createHarborAudio();
   const giftData = await resolveGiftConfig();
   populateLetterModal(giftData);
+
+  // 小贤贤 & 小冉子 — controllable couple (first / second / third person)
+  const couple = createCoupleMode({
+    scene: worldRoot,
+    camera,
+    canvas,
+    audio,
+    sources: [villa, estate, secretGardens, flora],
+    ui: {
+      panel: document.getElementById("couple-panel"),
+      prompt: document.getElementById("couple-prompt"),
+      toast: document.getElementById("couple-toast"),
+      enterBtn: document.getElementById("btn-couple"),
+    },
+    onActiveChange(on) {
+      controls.setEnabled(!on);
+      document.body.classList.toggle("is-couple-mode", on);
+      if (exploreHint) {
+        exploreHint.textContent = on
+          ? "WASD 走 · Shift 跑 · 拖拽转视角 · E 互动 · F 牵手 · V 视角 · Tab 换人 · Esc 退出"
+          : controls.getMode() === "aerial"
+            ? "点哪看哪 · 双击深入漫步 · 拖拽旋转 · 右键平移 · 滚轮缩放"
+            : "WASD / 点击地面自由漫步 · 点哪看哪 · 按 Esc 返回全景";
+      }
+      if (!on) markActivePill(controls.getMode() === "aerial" ? "aerialOverlook" : "");
+    },
+  });
+  addRayTarget(couple.xian.root);
+  addRayTarget(couple.ran.root);
+  document.getElementById("btn-couple")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    audio.unlock();
+    if (couple.isActive()) couple.exit();
+    else {
+      closeLetterModal({ restoreState: false });
+      couple.enter();
+    }
+  });
+  window.addEventListener("bloom:open-letter", () => {
+    openLetterModal({ saveState: true });
+    audio.playLetterUnfold();
+  });
 
   let preLetterSnapshot = null;
   let preLetterPreset = "aerialOverlook";
@@ -412,6 +460,7 @@ async function init() {
       e.stopPropagation();
       audio.unlock();
       const preset = btn.dataset.preset;
+      if (couple.isActive()) couple.exit();
       if (preset) setCameraPreset(preset, { smooth: true });
     });
   });
@@ -616,6 +665,8 @@ async function init() {
     if (e.key === "Escape") {
       if (letterModal && !letterModal.hidden) {
         closeLetterModal({ restoreState: true });
+      } else if (couple.isActive()) {
+        couple.exit();
       } else if (controls.getMode() !== "aerial") {
         controls.flyToAerial(
           [-4.5, 2.8, 9.2],
@@ -628,7 +679,7 @@ async function init() {
     } else if (e.key === "`" || e.key === "~" || e.key === "F3") {
       e.preventDefault();
       toggleDebugHud();
-    } else if (e.code === "Space" && document.activeElement === document.body) {
+    } else if (e.code === "Space" && document.activeElement === document.body && !couple.isActive()) {
       e.preventDefault();
       setSimPaused(!simPaused);
     }
@@ -718,6 +769,27 @@ async function init() {
         return { id, windmillBoosted: true };
       default:
         return null;
+    }
+  }
+
+  // "除去场景锁定 · 点哪看哪": single click orbits-focuses exactly where you clicked;
+  // interactive objects still play their interaction; double-click dives in to walk.
+  function handleOverlookFocusClick(picked) {
+    const id = picked.interactive?.id || null;
+    const hit = picked.hitPoint;
+    if (id === "char-xian" || id === "char-ran") {
+      couple.enter(id === "char-xian" ? "xian" : "ran");
+      return;
+    }
+    if (id === "love-letter" || id === "mailbox") {
+      openLetterModal({ saveState: true });
+      audio.playLetterUnfold();
+      return;
+    }
+    if (id) triggerInteraction(id);
+    if (hit) {
+      controls.focusOn(hit);
+      markActivePill("");
     }
   }
 
@@ -818,19 +890,35 @@ async function init() {
     if (e.buttons !== 0) return;
     const picked = pickScene(e.clientX, e.clientY);
     const clickable =
-      controls.getMode() === "aerial"
+      couple.isActive() || controls.getMode() === "aerial"
         ? Boolean(picked.interactive || picked.hitPoint)
         : Boolean(picked.interactive);
     canvas.classList.toggle("is-hover-interactive", clickable);
   });
 
+  let clickTimer = null;
   canvas.addEventListener("click", (e) => {
     audio.unlock();
     if (!controls.wasClickGesture()) return;
     const picked = pickScene(e.clientX, e.clientY);
 
+    if (couple.isActive()) {
+      couple.handleClick(picked);
+      return;
+    }
+    const pid = picked.interactive?.id;
+    if (pid === "char-xian" || pid === "char-ran") {
+      couple.enter(pid === "char-xian" ? "xian" : "ran");
+      return;
+    }
+
     if (controls.getMode() === "aerial") {
-      handleOverlookDiveClick(picked);
+      // defer so a double-click can turn into a dive instead of a focus
+      if (clickTimer) clearTimeout(clickTimer);
+      clickTimer = setTimeout(() => {
+        clickTimer = null;
+        handleOverlookFocusClick(picked);
+      }, 230);
       return;
     }
 
@@ -854,10 +942,22 @@ async function init() {
       return;
     }
 
-    if (picked.hitPoint && isPositionWalkable(picked.hitPoint.x, picked.hitPoint.z, 0.28)) {
+    if (picked.hitPoint && isPositionWalkable(picked.hitPoint.x, picked.hitPoint.z, 0.28, controls.getWalkPosition().y)) {
       controls.walkTo(picked.hitPoint.x, picked.hitPoint.z);
       markActivePill("");
+    } else if (picked.hitPoint) {
+      controls.lookAtPoint(picked.hitPoint);
     }
+  });
+
+  canvas.addEventListener("dblclick", (e) => {
+    if (couple.isActive() || controls.getMode() !== "aerial") return;
+    if (clickTimer) {
+      clearTimeout(clickTimer);
+      clickTimer = null;
+    }
+    const picked = pickScene(e.clientX, e.clientY);
+    if (picked.hitPoint || picked.interactive) handleOverlookDiveClick(picked);
   });
 
   window.addEventListener("resize", () => {
@@ -943,6 +1043,7 @@ async function init() {
 
     // Camera orbit/walk & proximity checks stay responsive even when paused
     controls.update(frameDt);
+    couple.update(frameDt);
     checkLetterProximity();
 
     // Advance dynamic world ONLY when simulation is running
@@ -989,6 +1090,7 @@ async function init() {
     villa,
     flora,
     secretGardens,
+    couple,
     openLetterModal: () => openLetterModal({ saveState: true }),
     closeLetterModal: () => closeLetterModal({ restoreState: true }),
     triggerInteraction,
@@ -1035,6 +1137,7 @@ async function init() {
           applyNightMix(nextMix);
         }
         controls.update(stepDt);
+        couple.update(stepDt);
         checkLetterProximity();
         if (!simPaused) {
           stepSimulation(stepDt);

@@ -99,195 +99,722 @@ function createMountainRockNormalMap() {
 }
 
 // ---------------------------------------------------------------------------
-// 1. 3-Tier Tectonic Ridged Mountain Amphitheater (600m - 1,310m)
-//    Partitioned into 4 azimuthal sectors per tier so frustum culling works!
+// 1. 3-Tier Painterly Alpine Amphitheater (600m - 1,330m)
+//    - domain-warped ridged multifractal crests + downslope erosion gullies
+//    - per-pixel slope/height shading (strata cliffs, meadows, forest, terraces, snow)
+//    - per-tier aerial perspective + valley haze (day/night aware)
+//    - 8 azimuthal sectors per tier for frustum culling
 // ---------------------------------------------------------------------------
 
-function buildTectonicMountainAmphitheater(parent, rockNormalMap) {
-  const SECTORS = 4;
+const MOUNTAIN_SECTORS = 8;
 
-  const buildTierSectors = ({
-    innerR,
-    outerR,
-    segsPerSector,
-    radialSteps,
-    maxH,
-    seed,
-    foothillHex,
-    forestHex,
-    cliffHex,
-    crestHex,
-    snowLineRatio,
-    channelAz,
-    channelDipStrength,
-  }) => {
-    const mat = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      normalMap: rockNormalMap,
-      normalScale: new THREE.Vector2(0.55, 0.55),
-      roughness: 0.91,
-      metalness: 0.02,
-    });
+function fbm2(x, z, octaves = 4) {
+  let sum = 0.0;
+  let amp = 0.5;
+  let freq = 1.0;
+  let norm = 0.0;
+  for (let i = 0; i < octaves; i += 1) {
+    sum += vnoise2(x * freq + i * 31.7, z * freq - i * 17.1) * amp;
+    norm += amp;
+    freq *= 2.03;
+    amp *= 0.5;
+  }
+  return sum / norm;
+}
 
-    const cShore = new THREE.Color(0x9a9383);
-    const cFoot = new THREE.Color(foothillHex);
-    const cForest = new THREE.Color(forestHex);
-    const cCliff = new THREE.Color(cliffHex);
-    const cCrest = new THREE.Color(crestHex);
-    const cAlpine = new THREE.Color(0xf2efe9);
-    const cTmp = new THREE.Color();
-
-    for (let secIdx = 0; secIdx < SECTORS; secIdx += 1) {
-      const uStart = secIdx / SECTORS;
-      const uSpan = 1.0 / SECTORS;
-
-      const geo = new THREE.BufferGeometry();
-      const positions = [];
-      const uvs = [];
-      const indices = [];
-
-      for (let r = 0; r <= radialSteps; r += 1) {
-        const rt = r / radialSteps;
-        const crossProfile = Math.pow(Math.sin(rt * Math.PI), 0.72) * (1.08 - 0.22 * rt);
-
-        for (let s = 0; s <= segsPerSector; s += 1) {
-          const u = uStart + (s / segsPerSector) * uSpan;
-          const ang = u * Math.PI * 2.0;
-
-          const cx = Math.cos(ang) * 3.2 + seed;
-          const cz = Math.sin(ang) * 3.2 - seed * 0.7;
-          const ridgePrimary = ridgedFbm2(cx + rt * 1.35, cz - rt * 1.15, 5);
-          const ridgeSpurs = ridgedFbm2(cx * 2.4 - rt * 2.6, cz * 2.4 + rt * 2.2, 4);
-
-          // Open sea outlet corridor to East-Southeast (~0.16 rad)
-          const dAng = Math.atan2(Math.sin(ang - channelAz), Math.cos(ang - channelAz));
-          const seaStraitDip = 1.0 - channelDipStrength * Math.exp(-(dAng * dAng) / 0.095);
-          const dSouth = Math.atan2(Math.sin(ang - 1.48), Math.cos(ang - 1.48));
-          const southPassDip = 1.0 - 0.42 * Math.exp(-(dSouth * dSouth) / 0.06);
-
-          const radialWarp =
-            24.0 * (vnoise2(cx * 1.5, cz * 1.5) - 0.5) +
-            14.0 * Math.sin(ang * 9.0 + rt * 3.1 + seed);
-          const radius = lerp(innerR, outerR, rt) + radialWarp;
-
-          const peakEnvelope =
-            maxH * (0.24 + 0.62 * ridgePrimary + 0.26 * ridgeSpurs) * seaStraitDip * southPassDip;
-          const y = -9.0 + (peakEnvelope + 9.0) * crossProfile;
-
-          positions.push(Math.cos(ang) * radius, y, Math.sin(ang) * radius);
-          uvs.push(u * 26.0, rt * 4.0);
-        }
+function createMountainRunnelNormalMap() {
+  // Downslope runnels / scree streaks (v axis == downhill)
+  return makeNormalTex(
+    256,
+    256,
+    (ctx, w, h) => {
+      const rng = mulberry32(90211);
+      ctx.fillStyle = "#808080";
+      ctx.fillRect(0, 0, w, h);
+      for (let i = 0; i < 520; i += 1) {
+        const x = rng() * w;
+        const y = rng() * h;
+        const shade = 60 + Math.floor(rng() * 140);
+        ctx.strokeStyle = `rgba(${shade},${shade},${shade},0.32)`;
+        ctx.lineWidth = 1.0 + rng() * 3.0;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.quadraticCurveTo(x + (rng() - 0.5) * 10, y + 20, x + (rng() - 0.5) * 14, y + 30 + rng() * 50);
+        ctx.stroke();
       }
-
-      const stride = segsPerSector + 1;
-      for (let r = 0; r < radialSteps; r += 1) {
-        for (let s = 0; s < segsPerSector; s += 1) {
-          const a = r * stride + s;
-          const b = a + 1;
-          const c = (r + 1) * stride + s;
-          const d = c + 1;
-          indices.push(a, c, b, b, c, d);
-        }
+      for (let i = 0; i < 1600; i += 1) {
+        const v = 90 + Math.floor(rng() * 80);
+        ctx.fillStyle = `rgba(${v},${v},${v},0.3)`;
+        ctx.fillRect(rng() * w, rng() * h, 2 + rng() * 4, 2 + rng() * 4);
       }
+    },
+    { strength: 2.2, repeatX: 1, repeatY: 1 }
+  );
+}
 
-      geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-      geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-      geo.setIndex(indices);
-      geo.computeVertexNormals();
+// Shared GLSL helpers (value noise) for all horizon terrain shaders
+const HORIZON_NOISE_GLSL = /* glsl */ `
+  float hzHash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+  float hzNoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(hzHash(i), hzHash(i + vec2(1.0, 0.0)), f.x),
+      mix(hzHash(i + vec2(0.0, 1.0)), hzHash(i + vec2(1.0, 1.0)), f.x),
+      f.y
+    );
+  }
+`;
 
-      const posAttr = geo.attributes.position;
-      const normAttr = geo.attributes.normal;
-      const vColors = new Float32Array(posAttr.count * 3);
-
-      for (let i = 0; i < posAttr.count; i += 1) {
-        const px = posAttr.getX(i);
-        const py = posAttr.getY(i);
-        const pz = posAttr.getZ(i);
-        const ny = clamp(normAttr.getY(i), 0.0, 1.0);
-        const hNorm = clamp(py / Math.max(1.0, maxH), 0.0, 1.0);
-        const mottle = vnoise2(px * 0.025, pz * 0.025);
-
-        if (py < 3.8) {
-          cTmp.copy(cShore).lerp(cFoot, smoothstep(-1.0, 3.8, py));
-        } else {
-          cTmp.copy(cFoot).lerp(cForest, smoothstep(0.05, 0.42, hNorm + (mottle - 0.5) * 0.16));
-          cTmp.lerp(cCrest, smoothstep(0.45, 0.86, hNorm));
-        }
-
-        const cliffWeight = smoothstep(0.84, 0.46, ny) * smoothstep(2.0, 16.0, py);
-        cTmp.lerp(cCliff, cliffWeight * 0.82);
-
-        if (snowLineRatio < 1.0 && hNorm > snowLineRatio) {
-          const snowW = smoothstep(snowLineRatio, snowLineRatio + 0.18, hNorm) * smoothstep(0.35, 0.78, ny);
-          cTmp.lerp(cAlpine, snowW * 0.68);
-        }
-
-        vColors[i * 3 + 0] = cTmp.r;
-        vColors[i * 3 + 1] = cTmp.g;
-        vColors[i * 3 + 2] = cTmp.b;
-      }
-      geo.setAttribute("color", new THREE.BufferAttribute(vColors, 3));
-      geo.computeBoundingSphere();
-
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.frustumCulled = true;
-      mesh.castShadow = false;
-      mesh.receiveShadow = false;
-      mesh.raycast = () => {};
-      parent.add(mesh);
-    }
+// Aerial perspective: farther / lower => bluer & hazier. Injected just before tone mapping
+// (linear space) so it composes correctly with scene fog.
+function injectAerialHaze(material, shared, tierHaze, extra = {}) {
+  const local = {
+    uTierHaze: { value: tierHaze },
+    uHazeBaseY: { value: extra.hazeBaseY !== undefined ? extra.hazeBaseY : 40.0 },
   };
+  const prevCompile = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    if (prevCompile) prevCompile(shader, renderer);
+    shader.uniforms.uNight = shared.uNight;
+    shader.uniforms.uHazeDay = shared.uHazeDay;
+    shader.uniforms.uHazeNight = shared.uHazeNight;
+    shader.uniforms.uHazeLow = shared.uHazeLow;
+    shader.uniforms.uTierHaze = local.uTierHaze;
+    shader.uniforms.uHazeBaseY = local.uHazeBaseY;
+    if (!shader.vertexShader.includes("varying vec3 vHzWPos;")) {
+      shader.vertexShader = shader.vertexShader
+        .replace("#include <common>", "#include <common>\nvarying vec3 vHzWPos;")
+        .replace(
+          "#include <project_vertex>",
+          `#include <project_vertex>
+          {
+            vec4 hzW = vec4(transformed, 1.0);
+            #ifdef USE_INSTANCING
+              hzW = instanceMatrix * hzW;
+            #endif
+            vHzWPos = (modelMatrix * hzW).xyz;
+          }`
+        );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <common>",
+        "#include <common>\nvarying vec3 vHzWPos;"
+      );
+    }
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        uniform float uNight;
+        uniform vec3 uHazeDay;
+        uniform vec3 uHazeNight;
+        uniform vec3 uHazeLow;
+        uniform float uTierHaze;
+        uniform float uHazeBaseY;`
+      )
+      .replace(
+        "#include <tonemapping_fragment>",
+        `{
+          float hzDist = length(vHzWPos - cameraPosition);
+          float hzLow = 1.0 - smoothstep(-6.0, uHazeBaseY, vHzWPos.y);
+          float hzAmt = uTierHaze + clamp((hzDist - 520.0) / 2600.0, 0.0, 0.32);
+          vec3 hzCol = mix(uHazeDay, uHazeNight, uNight);
+          vec3 lowCol = mix(uHazeLow, uHazeNight * 1.25, uNight);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, hzCol, clamp(hzAmt, 0.0, 0.88));
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, lowCol, hzLow * mix(0.42, 0.30, uNight));
+        }
+        #include <tonemapping_fragment>`
+      );
+  };
+  const prevKey = material.customProgramCacheKey ? material.customProgramCacheKey.bind(material) : () => "";
+  material.customProgramCacheKey = () => `hzHaze|${extra.key || ""}|${prevKey()}`;
+  return local;
+}
 
-  // Tier 1: Forefront Forested Foothills (600m - 805m)
-  buildTierSectors({
+function makeMountainTierMaterial(shared, tier, runnelMap) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    normalMap: runnelMap,
+    normalScale: new THREE.Vector2(0.75, 0.75),
+    roughness: 0.94,
+    metalness: 0.0,
+  });
+  const u = {
+    uMaxH: { value: tier.maxH },
+    uSnowLine: { value: tier.snowLineRatio },
+    uMeadow: { value: new THREE.Color(tier.meadowHex) },
+    uForest: { value: new THREE.Color(tier.forestHex) },
+    uRockDark: { value: new THREE.Color(tier.rockDarkHex) },
+    uRockLight: { value: new THREE.Color(tier.rockLightHex) },
+    uSnow: { value: new THREE.Color(tier.snowHex) },
+    uTerraceA: { value: new THREE.Color(0x8e9a55) },
+    uTerraceB: { value: new THREE.Color(0xb3a466) },
+    uTerraceAmt: { value: tier.terraceAmt },
+  };
+  mat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, u);
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vHzWPos;\nvarying vec3 vMtWNorm;")
+      .replace(
+        "#include <project_vertex>",
+        `#include <project_vertex>
+        vHzWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        vMtWNorm = normalize(mat3(modelMatrix) * objectNormal);`
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        varying vec3 vHzWPos;
+        varying vec3 vMtWNorm;
+        uniform float uMaxH;
+        uniform float uSnowLine;
+        uniform vec3 uMeadow;
+        uniform vec3 uForest;
+        uniform vec3 uRockDark;
+        uniform vec3 uRockLight;
+        uniform vec3 uSnow;
+        uniform vec3 uTerraceA;
+        uniform vec3 uTerraceB;
+        uniform float uTerraceAmt;
+        ${HORIZON_NOISE_GLSL}`
+      )
+      .replace(
+        "#include <color_fragment>",
+        `#include <color_fragment>
+        {
+          vec3 Nw = normalize(vMtWNorm);
+          float slope = 1.0 - clamp(Nw.y, 0.0, 1.0);
+          float h01 = clamp(vHzWPos.y / uMaxH, 0.0, 1.25);
+          vec2 wp = vHzWPos.xz;
+          float n1 = hzNoise(wp * 0.011);
+          float n2 = hzNoise(wp * 0.047 + 7.3);
+          float n3 = hzNoise(wp * 0.19 - 3.1);
+          float mott = n1 * 0.5 + n2 * 0.32 + n3 * 0.18;
+
+          // Vegetation: meadows with patchy forest that thins out with altitude
+          float forestMask = smoothstep(0.46, 0.60, n1 * 0.55 + n2 * 0.45 + (0.42 - h01) * 0.75);
+          forestMask *= 1.0 - smoothstep(0.30, 0.52, slope);
+          vec3 veg = mix(uMeadow * (0.86 + 0.28 * n2), uForest * (0.78 + 0.36 * n3), forestMask);
+
+          // Terraced fields / vineyards on gentle low slopes (contour-following stripes)
+          float tz = smoothstep(0.58, 0.70, hzNoise(wp * 0.0042 + 11.7)) * uTerraceAmt;
+          tz *= (1.0 - smoothstep(0.10, 0.24, slope)) * (1.0 - smoothstep(0.16, 0.34, h01)) * (1.0 - forestMask);
+          float terr = smoothstep(0.35, 0.65, fract(vHzWPos.y * 0.42 + n2 * 0.35));
+          veg = mix(veg, mix(uTerraceA, uTerraceB, terr * (0.6 + 0.4 * n3)), tz);
+
+          // Rock: sedimentary strata bands tilted by low-freq noise, darker gully streaks
+          float sy = vHzWPos.y + (n1 - 0.5) * 22.0 + (wp.x * 0.012);
+          float strata = 0.5 + 0.5 * sin(sy * 0.55 + n2 * 2.2);
+          float strata2 = 0.5 + 0.5 * sin(sy * 1.9 + n3 * 3.0);
+          vec3 rock = mix(uRockDark, uRockLight, clamp(strata * 0.55 + strata2 * 0.22 + n3 * 0.28, 0.0, 1.0));
+          rock *= 0.82 + 0.3 * smoothstep(0.2, 0.8, n2);
+          float rockMask = smoothstep(0.26, 0.46, slope + (n2 - 0.5) * 0.22);
+          rockMask = max(rockMask, smoothstep(0.62, 0.92, h01 + (n1 - 0.5) * 0.2) * 0.85);
+          vec3 col = mix(veg, rock, rockMask);
+
+          // Light limestone scree / sunlit bare crests just below the snow
+          col = mix(col, uRockLight * 1.12, smoothstep(0.78, 1.0, h01) * (1.0 - rockMask * 0.4) * 0.35);
+
+          // Snow & firn caps: settle on flatter high ground, streaking down couloirs
+          float snowN = h01 + (n2 - 0.5) * 0.16 + (n3 - 0.5) * 0.06;
+          float snowMask = smoothstep(uSnowLine, uSnowLine + 0.09, snowN);
+          snowMask *= 1.0 - smoothstep(0.52, 0.78, slope - (snowN - uSnowLine) * 0.6);
+          col = mix(col, uSnow * (0.92 + 0.1 * n3), clamp(snowMask, 0.0, 1.0));
+
+          // Dark foot shoreline / wet base
+          col = mix(col * vec3(0.72, 0.74, 0.70), col, smoothstep(-4.0, 6.0, vHzWPos.y));
+          diffuseColor.rgb = col * (0.9 + 0.2 * mott);
+        }`
+      );
+  };
+  mat.customProgramCacheKey = () => "hzMountainTier";
+  injectAerialHaze(mat, shared, tier.tierHaze, { key: "mt", hazeBaseY: tier.maxH * 0.42 });
+  return mat;
+}
+
+function makeTierSurface(t) {
+  const span = t.outerR - t.innerR;
+  return (ang, rt) => {
+    const ca = Math.cos(ang);
+    const sa = Math.sin(ang);
+    const radialWarp =
+      26.0 * (fbm2(ca * 4.0 + t.seed, sa * 4.0 - t.seed, 3) - 0.5) +
+      12.0 * Math.sin(ang * 7.0 + t.seed * 1.7);
+    const radius = t.innerR + span * rt + radialWarp;
+    const x = ca * radius;
+    const z = sa * radius;
+
+    // Asymmetric cross-profile: steep estate-facing front, long back slope
+    const crestT = t.crestT;
+    const front = smoothstep(0.0, crestT, rt);
+    const back = 1.0 - smoothstep(crestT, 1.0, rt) * 0.78;
+    const cross = Math.pow(front, 1.35) * back;
+
+    // Domain-warped ridged multifractal (world space, peaks + spurs)
+    const s = t.featureScale;
+    const wx = x / s;
+    const wz = z / s;
+    const qx = wx + 0.85 * (fbm2(wx * 0.6 + 3.1, wz * 0.6, 3) - 0.5);
+    const qz = wz + 0.85 * (fbm2(wx * 0.6 - 4.7, wz * 0.6 + 1.3, 3) - 0.5);
+    const ridge = ridgedFbm2(qx, qz, 6);
+    // Large-scale massif envelope along the ring (distinct peaks & saddles)
+    const massif = 0.42 + 0.78 * fbm2(ca * 2.2 + t.seed * 3.0, sa * 2.2 - t.seed, 3);
+
+    const dAng = Math.atan2(Math.sin(ang - t.channelAz), Math.cos(ang - t.channelAz));
+    const seaStraitDip = 1.0 - t.channelDipStrength * Math.exp(-(dAng * dAng) / 0.095);
+    const dSouth = Math.atan2(Math.sin(ang - 1.48), Math.cos(ang - 1.48));
+    const southPassDip = 1.0 - 0.42 * Math.exp(-(dSouth * dSouth) / 0.06);
+
+    let h = t.maxH * (0.16 + 0.92 * ridge * massif) * seaStraitDip * southPassDip;
+
+    // Downslope erosion gullies: noise stretched along the radial (fall-line) direction
+    const arc = ang * radius;
+    const g1 = vnoise2(arc / t.gullyW, rt * span / (t.gullyW * 4.5) + t.seed);
+    const g2 = vnoise2(arc / (t.gullyW * 0.45) + 9.1, rt * span / (t.gullyW * 2.2) - t.seed);
+    const v1 = Math.abs(g1 * 2.0 - 1.0);
+    const v2 = Math.abs(g2 * 2.0 - 1.0);
+    const gully = (1.0 - smoothstep(0.0, 0.32, v1)) * 0.75 + (1.0 - smoothstep(0.0, 0.26, v2)) * 0.35;
+    const midSlope = smoothstep(0.08, 0.45, rt / crestT) * (1.0 - smoothstep(0.85, 1.15, rt / crestT));
+    h *= 1.0 - t.gullyDepth * gully * midSlope;
+
+    const y = -10.0 + (h + 10.0) * cross;
+    return [x, y, z];
+  };
+}
+
+function buildTierMesh(parent, t, mat) {
+  const surf = makeTierSurface(t);
+  const meshes = [];
+  const segs = Math.round(t.ringSegs / MOUNTAIN_SECTORS);
+  const rows = t.radialSteps;
+  // Concentrate rows on the visible estate-facing front and the crest silhouette
+  const rtOf = (r) => {
+    const a = r / rows;
+    return a < 0.72 ? (a / 0.72) * (t.crestT + 0.08) : t.crestT + 0.08 + ((a - 0.72) / 0.28) * (0.92 - t.crestT);
+  };
+  for (let sec = 0; sec < MOUNTAIN_SECTORS; sec += 1) {
+    const positions = [];
+    const uvs = [];
+    const indices = [];
+    for (let r = 0; r <= rows; r += 1) {
+      const rt = rtOf(r);
+      for (let s = 0; s <= segs; s += 1) {
+        const u = (sec + s / segs) / MOUNTAIN_SECTORS;
+        const ang = u * Math.PI * 2.0;
+        const p = surf(ang, rt);
+        positions.push(p[0], p[1], p[2]);
+        const radius = Math.hypot(p[0], p[2]);
+        uvs.push((ang * radius) / 70.0, p[1] / 55.0 + rt * 3.0);
+      }
+    }
+    const stride = segs + 1;
+    for (let r = 0; r < rows; r += 1) {
+      for (let s = 0; s < segs; s += 1) {
+        const a = r * stride + s;
+        const b = a + 1;
+        const c = (r + 1) * stride + s;
+        const d = c + 1;
+        indices.push(a, c, b, b, c, d);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = `MountainTier${t.id}_Sector${sec}`;
+    mesh.frustumCulled = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.raycast = () => {};
+    parent.add(mesh);
+    meshes.push(mesh);
+  }
+  return surf;
+}
+
+const MOUNTAIN_TIERS = [
+  {
+    id: 1,
     innerR: 600,
-    outerR: 805,
-    segsPerSector: 56,
-    radialSteps: 12,
-    maxH: 78,
+    outerR: 820,
+    crestT: 0.5,
+    ringSegs: 560,
+    radialSteps: 30,
+    maxH: 92,
     seed: 1.7,
-    foothillHex: 0x526e52,
-    forestHex: 0x415e49,
-    cliffHex: 0x868176,
-    crestHex: 0x67807a,
-    snowLineRatio: 1.2,
+    featureScale: 105,
+    gullyW: 30,
+    gullyDepth: 0.34,
+    meadowHex: 0x6f8a52,
+    forestHex: 0x2f4a33,
+    rockDarkHex: 0x6c6658,
+    rockLightHex: 0xa49a86,
+    snowHex: 0xf4f1ea,
+    snowLineRatio: 1.4,
+    terraceAmt: 1.0,
+    tierHaze: 0.1,
     channelAz: 0.15,
     channelDipStrength: 0.82,
-  });
-
-  // Tier 2: Mid-Layer Craggy Escarpment Ridges (780m - 1,040m)
-  buildTierSectors({
-    innerR: 780,
-    outerR: 1040,
-    segsPerSector: 60,
-    radialSteps: 13,
-    maxH: 156,
+    trees: 3600,
+    treeScale: 1.0,
+  },
+  {
+    id: 2,
+    innerR: 790,
+    outerR: 1060,
+    crestT: 0.46,
+    ringSegs: 470,
+    radialSteps: 26,
+    maxH: 175,
     seed: 5.4,
-    foothillHex: 0x587478,
-    forestHex: 0x4d6973,
-    cliffHex: 0x918d85,
-    crestHex: 0x8097a1,
-    snowLineRatio: 0.80,
+    featureScale: 150,
+    gullyW: 42,
+    gullyDepth: 0.38,
+    meadowHex: 0x66805a,
+    forestHex: 0x30483c,
+    rockDarkHex: 0x6a6762,
+    rockLightHex: 0xaaa497,
+    snowHex: 0xf2f1ee,
+    snowLineRatio: 0.78,
+    terraceAmt: 0.45,
+    tierHaze: 0.24,
     channelAz: 0.17,
     channelDipStrength: 0.74,
-  });
-
-  // Tier 3: Outer Snow-Kissed Alpine Crown (1,000m - 1,310m)
-  buildTierSectors({
-    innerR: 1000,
-    outerR: 1310,
-    segsPerSector: 54,
-    radialSteps: 11,
-    maxH: 242,
+    trees: 2200,
+    treeScale: 1.45,
+  },
+  {
+    id: 3,
+    innerR: 1010,
+    outerR: 1330,
+    crestT: 0.44,
+    ringSegs: 440,
+    radialSteps: 22,
+    maxH: 265,
     seed: 11.2,
-    foothillHex: 0x6f8b9a,
-    forestHex: 0x698495,
-    cliffHex: 0x9ca1a8,
-    crestHex: 0x98adbb,
-    snowLineRatio: 0.66,
+    featureScale: 190,
+    gullyW: 55,
+    gullyDepth: 0.42,
+    meadowHex: 0x6f8579,
+    forestHex: 0x3d5552,
+    rockDarkHex: 0x6f7178,
+    rockLightHex: 0xb2b1b0,
+    snowHex: 0xf7f8fa,
+    snowLineRatio: 0.6,
+    terraceAmt: 0.0,
+    tierHaze: 0.4,
     channelAz: 0.16,
     channelDipStrength: 0.62,
+    trees: 0,
+    treeScale: 1.0,
+  },
+];
+
+// Instanced conifer / broadleaf clusters on lower gentle slopes of the near tiers
+function buildMountainForests(parent, shared, tiers) {
+  const conifer = new THREE.ConeGeometry(0.34, 1.0, 5, 1, true);
+  conifer.translate(0, 0.5, 0);
+  const broad = new THREE.OctahedronGeometry(0.42, 0);
+  broad.scale(1.0, 0.82, 1.0);
+  broad.translate(0, 0.62, 0);
+
+  const coniferMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const broadMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  injectAerialHaze(coniferMat, shared, 0.12, { key: "tree", hazeBaseY: 34.0 });
+  injectAerialHaze(broadMat, shared, 0.12, { key: "tree", hazeBaseY: 34.0 });
+
+  const coniferPal = [0x22382a, 0x2a4230, 0x1f3326, 0x304a35];
+  const broadPal = [0x3e5a34, 0x4a6638, 0x56703f, 0x3a5233];
+  const inst = [];
+  const dummy = new THREE.Object3D();
+  const col = new THREE.Color();
+  const hazeTint = new THREE.Color(0x8fa3b4);
+
+  for (const t of tiers) {
+    if (!t.trees) continue;
+    const rng = mulberry32(7717 + t.id * 131);
+    const placements = [];
+    for (let tries = 0; tries < t.trees * 6 && placements.length < t.trees; tries += 1) {
+      const ang = rng() * Math.PI * 2.0;
+      const rt = 0.04 + rng() * (t.crestT * 0.85);
+      // Clustered groves: low-frequency noise mask on the ring
+      const ca = Math.cos(ang);
+      const sa = Math.sin(ang);
+      const grove = fbm2(ca * 9.0 + t.seed + rt * 2.5, sa * 9.0 - rt * 2.0, 3);
+      if (grove < 0.5 + rng() * 0.1) continue;
+      const p = t.surf(ang, rt);
+      const p2 = t.surf(ang, rt + 0.012);
+      const p3 = t.surf(ang + 0.004, rt);
+      const dRad = Math.hypot(p2[0] - p[0], p2[2] - p[2]) || 1;
+      const dArc = Math.hypot(p3[0] - p[0], p3[2] - p[2]) || 1;
+      const grade = Math.max(Math.abs(p2[1] - p[1]) / dRad, Math.abs(p3[1] - p[1]) / dArc);
+      if (grade > 0.75) continue;
+      const h01 = p[1] / t.maxH;
+      if (p[1] < 2.5 || h01 > 0.55) continue;
+      placements.push({ p, rnd: rng(), rnd2: rng(), h01 });
+    }
+    const conifers = placements.filter((q) => q.rnd < 0.68 || q.h01 > 0.32);
+    const broads = placements.filter((q) => !(q.rnd < 0.68 || q.h01 > 0.32));
+    const tint = t.id === 1 ? 0.0 : 0.18;
+    const makeInst = (geo, mat, arr, pal, hMin, hMax) => {
+      if (!arr.length) return;
+      const im = new THREE.InstancedMesh(geo, mat, arr.length);
+      for (let i = 0; i < arr.length; i += 1) {
+        const q = arr[i];
+        const hgt = (hMin + q.rnd2 * (hMax - hMin)) * t.treeScale * (1.0 - q.h01 * 0.45);
+        dummy.position.set(q.p[0], q.p[1] - 1.6 * t.treeScale, q.p[2]);
+        dummy.rotation.set(0, q.rnd2 * 6.28, 0);
+        dummy.scale.set(hgt, hgt, hgt);
+        dummy.updateMatrix();
+        im.setMatrixAt(i, dummy.matrix);
+        col.setHex(pal[i % pal.length]).lerp(hazeTint, tint);
+        im.setColorAt(i, col);
+      }
+      im.instanceMatrix.needsUpdate = true;
+      im.instanceColor.needsUpdate = true;
+      im.computeBoundingSphere();
+      im.frustumCulled = true;
+      im.castShadow = false;
+      im.receiveShadow = false;
+      im.raycast = () => {};
+      im.name = `MountainForest_T${t.id}`;
+      parent.add(im);
+      inst.push({ im, full: arr.length });
+    };
+    makeInst(conifer, coniferMat, conifers, coniferPal, 11, 19);
+    makeInst(broad, broadMat, broads, broadPal, 9, 14);
+  }
+  return {
+    setQualityRatio(ratio) {
+      const r = clamp(ratio, 0.35, 1.0);
+      for (const e of inst) e.im.count = Math.max(1, Math.round(e.full * r));
+    },
+  };
+}
+
+// Tiny far hamlets (white walls + terracotta roofs, warm windows at night)
+function buildMountainHamlets(parent, shared, tier) {
+  const rng = mulberry32(55123);
+  const wallGeos = [];
+  const glowGeos = [];
+  const sites = [
+    { ang: -0.62, rt: 0.12, n: 9 },
+    { ang: -1.25, rt: 0.16, n: 7 },
+    { ang: 2.05, rt: 0.1, n: 10 },
+    { ang: 2.75, rt: 0.14, n: 8 },
+    { ang: -2.35, rt: 0.11, n: 9 },
+    { ang: 0.85, rt: 0.13, n: 6 },
+  ];
+  const cWall = [0xf1e8d8, 0xe9dcc4, 0xf4efe6, 0xe5d3b8];
+  const cRoof = [0xb4583a, 0xc0684a, 0xa55035];
+  const pushCol = (geo, hex) => {
+    const g = geo.index ? geo.toNonIndexed() : geo;
+    const n = g.attributes.position.count;
+    const arr = new Float32Array(n * 3);
+    const c = new THREE.Color(hex);
+    for (let i = 0; i < n; i += 1) {
+      arr[i * 3] = c.r;
+      arr[i * 3 + 1] = c.g;
+      arr[i * 3 + 2] = c.b;
+    }
+    g.setAttribute("color", new THREE.BufferAttribute(arr, 3));
+    wallGeos.push(g);
+  };
+  for (const site of sites) {
+    for (let i = 0; i < site.n; i += 1) {
+      const ang = site.ang + (rng() - 0.5) * 0.045;
+      const rt = site.rt + (rng() - 0.5) * 0.06;
+      const p = tier.surf(ang, Math.max(0.05, rt));
+      if (p[1] < 1.5) continue;
+      const w = 5 + rng() * 3;
+      const d = 6 + rng() * 4;
+      const h = 4 + rng() * 3.5;
+      const yaw = -ang + (rng() - 0.5) * 0.5;
+      const body = new THREE.BoxGeometry(w, h + 4, d);
+      body.translate(0, (h + 4) * 0.5 - 4, 0);
+      body.rotateY(yaw);
+      body.translate(p[0], p[1], p[2]);
+      pushCol(body, cWall[i % cWall.length]);
+      const roof = new THREE.CylinderGeometry(0.01, w * 0.62, 2.6, 4, 1);
+      roof.rotateY(Math.PI / 4);
+      roof.scale(1.0, 1.0, d / w);
+      roof.translate(0, h + 1.25, 0);
+      roof.rotateY(yaw);
+      roof.translate(p[0], p[1], p[2]);
+      pushCol(roof, cRoof[i % cRoof.length]);
+      if (rng() < 0.75) {
+        const win = new THREE.PlaneGeometry(1.6, 1.4);
+        const ca = Math.cos(ang);
+        const sa = Math.sin(ang);
+        win.lookAt(new THREE.Vector3(-ca, 0, -sa));
+        win.translate(p[0] - ca * (Math.max(w, d) * 0.55), p[1] + h * 0.5, p[2] - sa * (Math.max(w, d) * 0.55));
+        glowGeos.push(win);
+      }
+    }
+  }
+  const wallMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  injectAerialHaze(wallMat, shared, 0.12, { key: "hamlet", hazeBaseY: 34.0 });
+  const walls = new THREE.Mesh(safeMergeHorizon(wallGeos), wallMat);
+  walls.name = "MountainHamlets";
+  walls.raycast = () => {};
+  parent.add(walls);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0xffb35a,
+    transparent: true,
+    opacity: 0.0,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    fog: false,
   });
+  const glow = new THREE.Mesh(safeMergeHorizon(glowGeos), glowMat);
+  glow.name = "MountainHamletWindows";
+  glow.raycast = () => {};
+  glow.visible = false;
+  parent.add(glow);
+  return {
+    setNightMix(m) {
+      glowMat.opacity = smoothstep(0.35, 0.9, m) * 0.95;
+      glow.visible = glowMat.opacity > 0.01;
+    },
+  };
+}
+
+// Thin cascading waterfall threads following steep gullies on the estate-facing walls
+function buildMountainWaterfalls(parent, tiers) {
+  const uniforms = THREE.UniformsUtils.merge([
+    THREE.UniformsLib.fog,
+    { uTime: { value: 0 }, uNightMix: { value: 0 } },
+  ]);
+  const mat = new THREE.ShaderMaterial({
+    uniforms,
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      #include <fog_pars_vertex>
+      void main() {
+        vUv = uv;
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uTime;
+      uniform float uNightMix;
+      varying vec2 vUv;
+      #include <fog_pars_fragment>
+      ${HORIZON_NOISE_GLSL}
+      void main() {
+        float across = abs(vUv.x * 2.0 - 1.0);
+        float streak = hzNoise(vec2(vUv.x * 7.0, vUv.y * 9.0 + uTime * 1.6));
+        float a = (1.0 - smoothstep(0.35, 1.0, across)) * (0.55 + 0.45 * streak);
+        a *= smoothstep(0.0, 0.06, vUv.y) * (0.7 + 0.3 * smoothstep(0.8, 1.0, vUv.y));
+        a *= mix(0.85, 0.45, uNightMix);
+        if (a < 0.02) discard;
+        vec3 c = mix(vec3(0.96, 0.98, 1.0), vec3(0.52, 0.62, 0.78), uNightMix);
+        gl_FragColor = vec4(c, a);
+        #include <fog_fragment>
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    fog: true,
+  });
+  const geos = [];
+  const picks = [
+    { tier: 0, angs: [-0.9, -1.75, 2.35, 2.95, -2.7] },
+    { tier: 1, angs: [-0.4, -1.45, 1.95, -2.15] },
+  ];
+  for (const pk of picks) {
+    const t = tiers[pk.tier];
+    for (const a0 of pk.angs) {
+      // Choose the steepest nearby fall line
+      let best = a0;
+      let bestDrop = -1;
+      for (let k = -6; k <= 6; k += 1) {
+        const a = a0 + k * 0.006;
+        const hi = t.surf(a, t.crestT * 0.75)[1];
+        const lo = t.surf(a, t.crestT * 0.18)[1];
+        if (hi - lo > bestDrop) {
+          bestDrop = hi - lo;
+          best = a;
+        }
+      }
+      const steps = 14;
+      const width = 5.5 * (pk.tier === 0 ? 1.0 : 1.5);
+      const pos = [];
+      const uv = [];
+      const idx = [];
+      const ca = Math.cos(best);
+      const sa = Math.sin(best);
+      for (let i = 0; i <= steps; i += 1) {
+        const rt = lerp(t.crestT * 0.72, t.crestT * 0.06, i / steps);
+        const p = t.surf(best + Math.sin(i * 0.9) * 0.0015, rt);
+        const ox = p[0] - ca * 2.5;
+        const oz = p[2] - sa * 2.5;
+        const px = -sa * width * 0.5;
+        const pz = ca * width * 0.5;
+        pos.push(ox - px, p[1] + 1.2, oz - pz, ox + px, p[1] + 1.2, oz + pz);
+        uv.push(0, i / steps, 1, i / steps);
+      }
+      for (let i = 0; i < steps; i += 1) {
+        const q = i * 2;
+        idx.push(q, q + 1, q + 2, q + 1, q + 3, q + 2);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+      g.setIndex(idx);
+      geos.push(g);
+    }
+  }
+  const m = new THREE.Mesh(safeMergeHorizon(geos), mat);
+  m.name = "MountainWaterfalls";
+  m.raycast = () => {};
+  m.frustumCulled = true;
+  parent.add(m);
+  return uniforms;
+}
+
+function buildTectonicMountainAmphitheater(parent) {
+  const shared = {
+    uNight: { value: 0 },
+    uHazeDay: { value: new THREE.Color(0xa9bccb) },
+    uHazeNight: { value: new THREE.Color(0x1a2840) },
+    uHazeLow: { value: new THREE.Color(0xe8ddd0) },
+  };
+  const runnelMap = createMountainRunnelNormalMap();
+  const tiers = MOUNTAIN_TIERS.map((t) => ({ ...t }));
+  const mats = [];
+  for (const t of tiers) {
+    const mat = makeMountainTierMaterial(shared, t, runnelMap);
+    mats.push(mat);
+    t.surf = buildTierMesh(parent, t, mat);
+  }
+  const forestCtrl = buildMountainForests(parent, shared, tiers);
+  const hamletCtrl = buildMountainHamlets(parent, shared, tiers[0]);
+  const fallUniforms = buildMountainWaterfalls(parent, tiers);
+  return {
+    setNightMix(m) {
+      shared.uNight.value = m;
+      fallUniforms.uNightMix.value = m;
+      hamletCtrl.setNightMix(m);
+      for (const mat of mats) mat.envMapIntensity = lerp(1.0, 0.6, m);
+    },
+    update(t) {
+      fallUniforms.uTime.value = t;
+    },
+    setQualityRatio: forestCtrl.setQualityRatio,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -312,29 +839,12 @@ function buildValleyMistRibbons(parent) {
       uniform float uTime;
       uniform float uNightMix;
       varying vec2 vUv;
-
-      float hash21(vec2 p) {
-        p = fract(p * vec2(123.34, 456.21));
-        p += dot(p, p + 45.32);
-        return fract(p.x * p.y);
-      }
-      float vnoise(vec2 p) {
-        vec2 i = floor(p);
-        vec2 f = fract(p);
-        f = f * f * (3.0 - 2.0 * f);
-        return mix(
-          mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
-          mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x),
-          f.y
-        );
-      }
-
+      ${HORIZON_NOISE_GLSL}
       void main() {
         vec2 uv = vUv;
-        float n1 = vnoise(vec2(uv.x * 16.0 + uTime * 0.018, uv.y * 3.5));
-        float n2 = vnoise(vec2(uv.x * 34.0 - uTime * 0.012, uv.y * 7.0 + 3.1));
+        float n1 = hzNoise(vec2(uv.x * 16.0 + uTime * 0.018, uv.y * 3.5));
+        float n2 = hzNoise(vec2(uv.x * 34.0 - uTime * 0.012, uv.y * 7.0 + 3.1));
         float wisp = smoothstep(0.32, 0.78, n1 * 0.68 + n2 * 0.36);
-
         float vEnv = pow(sin(clamp(uv.y, 0.0, 1.0) * 3.14159265), 1.9);
         float hEnv = pow(sin(clamp(uv.x, 0.0, 1.0) * 3.14159265), 0.55);
         float alpha = wisp * vEnv * hEnv * mix(0.32, 0.20, uNightMix);
@@ -361,6 +871,50 @@ function buildValleyMistRibbons(parent) {
     const m = new THREE.Mesh(cyl, mistMat);
     m.position.y = b.y;
     m.frustumCulled = true;
+    m.raycast = () => {};
+    parent.add(m);
+  }
+
+  // Low-lying valley veils between the tiers: separate the ranges into painterly layers
+  const veilMat = new THREE.ShaderMaterial({
+    uniforms: mistUniforms,
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uTime;
+      uniform float uNightMix;
+      varying vec2 vUv;
+      ${HORIZON_NOISE_GLSL}
+      void main() {
+        float n1 = hzNoise(vec2(vUv.x * 60.0 + uTime * 0.01, vUv.y * 2.0));
+        float n2 = hzNoise(vec2(vUv.x * 170.0 - uTime * 0.02, vUv.y * 4.5 + 1.7));
+        float body = 1.0 - smoothstep(0.0, 1.0, vUv.y);
+        body = pow(body, 1.3) * smoothstep(0.0, 0.08, vUv.y);
+        float a = body * (0.55 + 0.45 * (n1 * 0.7 + n2 * 0.3)) * mix(0.5, 0.34, uNightMix);
+        if (a < 0.003) discard;
+        vec3 c = mix(vec3(0.95, 0.92, 0.88), vec3(0.20, 0.29, 0.44), uNightMix);
+        gl_FragColor = vec4(c, a);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  for (const v of [
+    { r: 770, y: -6, h: 52 },
+    { r: 985, y: -6, h: 85 },
+  ]) {
+    const geo = new THREE.CylinderGeometry(v.r, v.r, v.h, 96, 1, true);
+    geo.translate(0, v.y + v.h * 0.5, 0);
+    // CylinderGeometry uv.y: 1 at top, 0 at bottom (valley floor)
+    const m = new THREE.Mesh(geo, veilMat);
+    m.name = "ValleyVeil";
+    m.frustumCulled = false;
     m.raycast = () => {};
     parent.add(m);
   }
@@ -551,7 +1105,8 @@ function buildArchipelagoAndAcrossBayTown(parent, rockNormalMap) {
       const { wx, wz } = islandLocalToWorld(spec, lx, lz);
       const rad = 1.8 + rng() * 2.4;
       const squashY = 0.46 + rng() * 0.34;
-      const rock = new THREE.DodecahedronGeometry(rad, 1).toNonIndexed();
+      const rawRock = new THREE.DodecahedronGeometry(rad, 1);
+      const rock = rawRock.index ? rawRock.toNonIndexed() : rawRock;
       const rp = rock.attributes.position;
       for (let v = 0; v < rp.count; v += 1) {
         const vx = rp.getX(v);
@@ -714,7 +1269,8 @@ function buildIslandForestInstances(parent, treePlacements) {
 
   for (let l = 0; l < lobeSpecs.length; l += 1) {
     const [ox, oy, oz, sx, sy, sz] = lobeSpecs[l];
-    const lobe = new THREE.IcosahedronGeometry(1.0, 1).toNonIndexed();
+    const rawLobe = new THREE.IcosahedronGeometry(1.0, 1);
+    const lobe = rawLobe.index ? rawLobe.toNonIndexed() : rawLobe;
     const lp = lobe.attributes.position;
     const cols = new Float32Array(lp.count * 3);
     for (let i = 0; i < lp.count; i += 1) {
@@ -735,13 +1291,51 @@ function buildIslandForestInstances(parent, treePlacements) {
   }
   const pineCrownGeo = safeMergeHorizon(crownParts);
 
+  // Soft sculpted Mediterranean columnar cypress (no harsh angular cone pyramids)
   const cypParts = [];
-  for (let t = 0; t < 4; t += 1) {
-    const tierR = 0.92 - t * 0.16;
-    const tierH = 2.4 - t * 0.22;
-    const cone = new THREE.ConeGeometry(tierR, tierH, 7).toNonIndexed();
-    cone.translate(0, 1.9 + t * 1.18, 0);
-    cypParts.push(cone);
+  const rawCypTrunk = new THREE.CylinderGeometry(0.11, 0.22, 1.4, 6);
+  const cypTrunk = rawCypTrunk.index ? rawCypTrunk.toNonIndexed() : rawCypTrunk;
+  cypTrunk.translate(0, 0.7, 0);
+  {
+    const cnt = cypTrunk.attributes.position.count;
+    const cols = new Float32Array(cnt * 3);
+    for (let i = 0; i < cnt; i += 1) {
+      cols[i * 3 + 0] = 0.42;
+      cols[i * 3 + 1] = 0.36;
+      cols[i * 3 + 2] = 0.28;
+    }
+    cypTrunk.setAttribute("color", new THREE.BufferAttribute(cols, 3));
+  }
+  cypParts.push(cypTrunk);
+
+  const cypLobes = [
+    [0.0, 2.05, 0.0, 0.86, 1.12, 0.86],
+    [0.08, 3.05, -0.05, 0.74, 1.18, 0.74],
+    [-0.06, 4.05, 0.06, 0.58, 1.15, 0.58],
+    [0.02, 5.05, 0.0, 0.40, 1.02, 0.40],
+    [0.0, 5.85, 0.0, 0.22, 0.68, 0.22],
+  ];
+  for (let l = 0; l < cypLobes.length; l += 1) {
+    const [ox, oy, oz, sx, sy, sz] = cypLobes[l];
+    const rawLobe = new THREE.IcosahedronGeometry(1.0, 1);
+    const lobe = rawLobe.index ? rawLobe.toNonIndexed() : rawLobe;
+    const lp = lobe.attributes.position;
+    const cols = new Float32Array(lp.count * 3);
+    for (let i = 0; i < lp.count; i += 1) {
+      const vx = lp.getX(i);
+      const vy = lp.getY(i);
+      const vz = lp.getZ(i);
+      const ruffle = 0.86 + 0.24 * vnoise2(vx * 2.1 + l * 4.3, vz * 2.1 - vy * 1.8);
+      lp.setXYZ(i, ox + vx * sx * ruffle, oy + vy * sy * ruffle, oz + vz * sz * ruffle);
+      const sunT = clamp((oy + vy * sy - 1.2) / 5.4, 0.0, 1.0);
+      cTmp.copy(cShade).lerp(cSun, 0.2 + 0.8 * sunT);
+      cols[i * 3 + 0] = cTmp.r;
+      cols[i * 3 + 1] = cTmp.g;
+      cols[i * 3 + 2] = cTmp.b;
+    }
+    lobe.setAttribute("color", new THREE.BufferAttribute(cols, 3));
+    lobe.computeVertexNormals();
+    cypParts.push(lobe);
   }
   const cypressGeo = safeMergeHorizon(cypParts);
 
@@ -795,7 +1389,7 @@ function buildIslandForestInstances(parent, treePlacements) {
   if (cypresses.length) {
     cypInst = new THREE.InstancedMesh(
       cypressGeo,
-      new THREE.MeshStandardMaterial({ color: 0x2d4c33, roughness: 0.86 }),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.86 }),
       cypresses.length
     );
     cypInst.castShadow = false;
@@ -807,8 +1401,11 @@ function buildIslandForestInstances(parent, treePlacements) {
       dummy.scale.setScalar(t.scale * 0.92);
       dummy.updateMatrix();
       cypInst.setMatrixAt(i, dummy.matrix);
+      col.setHex(i % 3 === 0 ? 0x2f5337 : i % 3 === 1 ? 0x3b613f : 0x456b46);
+      cypInst.setColorAt(i, col);
     }
     cypInst.instanceMatrix.needsUpdate = true;
+    cypInst.instanceColor.needsUpdate = true;
     parent.add(cypInst);
   }
 
@@ -1243,7 +1840,7 @@ export function buildDistantHorizon() {
   group.name = "DistantCoastalHorizon";
 
   const rockNormalMap = createMountainRockNormalMap();
-  buildTectonicMountainAmphitheater(group, rockNormalMap);
+  const mountainCtrl = buildTectonicMountainAmphitheater(group);
   const mistUniforms = buildValleyMistRibbons(group);
   const { surfUniforms, forestCtrl, villageGlowMat } = buildArchipelagoAndAcrossBayTown(
     group,
@@ -1256,6 +1853,7 @@ export function buildDistantHorizon() {
   function setNightMix(mix) {
     nightMix = clamp(mix, 0, 1);
     mistUniforms.uNightMix.value = nightMix;
+    mountainCtrl.setNightMix(nightMix);
     surfUniforms.uNightMix.value = nightMix;
     if (villageGlowMat) {
       villageGlowMat.emissiveIntensity = lerp(0.72, 3.25, nightMix);
@@ -1266,14 +1864,15 @@ export function buildDistantHorizon() {
   }
 
   function setQualityTier(tier) {
-    if (tier === "low") forestCtrl.setQualityRatio(0.45);
-    else if (tier === "medium") forestCtrl.setQualityRatio(0.75);
-    else forestCtrl.setQualityRatio(1.0);
+    const ratio = tier === "low" ? 0.45 : tier === "medium" ? 0.75 : 1.0;
+    forestCtrl.setQualityRatio(ratio);
+    mountainCtrl.setQualityRatio(ratio);
   }
 
   function update(elapsed) {
     mistUniforms.uTime.value = elapsed;
     surfUniforms.uTime.value = elapsed;
+    mountainCtrl.update(elapsed);
 
     for (let i = 0; i < vessels.length; i += 1) {
       const v = vessels[i];

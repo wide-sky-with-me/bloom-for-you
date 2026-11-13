@@ -45,7 +45,7 @@
   </aside>
 
   <nav class="explore-capsule" id="explore-bar" aria-label="庄园探索与状态控制">
-    <span class="explore-hint" id="explore-hint">点击任意景致深入探索 · 拖拽旋转俯瞰 · 按 ` 查看性能统计</span>
+    <span class="explore-hint" id="explore-hint">点哪看哪 · 双击深入漫步 · 拖拽旋转 · 右键平移 · 滚轮缩放</span>
     <div class="explore-pills">
       <button type="button" class="explore-pill is-active" data-preset="aerialOverlook">俯瞰全景</button>
       <button type="button" class="explore-pill" data-preset="pondWaterfallWalk">睡莲鱼虾池</button>
@@ -56,12 +56,41 @@
       <button type="button" class="explore-pill" data-preset="harborPierWalk">海港游艇</button>
       <button type="button" class="explore-pill" data-preset="creekBridgeWalk">溪桥风车</button>
       <span class="explore-divider" aria-hidden="true"></span>
+      <button type="button" class="explore-pill explore-action explore-couple" id="btn-couple">💞 双人漫游</button>
       <button type="button" class="explore-pill explore-action" id="btn-letter">纪念信笺</button>
       <button type="button" class="explore-pill explore-action" id="btn-pause" aria-pressed="false">暂停</button>
       <button type="button" class="explore-pill explore-action" id="btn-daynight" aria-pressed="false">夜景</button>
       <button type="button" class="explore-pill explore-action" id="btn-reset">复位</button>
     </div>
   </nav>
+
+  <section class="couple-panel" id="couple-panel" aria-label="小贤贤与小冉子 双人漫游" hidden>
+    <div class="couple-row couple-who">
+      <button type="button" class="couple-btn couple-char is-active" data-couple-char="xian">👧 小贤贤</button>
+      <span class="couple-heart" aria-hidden="true">♥</span>
+      <button type="button" class="couple-btn couple-char" data-couple-char="ran">👦 小冉子</button>
+    </div>
+    <div class="couple-row">
+      <button type="button" class="couple-btn" data-couple-view="first">第一人称</button>
+      <button type="button" class="couple-btn" data-couple-view="second">第二人称</button>
+      <button type="button" class="couple-btn is-active" data-couple-view="third">第三人称</button>
+    </div>
+    <div class="couple-row couple-actions">
+      <button type="button" class="couple-btn" data-couple-action="holdhand">🤝 牵手 F</button>
+      <button type="button" class="couple-btn" data-couple-action="hug">🤗 拥抱 1</button>
+      <button type="button" class="couple-btn" data-couple-action="kiss">💋 亲亲 2</button>
+      <button type="button" class="couple-btn" data-couple-action="pat">🥰 摸头 3</button>
+      <button type="button" class="couple-btn" data-couple-action="dance">💃 跳舞 4</button>
+      <button type="button" class="couple-btn" data-couple-action="heart">❤️ 比心 5</button>
+      <button type="button" class="couple-btn" data-couple-action="carry">👰 公主抱 6</button>
+    </div>
+    <div class="couple-row">
+      <button type="button" class="couple-btn couple-interact" data-couple-interact>✋ 互动 E</button>
+      <button type="button" class="couple-btn couple-exit" data-couple-exit>退出漫游 Esc</button>
+    </div>
+  </section>
+  <div class="couple-prompt" id="couple-prompt" hidden></div>
+  <div class="couple-toast" id="couple-toast" role="status" aria-live="polite" hidden></div>
 
   <div class="letter-backdrop" id="letter-modal" role="dialog" aria-modal="true" aria-labelledby="letter-salutation" hidden>
     <article class="letter-sheet">

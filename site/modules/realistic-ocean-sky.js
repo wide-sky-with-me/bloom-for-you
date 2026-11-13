@@ -275,18 +275,24 @@ const OCEAN_FRAGMENT = /* glsl */ `
     vec3 specCol = mix(vec3(1.00, 0.88, 0.66), vec3(0.76, 0.86, 1.00), uNightMix);
     col += specCol * (specSharp + specSoft);
 
-    // Organic aerated shoreline & reef surf foam where vDepth is shallow
-    if (vDepth < 1.35) {
-      float shoreWave = sin(vDepth * 9.5 - uTime * 2.30) * 0.5 + 0.5;
-      float lace = vnoise(vWorldPos.xz * 2.4 + vec2(uTime * 0.25, -uTime * 0.18));
-      float foamBand = (1.0 - smoothstep(0.02, 1.15, vDepth)) * (0.48 + 0.52 * shoreWave);
-      float foamMask = smoothstep(0.36, 0.68, foamBand * (0.55 + 0.65 * lace));
-      vec3 foamCol = mix(vec3(0.98, 0.96, 0.93), vec3(0.55, 0.66, 0.80), uNightMix);
-      col = mix(col, foamCol, foamMask * mix(0.88, 0.62, uNightMix));
+    // Organic aerated shoreline & reef surf foam (feathered multi-wave lace instead of flat hard band)
+    if (vDepth < 1.65) {
+      float waveA = sin(vDepth * 10.5 - uTime * 2.15 + vWorldPos.x * 0.16) * 0.5 + 0.5;
+      float waveB = sin(vDepth * 21.0 - uTime * 3.10 - vWorldPos.z * 0.22) * 0.5 + 0.5;
+      float laceA = vnoise(vWorldPos.xz * 2.1 + vec2(uTime * 0.22, -uTime * 0.16));
+      float laceB = vnoise(vWorldPos.xz * 5.2 - vec2(uTime * 0.34, uTime * 0.28));
+      float swashEnv = smoothstep(0.02, 0.24, vDepth) * (1.0 - smoothstep(0.35, 1.45, vDepth));
+      float wavePattern = 0.28 * pow(waveA, 1.6) + 0.22 * pow(waveB, 2.2) + 0.50 * swashEnv;
+      float laceNoise = laceA * 0.65 + laceB * 0.35;
+      float foamMask = smoothstep(0.42, 0.78, wavePattern * (0.45 + 0.75 * laceNoise));
+      float innerRim = (1.0 - smoothstep(0.0, 0.28, vDepth)) * smoothstep(0.32, 0.68, laceNoise) * 0.52;
+      foamMask = clamp(foamMask + innerRim, 0.0, 1.0);
+      vec3 foamCol = mix(vec3(0.97, 0.96, 0.93), vec3(0.54, 0.66, 0.80), uNightMix);
+      col = mix(col, foamCol, foamMask * mix(0.84, 0.58, uNightMix));
     }
 
-    // Translucent alpha right at the wet-sand / submerged-step waterline
-    float alpha = clamp(smoothstep(0.0, 0.34, vDepth) * 0.68 + 0.32, 0.32, 0.97);
+    // Smooth wet-sand alpha feather right up to Y=0 waterline (zero hard cutout edge)
+    float alpha = clamp(smoothstep(0.0, 0.52, vDepth) * 0.92 + 0.05, 0.05, 0.97);
     if (dist > 145.0) alpha = 0.99;
 
     // Exponential atmospheric horizon haze matching scene.fog
