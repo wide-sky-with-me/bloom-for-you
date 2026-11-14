@@ -17,8 +17,8 @@ import { instantiateGLB } from "./assets-loader.js";
 import { clamp, lerp } from "./world-spatial.js";
 
 export const COUPLE_DIMS = {
-  xian: { hipY: 0.555, eyeY: 1.04, headCenterY: 1.05, topY: 1.28, label: "小贤贤", accent: "#ff7aa8" },
-  ran: { hipY: 0.610, eyeY: 1.13, headCenterY: 1.14, topY: 1.38, label: "小冉子", accent: "#6aa8ff" },
+  xian: { hipY: 0.918, eyeY: 1.44, headCenterY: 1.45, topY: 1.58, label: "小贤贤", accent: "#ff7aa8" },
+  ran: { hipY: 1.027, eyeY: 1.59, headCenterY: 1.60, topY: 1.72, label: "小冉子", accent: "#6aa8ff" },
 };
 
 const KNOWN_CLIPS = [
@@ -103,7 +103,7 @@ function createNameplateTag(scene, id, label, accentHex, parentNode) {
   plane.billboardMode = Mesh.BILLBOARDMODE_ALL;
   plane.isPickable = false;
   plane.renderingGroupId = 1;
-  plane.position.set(0, 1.56, 0);
+  plane.position.set(0, 1.92, 0);
   return plane;
 }
 
@@ -142,7 +142,14 @@ export function createRiggedCharacter(scene, opts = {}) {
     for (const rn of inst.rootNodes) {
       const descendants = [rn, ...rn.getDescendants(false)];
       for (const node of descendants) {
-        if (node.name && (node.name === "Head" || node.name.endsWith("_HeadBone") || node.name.endsWith(".Head"))) {
+        if (
+          node.name &&
+          (node.name === "Head" ||
+            node.name === "J_Bip_C_Head" ||
+            node.name.endsWith("_HeadBone") ||
+            node.name.endsWith(".Head") ||
+            node.name.endsWith("_J_Bip_C_Head"))
+        ) {
           if (node instanceof TransformNode && !(node instanceof Mesh)) {
             headBoneNode = node;
           }
@@ -155,35 +162,39 @@ export function createRiggedCharacter(scene, opts = {}) {
         node.alwaysSelectAsActiveMesh = true;
         node.metadata = { interactive: { id: `char-${id}`, label: name } };
 
+        const matName = node.material?.name || "";
         const isDetailFaceOrTrim =
-          /Eyes|Lash|Brows|Mouth|Lip|Gold|Ribbon|SakuraPin|RosePin|Accent/i.test(mName);
+          /Face_Features|Features|EyeHighlight|EyeIris|EyeWhite|FaceBrow|FaceEyelash|FaceEyeline|FaceMouth|Eyes|Lash|Brows|Mouth|Lip|Gold|Ribbon|SakuraPin|RosePin|Accent|Vision/i.test(
+            `${mName}_${matName}`
+          );
 
-        if (shadowGen && !/Eyes|Lash|Brows|Mouth|SakuraPin|RosePin/i.test(mName)) {
+        if (shadowGen && !/Features|EyeHighlight|FaceBrow|FaceEyelash|FaceEyeline|Eyes|Lash|Brows|Mouth|SakuraPin|RosePin/i.test(`${mName}_${matName}`)) {
           shadowGen.addShadowCaster(node, false);
         }
         node.receiveShadows = true;
 
-        // Selective soft outline strictly excluding eyes/lashes/brows/mouth/pins/ribbons
-        if (!isDetailFaceOrTrim) {
-          node.renderOutline = true;
-          node.outlineWidth = 0.0065;
-          node.outlineColor = new Color3(0.24, 0.16, 0.16);
-        } else {
-          node.renderOutline = false;
-        }
+        // Disable coarse stencil outline extrusion: VRM meshes have tight layered clothing & double-sided hair
+        // where stencil extrusion causes inner skin/backface outlines to bleed through pants and hair.
+        node.renderOutline = false;
 
-        // Gentle warm face/skin luminosity so character features remain bright under trees/indoors
+        // Genshin-style luminous anime character fill & bright eyes
         if (node.material instanceof PBRMaterial) {
-          const matName = node.material.name || "";
-          if (/Face|Skin/i.test(matName)) {
-            node.material.emissiveColor = new Color3(0.06, 0.042, 0.036);
-          }
-          if (/Eye/i.test(matName)) {
-            node.material.emissiveColor = new Color3(0.08, 0.08, 0.09);
+          if (/Face_00|Body_00|Face|Skin/i.test(matName) && !/Eyeline|Eyelash|Brow|Mouth/i.test(matName)) {
+            node.material.emissiveColor = new Color3(0.11, 0.085, 0.075);
+            node.material.roughness = Math.max(0.72, node.material.roughness || 0.76);
+          } else if (/EyeIris|EyeHighlight|EyeWhite/i.test(matName)) {
+            node.material.emissiveColor = new Color3(0.16, 0.16, 0.18);
+          } else if (/Hair/i.test(matName)) {
+            node.material.emissiveColor = new Color3(0.055, 0.048, 0.052);
+          } else if (/Tops|Shoes|Bottoms|GenshinCoat/i.test(matName) && !/Vision/i.test(matName)) {
+            node.material.emissiveColor = new Color3(0.035, 0.035, 0.042);
           }
         }
 
-        if (/Head|Eyes|Lash|Brows|Mouth|Hair|Ribbon|SakuraPin/i.test(mName) || (id === "xian" && /Gold/i.test(mName))) {
+        if (
+          /Head|Face_Skin|Face_Features|Eyes|Lash|Brows|Mouth|Hair|Ribbon|SakuraPin/i.test(mName) ||
+          (id === "xian" && /Gold/i.test(mName))
+        ) {
           headMeshes.push(node);
         }
 
@@ -234,6 +245,7 @@ export function createRiggedCharacter(scene, opts = {}) {
     root,
     tag,
     hipY: dims.hipY,
+    eyeY: dims.eyeY,
     pos: new Vector3(0, 0, 0),
     yaw: 0,
     rootQuat: null,
@@ -302,7 +314,7 @@ export function createRiggedCharacter(scene, opts = {}) {
         headBoneNode.computeWorldMatrix(true);
         const abs = headBoneNode.getAbsolutePosition();
         if (Number.isFinite(abs.x) && Number.isFinite(abs.y) && Number.isFinite(abs.z)) {
-          return abs.add(new Vector3(0, 0.14, 0));
+          return abs.add(new Vector3(0, 0.10, 0));
         }
       }
       return Vector3.TransformCoordinates(new Vector3(0, dims.headCenterY, 0), root.getWorldMatrix());

@@ -62,14 +62,14 @@ def _make_villa_textures():
         TEX_CACHE / "villa_plaster.png",
         256,
         256,
-        lambda u, v: (*mix_rgb((0.95, 0.90, 0.82), (0.99, 0.96, 0.91), fbm2(u * 8, v * 8, seed=101, octaves=3)), 1.0),
+        lambda u, v: (*mix_rgb((0.97, 0.95, 0.90), (1.00, 0.99, 0.96), fbm2(u * 8, v * 8, seed=101, octaves=3)), 1.0),
     )
     img_stone = make_packed_texture(
         TEX_CACHE / "villa_limestone.png",
         256,
         256,
         lambda u, v: (
-            lambda n, seam: (*mix_rgb(mix_rgb((0.83, 0.79, 0.72), (0.91, 0.88, 0.82), n), (0.64, 0.60, 0.54), seam * 0.55), 1.0)
+            lambda n, seam: (*mix_rgb(mix_rgb((0.83, 0.85, 0.90), (0.94, 0.95, 0.98), n), (0.62, 0.66, 0.74), seam * 0.50), 1.0)
         )(
             fbm2(u * 8, v * 8, seed=102, octaves=3),
             1.0 if ((v * 5.0) % 1.0) < 0.06 or (((u * 2.5 + (0.5 if int(v * 5.0) % 2 else 0.0)) % 1.0) < 0.05) else 0.0,
@@ -99,7 +99,7 @@ def _make_villa_textures():
         256,
         256,
         lambda u, v: (
-            lambda wave, n: (*mix_rgb((0.68, 0.31, 0.20), (0.86, 0.48, 0.33), clamp01(0.45 + 0.32 * wave + (n - 0.5) * 0.4)), 1.0)
+            lambda wave, n: (*mix_rgb((0.18, 0.36, 0.66), (0.34, 0.58, 0.88), clamp01(0.45 + 0.32 * wave + (n - 0.5) * 0.32)), 1.0)
         )(math.sin(u * math.tau * 8.0), fbm2(u * 10, v * 10, seed=104, octaves=3)),
     )
     img_zellige = make_packed_texture(
@@ -459,16 +459,16 @@ def build_villa_estate_glb(out_path: Path) -> None:
         strength=1.4,
     )
 
-    m_plaster = make_pbr_material("Villa_Plaster", (0.97, 0.94, 0.88), roughness=0.78, image=tex["plaster"], normal_image=nrm_plaster, normal_strength=0.38)
-    m_stone = make_pbr_material("Villa_Limestone", (0.87, 0.84, 0.77), roughness=0.76, image=tex["stone"], normal_image=nrm_stone, normal_strength=0.52, roughness_image=rgh_stone)
-    m_coping = make_pbr_material("Villa_Coping", (0.93, 0.90, 0.84), roughness=0.68, image=tex["plaster"], normal_image=nrm_stone, normal_strength=0.28)
+    m_plaster = make_pbr_material("Villa_Plaster", (0.99, 0.97, 0.93), roughness=0.74, image=tex["plaster"], normal_image=nrm_plaster, normal_strength=0.30)
+    m_stone = make_pbr_material("Villa_Limestone", (0.92, 0.93, 0.96), roughness=0.72, image=tex["stone"], normal_image=nrm_stone, normal_strength=0.45, roughness_image=rgh_stone)
+    m_coping = make_pbr_material("Villa_Coping", (0.96, 0.95, 0.92), roughness=0.64, image=tex["plaster"], normal_image=nrm_stone, normal_strength=0.25)
     m_parquet = make_pbr_material("Villa_Parquet", (0.74, 0.55, 0.37), roughness=0.42, image=tex["parquet"], normal_image=nrm_parquet, normal_strength=0.30, roughness_image=rgh_parquet, specular=0.48)
     m_cedar = make_pbr_material("Villa_Cedar", (0.60, 0.41, 0.25), roughness=0.56, image=tex["parquet"], normal_image=nrm_parquet, normal_strength=0.45, roughness_image=rgh_parquet)
     m_walnut = make_pbr_material("Villa_Walnut", (0.34, 0.21, 0.13), roughness=0.38, normal_image=nrm_parquet, normal_strength=0.22, specular=0.45)
     m_oak = make_pbr_material("Villa_NaturalOak", (0.76, 0.58, 0.38), roughness=0.46, normal_image=nrm_parquet, normal_strength=0.22)
-    m_roof = make_pbr_material("Villa_TerracottaRoof", (0.81, 0.44, 0.30), roughness=0.70, image=tex["roof"], normal_image=nrm_roof, normal_strength=0.65, double_sided=True)
-    m_pot = make_pbr_material("Villa_TerracottaPot", (0.74, 0.39, 0.27), roughness=0.70)
-    m_shutter = make_pbr_material("Villa_SageShutter", (0.43, 0.55, 0.46), roughness=0.54)
+    m_roof = make_pbr_material("Villa_TerracottaRoof", (0.96, 0.98, 1.00), roughness=0.62, image=tex["roof"], normal_image=nrm_roof, normal_strength=0.55, double_sided=True)
+    m_pot = make_pbr_material("Villa_TerracottaPot", (0.84, 0.44, 0.32), roughness=0.66)
+    m_shutter = make_pbr_material("Villa_SageShutter", (0.28, 0.62, 0.72), roughness=0.50)
     m_bois_sage = make_pbr_material("Villa_BoiserieSage", (0.76, 0.84, 0.76), roughness=0.60, normal_image=nrm_plaster, normal_strength=0.22)
     m_bois_study = make_pbr_material("Villa_BoiserieStudy", (0.86, 0.81, 0.72), roughness=0.62, normal_image=nrm_plaster, normal_strength=0.22)
     m_bois_rose = make_pbr_material("Villa_BoiserieRose", (0.92, 0.83, 0.85), roughness=0.60, normal_image=nrm_plaster, normal_strength=0.22)
@@ -487,8 +487,8 @@ def build_villa_estate_glb(out_path: Path) -> None:
     m_linen = make_pbr_material("Villa_IvoryLinen", (0.98, 0.96, 0.91), roughness=0.76)
     m_rug_rose = make_pbr_material("Villa_RugRose", (0.94, 0.86, 0.86), roughness=0.92, image=img_rug_rose_hq, normal_image=nrm_rug, normal_strength=0.55)
     m_rug_sage = make_pbr_material("Villa_RugSage", (0.88, 0.90, 0.86), roughness=0.92, image=img_rug_sage_hq, normal_image=nrm_rug, normal_strength=0.55)
-    m_leaf = make_pbr_material("Villa_VineLeaf", (0.27, 0.45, 0.22), roughness=0.78)
-    m_hyd = make_pbr_material("Villa_HydrangeaPink", (0.96, 0.61, 0.73), roughness=0.65)
+    m_leaf = make_pbr_material("Villa_VineLeaf", (0.28, 0.70, 0.34), roughness=0.72)
+    m_hyd = make_pbr_material("Villa_HydrangeaPink", (1.00, 0.64, 0.80), roughness=0.62)
     m_amber = make_pbr_material("Villa_LampEmber", (1.0, 0.80, 0.44), roughness=0.25, emission=(1.0, 0.62, 0.24), emission_strength=0.42)
     m_emerald = make_pbr_material("Villa_EmeraliteGlass", (0.95, 0.90, 0.76), roughness=0.45, emission=(1.0, 0.82, 0.50), emission_strength=0.10)
     m_globe = make_pbr_material("Villa_AntiqueGlobe", (1.0, 1.0, 1.0), roughness=0.42, image=tex["globe"])

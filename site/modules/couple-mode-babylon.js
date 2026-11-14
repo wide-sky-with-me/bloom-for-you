@@ -596,14 +596,14 @@ export function createCoupleMode({
       if (ran.action?.name !== "carry") ran.startAction("carry", 9999);
       const fwd = new Vector3(-Math.sin(ran.yaw), 0, -Math.cos(ran.yaw));
       const rgt = new Vector3(Math.cos(ran.yaw), 0, -Math.sin(ran.yaw));
-      const yAxis = rgt.scale(-0.94).add(UP_VEC.scale(0.34)).normalize(); // head toward ran's Left, tilted slightly up
-      const faceDir = UP_VEC.scale(0.84).subtract(fwd.scale(0.54)).normalize();
+      const yAxis = rgt.scale(-0.96).add(UP_VEC.scale(0.28)).normalize(); // head toward ran's Left, tilted gently up
+      const faceDir = UP_VEC.scale(0.68).add(fwd.scale(0.73)).normalize(); // back rests against ran's arms/chest, face visible upward-forward
       const rootZ = faceDir.scale(-1);
       const rootX = Vector3.Cross(yAxis, rootZ).normalize();
       const orthY = Vector3.Cross(rootZ, rootX).normalize();
       const q = basisQuaternion(rootX, orthY, rootZ);
-      const cradleCenter = ran.pos.add(fwd.scale(0.28)).add(UP_VEC.scale(ran.hipY + 0.08));
-      const xPos = cradleCenter.subtract(orthY.scale(xian.hipY - 0.04));
+      const cradleCenter = ran.pos.add(fwd.scale(0.36)).add(UP_VEC.scale(ran.hipY + 0.12));
+      const xPos = cradleCenter.subtract(orthY.scale(xian.hipY - 0.05));
       xian.state = "carried";
       xian.speed = 0;
       xian.place(xPos.x, xPos.y, xPos.z, ran.yaw, q);
@@ -978,7 +978,7 @@ export function createCoupleMode({
     const dz = pt.z - L.pos.z;
     camYaw = Math.atan2(-dx, -dz);
     L.yaw = camYaw;
-    const eyeY = L.pos.y + 1.05;
+    const eyeY = L.pos.y + (L.eyeY || 1.45);
     camPitch = clamp(Math.atan2(pt.y - eyeY, Math.hypot(dx, dz)), -0.65, 0.55);
   }
 

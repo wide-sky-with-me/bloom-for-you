@@ -27,6 +27,7 @@ REQUIRED_SITE_FILES = (
     "modules/harbor-villa-world.js",
     "modules/couple-rigged-controller.js",
     "modules/couple-mode-babylon.js",
+    "modules/genshin-toon-plugin.js",
     "modules/exploration-camera.js",
     "modules/gift-config.js",
     "assets/flower-song.woff2",

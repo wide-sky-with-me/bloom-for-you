@@ -111,18 +111,19 @@ function buildPeninsulaTerrain(scene, root, shadowGen) {
   const normals = new Float32Array(count * 3);
   VertexData.ComputeNormals(positions, indices, normals, { useRightHandedSystem: true });
 
-  const cDeepBed = hexToColor3(0x687572);
-  const cShallowBed = hexToColor3(0x98927c);
-  const cWetSand = hexToColor3(0xb8a17c);
-  const cDrySand = hexToColor3(0xdfd0b0);
-  const cCliffLight = hexToColor3(0x5e5850);
-  const cCliffDark = hexToColor3(0x413d38);
-  const cGrassMid = hexToColor3(0x577c42);
-  const cGrassSun = hexToColor3(0x698d4c);
-  const cGrassDeep = hexToColor3(0x4b6e3a);
-  const cCreekCobble = hexToColor3(0x74776c);
-  const cQuayUnder = hexToColor3(0x9e988e);
-  const cPondBed = hexToColor3(0xcbe2d9);
+  // Genshin Impact Teyvat Coastal Peninsula Palette (Mondstadt emerald meadow + warm cream sand + cel slate cliffs)
+  const cDeepBed = hexToColor3(0x3a8490);
+  const cShallowBed = hexToColor3(0x88cfc4);
+  const cWetSand = hexToColor3(0xdcc292);
+  const cDrySand = hexToColor3(0xf6e6be);
+  const cCliffLight = hexToColor3(0x737994);
+  const cCliffDark = hexToColor3(0x4c536e);
+  const cGrassMid = hexToColor3(0x52b846);
+  const cGrassSun = hexToColor3(0x82dc52);
+  const cGrassDeep = hexToColor3(0x3a944a);
+  const cCreekCobble = hexToColor3(0x6d9e8e);
+  const cQuayUnder = hexToColor3(0xaab4c2);
+  const cPondBed = hexToColor3(0xb8eee6);
 
   for (let i = 0; i < count; i += 1) {
     const x = positions[i * 3 + 0];
@@ -227,10 +228,11 @@ function buildPeninsulaTerrain(scene, root, shadowGen) {
   cvd.indices = cIdx;
   cvd.applyToMesh(creekMesh, false);
   const creekMat = makePbrMat("CreekWaterMat", scene, {
-    color: 0x5fb4b8,
-    roughness: 0.14,
-    metallic: 0.06,
-    alpha: 0.84,
+    color: 0x3ed2df,
+    roughness: 0.12,
+    metallic: 0.08,
+    alpha: 0.82,
+    emissive: 0x0b4b5c,
     doubleSided: true,
   });
   creekMesh.material = creekMat;
@@ -366,7 +368,13 @@ function buildCourtyardAndTrails(scene, root) {
   fPool.parent = ftnRoot;
   const fWater = CreateCylinder("FountainWater", { diameter: 3.65, height: 0.08, tessellation: 24 }, scene);
   fWater.position.y = 0.42;
-  fWater.material = makePbrMat("FtnWaterMat", scene, { color: 0x5ab8bc, roughness: 0.12, alpha: 0.8 });
+  fWater.material = makePbrMat("FtnWaterMat", scene, {
+    color: 0x3ee8f5,
+    emissive: 0x1680a6,
+    emissiveIntensity: 0.55,
+    roughness: 0.1,
+    alpha: 0.84,
+  });
   fWater.parent = ftnRoot;
   const fPed = CreateCylinder("FountainPedestal", { diameterTop: 0.44, diameterBottom: 0.62, height: 1.85, tessellation: 14 }, scene);
   fPed.position.y = 0.95;
@@ -376,6 +384,37 @@ function buildCourtyardAndTrails(scene, root) {
   fBowl.position.y = 1.82;
   fBowl.material = limestoneMat;
   fBowl.parent = ftnRoot;
+
+  // Teyvat Hydro-Anemo Waypoint Crystal Crown atop the Fountain
+  const waypointPivot = new TransformNode("CourtyardWaypointCrystal", scene);
+  waypointPivot.position.y = 2.68;
+  waypointPivot.parent = ftnRoot;
+  const crystalMat = makePbrMat("TeyvatWaypointCrystalMat", scene, {
+    color: 0x62f2ff,
+    emissive: 0x28d6ff,
+    emissiveIntensity: 1.25,
+    roughness: 0.08,
+    metallic: 0.15,
+  });
+  const crystalRingMat = makePbrMat("TeyvatWaypointGoldMat", scene, {
+    color: 0xf7cf6b,
+    emissive: 0x6b4b12,
+    emissiveIntensity: 0.35,
+    roughness: 0.22,
+    metallic: 0.86,
+  });
+  const wTop = CreateCylinder("WaypointCrystalTop", { diameterTop: 0.01, diameterBottom: 0.34, height: 0.56, tessellation: 6 }, scene);
+  wTop.position.y = 0.28;
+  wTop.material = crystalMat;
+  wTop.parent = waypointPivot;
+  const wBot = CreateCylinder("WaypointCrystalBot", { diameterTop: 0.34, diameterBottom: 0.01, height: 0.38, tessellation: 6 }, scene);
+  wBot.position.y = -0.19;
+  wBot.material = crystalMat;
+  wBot.parent = waypointPivot;
+  const wHalo = CreateTorus("WaypointHalo", { diameter: 0.78, thickness: 0.038, tessellation: 28 }, scene);
+  wHalo.rotation.x = Math.PI * 0.36;
+  wHalo.material = crystalRingMat;
+  wHalo.parent = waypointPivot;
 
   // Sculpted Cast-Iron French Villa Mailbox (-10.8, 2.235, 9.4)
   const mailbox = new TransformNode("CourtyardMailbox", scene);
@@ -526,7 +565,7 @@ function buildCourtyardAndTrails(scene, root) {
   bPost.thinInstanceSetBuffer("matrix", pMats, 16, true);
   bBulb.thinInstanceSetBuffer("matrix", lMats, 16, true);
 
-  return { courtRefs: { mailbox, flagPivot, wheels, bell }, bulbMat };
+  return { courtRefs: { mailbox, flagPivot, wheels, bell, waypointPivot }, bulbMat };
 }
 
 function buildDistantHorizonAndArchipelago(scene, root, fleetContainer) {
@@ -551,9 +590,9 @@ function buildDistantHorizonAndArchipelago(scene, root, fleetContainer) {
   const mtnCols = [];
   const mtnIdx = [];
   const rings = [
-    { r0: 540, r1: 720, hPeak: 118, col: [0.32, 0.41, 0.36], a0: -2.4, a1: 0.7 },
-    { r0: 710, r1: 940, hPeak: 175, col: [0.34, 0.42, 0.49], a0: -2.55, a1: 0.85 },
-    { r0: 930, r1: 1220, hPeak: 245, col: [0.44, 0.47, 0.58], a0: -2.7, a1: 1.05 },
+    { r0: 540, r1: 720, hPeak: 118, col: [0.30, 0.62, 0.56], a0: -2.4, a1: 0.7 },
+    { r0: 710, r1: 940, hPeak: 175, col: [0.34, 0.56, 0.76], a0: -2.55, a1: 0.85 },
+    { r0: 930, r1: 1220, hPeak: 245, col: [0.46, 0.62, 0.88], a0: -2.7, a1: 1.05 },
   ];
   let vBase = 0;
   for (const ring of rings) {
@@ -564,11 +603,13 @@ function buildDistantHorizonAndArchipelago(scene, root, fleetContainer) {
       const rad = lerp(ring.r0, ring.r1, u);
       const env = Math.sin(u * Math.PI);
       for (let a = 0; a <= azSteps; a += 1) {
-        const ang = lerp(ring.a0, ring.a1, a / azSteps);
+        const aU = a / azSteps;
+        const endTaper = smoothstep(0.0, 0.18, aU) * smoothstep(1.0, 0.82, aU);
+        const ang = lerp(ring.a0, ring.a1, aU);
         const x = Math.cos(ang) * rad;
         const z = Math.sin(ang) * rad;
         const ridge = 1.0 - Math.abs(Math.sin(ang * 7.2 + x * 0.006)) * 0.55;
-        const y = Math.max(-4, -3 + env * ring.hPeak * (0.52 + 0.48 * ridge));
+        const y = Math.max(-4, -3 + env * endTaper * ring.hPeak * (0.52 + 0.48 * ridge));
         mtnPts.push(x, y, z);
         const mist = smoothstep(20, ring.hPeak, y);
         mtnCols.push(
@@ -632,10 +673,10 @@ function buildDistantHorizonAndArchipelago(scene, root, fleetContainer) {
         const wx = sp.cx + lx * ca - lz * sa;
         const wz = sp.cz + lx * sa + lz * ca;
         const profile = Math.pow(Math.max(0, 1 - rv * rv), 1.35);
-        const wy = rv > 0.92 ? -3.5 : -1.2 + profile * sp.h * (0.82 + 0.2 * Math.sin(ang * 2));
+        const wy = rv > 0.92 ? -3.5 : -1.2 + profile * sp.h * (0.82 + 0.2 * rv * Math.sin(ang * 2));
         iPos.push(wx, wy, wz);
         const greenMix = smoothstep(0.6, 5.0, wy);
-        iCol.push(lerp(0.55, 0.30, greenMix), lerp(0.51, 0.45, greenMix), lerp(0.42, 0.24, greenMix), 1.0);
+        iCol.push(lerp(0.86, 0.28, greenMix), lerp(0.80, 0.62, greenMix), lerp(0.62, 0.44, greenMix), 1.0);
       }
     }
     for (let r = 0; r < segV; r += 1) {
@@ -696,35 +737,46 @@ function buildDistantHorizonAndArchipelago(scene, root, fleetContainer) {
   islMesh.material = hillMat;
   islMesh.isPickable = false;
 
-  // Across-Bay Harbor Village Buildings & Campanile Bell Tower on Island 0 (248, -74)
-  const vWallMat = makePbrMat("VillageWallMat", scene, { color: 0xf4ead8, roughness: 0.85 });
-  const vRoofMat = makePbrMat("VillageRoofMat", scene, { color: 0xc26c50, roughness: 0.82 });
+  // Across-Bay Harbor Village Buildings & Campanile Bell Tower on Island 0 (248, -74) (Mondstadt ivory + azure slate roofs)
+  const vWallMat = makePbrMat("VillageWallMat", scene, { color: 0xfbf4e4, roughness: 0.85 });
+  const vRoofMat = makePbrMat("VillageRoofMat", scene, { color: 0x3b6cb8, roughness: 0.74 });
   const villageGlowMat = makePbrMat("VillageGlowMat", scene, {
     color: 0xffe8b0,
     emissive: 0xffb85c,
     emissiveIntensity: 0.78,
     roughness: 0.25,
   });
+  const sp0 = specs[0];
+  const sp0Ca = Math.cos(sp0.ang);
+  const sp0Sa = Math.sin(sp0.ang);
   for (let h = 0; h < 18; h += 1) {
-    const bx = 216 + (rng() - 0.5) * 34;
-    const bz = -68 + (rng() - 0.5) * 38;
-    const by = 4.5 + rng() * 9.0;
-    const w = 3.5 + rng() * 3.2;
-    const bh = 3.2 + rng() * 3.0;
-    const house = CreateBox(`VillageHouse_${h}`, { width: w, height: bh, depth: w * 0.85 }, scene);
-    house.position.set(bx, by + bh * 0.5, bz);
+    const rv = 0.28 + rng() * 0.36;
+    const ang = Math.PI + (rng() - 0.5) * 1.9;
+    const wobble = 1.0 + 0.18 * Math.sin(ang * 3 + sp0.cx) + 0.1 * Math.cos(ang * 5);
+    const lx = Math.cos(ang) * sp0.rx * rv * wobble;
+    const lz = Math.sin(ang) * sp0.rz * rv * wobble;
+    const bx = sp0.cx + lx * sp0Ca - lz * sp0Sa;
+    const bz = sp0.cz + lx * sp0Sa + lz * sp0Ca;
+    const profile = Math.pow(Math.max(0, 1 - rv * rv), 1.35);
+    const surfY = -1.2 + profile * sp0.h * (0.82 + 0.2 * rv * Math.sin(ang * 2));
+    const w = 3.5 + rng() * 3.0;
+    const bh = 3.2 + rng() * 2.8;
+    const foundationDepth = 4.6;
+    const totalH = bh + foundationDepth;
+    const house = CreateBox(`VillageHouse_${h}`, { width: w, height: totalH, depth: w * 0.85 }, scene);
+    house.position.set(bx, surfY + bh * 0.5 - foundationDepth * 0.5, bz);
     house.rotation.y = 0.25 + (rng() - 0.5) * 0.4;
     house.material = vWallMat;
     house.parent = hor;
     house.isPickable = false;
     const roof = CreateBox(`VillageRoof_${h}`, { width: w + 0.4, height: 0.9, depth: w * 0.9 }, scene);
-    roof.position.set(bx, by + bh + 0.4, bz);
+    roof.position.set(bx, surfY + bh + 0.4, bz);
     roof.rotation.y = house.rotation.y;
     roof.material = vRoofMat;
     roof.parent = hor;
     roof.isPickable = false;
-    const win = CreateBox(`VillageWin_${h}`, { width: w * 0.55, height: 0.65, depth: w * 0.88 }, scene);
-    win.position.set(bx, by + bh * 0.55, bz);
+    const win = CreateBox(`VillageWin_${h}`, { width: w * 0.48, height: 0.65, depth: w * 0.88 }, scene);
+    win.position.set(bx, surfY + bh * 0.62, bz);
     win.rotation.y = house.rotation.y;
     win.material = villageGlowMat;
     win.parent = hor;
@@ -866,6 +918,10 @@ export function buildTerrainAndDistantHorizon(scene, containers, shadowGen) {
     villageGlowMat: horizonCtrl.villageGlowMat,
     update: (elapsed, nightMix) => {
       horizonCtrl.update(elapsed);
+      if (courtRefs.waypointPivot) {
+        courtRefs.waypointPivot.position.y = 2.68 + Math.sin(elapsed * 2.1) * 0.08;
+        courtRefs.waypointPivot.rotation.y = elapsed * 0.72;
+      }
       if (bulbMat) bulbMat.emissiveColor = hexToColor3(0xffb85c).scale(lerp(0.22, 0.95, nightMix));
       if (horizonCtrl.villageGlowMat) {
         horizonCtrl.villageGlowMat.emissiveColor = hexToColor3(0xffb85c).scale(lerp(0.35, 1.85, nightMix));

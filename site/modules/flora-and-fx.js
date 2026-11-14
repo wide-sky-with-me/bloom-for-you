@@ -1295,11 +1295,11 @@ function buildMeadowAndFlowerSea(scene, floraRoot, containers) {
   const grassMesh = buildVertexMesh("MeadowGrassTufts", scene, seaGroup, grassGeo);
   const grassMat = makePbrMat("MeadowGrassMat", scene, {
     color: 0xffffff,
-    roughness: 0.86,
+    roughness: 0.78,
     metallic: 0.0,
-    specularIntensity: 0.16,
-    emissive: 0x0e1809,
-    emissiveIntensity: 0.28,
+    specularIntensity: 0.14,
+    emissive: 0x1a3812,
+    emissiveIntensity: 0.34,
     doubleSided: true,
     useVertexColors: true,
   });
@@ -1325,7 +1325,7 @@ function buildMeadowAndFlowerSea(scene, floraRoot, containers) {
     const scX = 1.15 + rng() * 0.5;
     const scY = (0.85 + lush * 0.72) * (0.88 + rng() * 0.44);
     composeMatArray(sp.x, y - 0.02, sp.z, q, scX, scY, scX, gMatBuf, i);
-    const c = hslToColor3(0.24 + (lush - 0.5) * 0.05 + (rng() - 0.5) * 0.03, 0.42 + lush * 0.16, 0.86 + (rng() - 0.5) * 0.14);
+    const c = hslToColor3(0.28 + (lush - 0.5) * 0.06 + (rng() - 0.5) * 0.03, 0.58 + lush * 0.18, 0.78 + (rng() - 0.5) * 0.12);
     gColBuf[i * 4 + 0] = c.r;
     gColBuf[i * 4 + 1] = c.g;
     gColBuf[i * 4 + 2] = c.b;
@@ -1335,12 +1335,12 @@ function buildMeadowAndFlowerSea(scene, floraRoot, containers) {
   grassMesh.thinInstanceSetBuffer("color", gColBuf, 4, true);
   scalableMeshes.push({ mesh: grassMesh, maxCount: GRASS_COUNT, minFloor: 1200 });
 
-  // 2. 11,200 Multi-Petal Wildflowers across 4 Botanical Colonies
+  // 2. 11,200 Multi-Petal Wildflowers across 4 Teyvat Botanical Colonies (Windwheel / Silk / Glaze Lily / Sweet Flower)
   const flowerSpecs = [
-    { name: "Cosmos3000", count: 3000, geo: createStarBloomGeo(8, 0.088, 0.034, 0.020, 0.20, [0.95, 0.82, 0.25]), scaleMin: 1.05, scaleSpan: 0.44, palette: [0xeb7fa3, 0xcf4a73, 0xf9eef2, 0xe06890] },
-    { name: "Lavender3000", count: 3000, geo: createStarBloomGeo(6, 0.068, 0.026, 0.018, 0.23, [0.55, 0.42, 0.78]), scaleMin: 1.08, scaleSpan: 0.42, palette: [0x7356b8, 0x8c72cc, 0x5d439e, 0x9b82d8] },
-    { name: "Daisy2600", count: 2600, geo: createStarBloomGeo(10, 0.075, 0.022, 0.022, 0.17, [0.95, 0.72, 0.15]), scaleMin: 1.08, scaleSpan: 0.42, palette: [0xffffff, 0xfcfaf2, 0xf2b728, 0xffffff, 0xf6c63c] },
-    { name: "Nemophila2600", count: 2600, geo: createStarBloomGeo(5, 0.058, 0.028, 0.015, 0.14, [0.96, 0.96, 0.88]), scaleMin: 1.08, scaleSpan: 0.42, palette: [0x4da6e8, 0x78c2f8, 0x6294ea, 0x93d0fa] },
+    { name: "Cosmos3000", count: 3000, geo: createStarBloomGeo(8, 0.088, 0.034, 0.020, 0.20, [1.00, 0.88, 0.28]), scaleMin: 1.05, scaleSpan: 0.44, palette: [0xff7da8, 0xf2467c, 0xfff0f5, 0xff94b8] },
+    { name: "Lavender3000", count: 3000, geo: createStarBloomGeo(6, 0.068, 0.026, 0.018, 0.23, [0.68, 0.52, 0.96]), scaleMin: 1.08, scaleSpan: 0.42, palette: [0x8262e8, 0xa288ff, 0x674bd1, 0xb59eff] },
+    { name: "Daisy2600", count: 2600, geo: createStarBloomGeo(10, 0.075, 0.022, 0.022, 0.17, [1.00, 0.82, 0.22]), scaleMin: 1.08, scaleSpan: 0.42, palette: [0xffffff, 0xfffae6, 0xffcb3b, 0xffffff, 0xffd75e] },
+    { name: "Nemophila2600", count: 2600, geo: createStarBloomGeo(5, 0.058, 0.028, 0.015, 0.14, [0.98, 0.98, 0.90]), scaleMin: 1.08, scaleSpan: 0.42, palette: [0x42b6ff, 0x76d4ff, 0x589eff, 0x9ce2ff] },
   ];
 
   for (let s = 0; s < flowerSpecs.length; s += 1) {
@@ -1348,8 +1348,8 @@ function buildMeadowAndFlowerSea(scene, floraRoot, containers) {
     const fMesh = buildVertexMesh(spec.name, scene, seaGroup, spec.geo);
     const fMat = new StandardMaterial(`${spec.name}_Mat`, scene);
     fMat.diffuseColor = new Color3(1, 1, 1);
-    fMat.emissiveColor = new Color3(0.05, 0.04, 0.06);
-    fMat.specularColor = new Color3(0.06, 0.06, 0.06);
+    fMat.emissiveColor = new Color3(0.18, 0.17, 0.20);
+    fMat.specularColor = new Color3(0.08, 0.08, 0.08);
     fMat.backFaceCulling = false;
     fMat.twoSidedLighting = true;
     fMesh.material = fMat;
@@ -1562,7 +1562,7 @@ function buildHydrangeaShrubs(scene, floraRoot) {
   const corymbMesh = buildVertexMesh("HydrangeaCorymbs", scene, hydGroup, corymbData);
   const cMat = new StandardMaterial("HydCorymbMat", scene);
   cMat.diffuseColor = new Color3(1, 1, 1);
-  cMat.emissiveColor = new Color3(0.06, 0.05, 0.09);
+  cMat.emissiveColor = new Color3(0.16, 0.14, 0.22);
   cMat.specularColor = new Color3(0.08, 0.08, 0.08);
   corymbMesh.material = cMat;
   corymbMesh.alwaysSelectAsActiveMesh = true;
@@ -1572,7 +1572,7 @@ function buildHydrangeaShrubs(scene, floraRoot) {
   const mBuf = new Float32Array(count * 16);
   const cBuf = new Float32Array(count * corymbsPerShrub * 16);
   const colBuf = new Float32Array(count * corymbsPerShrub * 4);
-  const hydPalette = [0x6a96e2, 0xc680d4, 0xd6708c, 0xf6f4ec, 0x7e8ee6];
+  const hydPalette = [0x5eb2ff, 0xda84f4, 0xff7da8, 0xfff8fa, 0x78a8ff];
 
   let cIdx = 0;
   for (let i = 0; i < count; i += 1) {

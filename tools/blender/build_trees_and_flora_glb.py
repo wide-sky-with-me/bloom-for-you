@@ -189,24 +189,24 @@ def _make_foliage_textures():
         return (*c, 1.0)
 
     imgs = {
-        "cherry_a": make_packed_texture(TEX_CACHE / "foliage_cherry_a.png", 128, 128, lambda u, v: _blossom_px(u, v, (0.98, 0.72, 0.81), (0.90, 0.44, 0.58))),
-        "cherry_b": make_packed_texture(TEX_CACHE / "foliage_cherry_b.png", 128, 128, lambda u, v: _blossom_px(u, v, (1.00, 0.84, 0.89), (0.93, 0.56, 0.66))),
-        "cherry_core": make_packed_texture(TEX_CACHE / "foliage_cherry_core.png", 128, 128, lambda u, v: _core_px(u, v, (0.70, 0.40, 0.50), (0.92, 0.64, 0.73))),
+        "cherry_a": make_packed_texture(TEX_CACHE / "foliage_cherry_a.png", 128, 128, lambda u, v: _blossom_px(u, v, (1.00, 0.78, 0.90), (0.96, 0.48, 0.72))),
+        "cherry_b": make_packed_texture(TEX_CACHE / "foliage_cherry_b.png", 128, 128, lambda u, v: _blossom_px(u, v, (1.00, 0.88, 0.94), (0.98, 0.60, 0.78))),
+        "cherry_core": make_packed_texture(TEX_CACHE / "foliage_cherry_core.png", 128, 128, lambda u, v: _core_px(u, v, (0.78, 0.42, 0.60), (0.96, 0.68, 0.82))),
     }
 
     species_greens = {
-        "oak": ((0.27, 0.48, 0.20), (0.40, 0.63, 0.27), (0.37, 0.58, 0.24), (0.53, 0.73, 0.34), (0.16, 0.30, 0.12), (0.28, 0.45, 0.19)),
-        "birch": ((0.52, 0.68, 0.26), (0.68, 0.80, 0.35), (0.68, 0.76, 0.30), (0.83, 0.86, 0.40), (0.34, 0.47, 0.17), (0.50, 0.62, 0.25)),
-        "olive": ((0.40, 0.52, 0.35), (0.55, 0.66, 0.48), (0.52, 0.62, 0.46), (0.66, 0.74, 0.58), (0.25, 0.34, 0.22), (0.38, 0.48, 0.33)),
+        "oak": ((0.26, 0.66, 0.28), (0.42, 0.84, 0.36), (0.36, 0.76, 0.32), (0.56, 0.92, 0.42), (0.15, 0.44, 0.20), (0.28, 0.64, 0.28)),
+        "birch": ((0.84, 0.62, 0.18), (0.98, 0.80, 0.28), (0.90, 0.70, 0.22), (1.00, 0.88, 0.38), (0.56, 0.38, 0.12), (0.78, 0.56, 0.18)),
+        "olive": ((0.30, 0.66, 0.48), (0.48, 0.84, 0.62), (0.38, 0.74, 0.56), (0.58, 0.89, 0.68), (0.18, 0.44, 0.34), (0.30, 0.62, 0.46)),
     }
     for sp, (a0, a1, b0, b1, c0, c1) in species_greens.items():
         imgs[f"{sp}_a"] = make_packed_texture(TEX_CACHE / f"foliage_{sp}_a.png", 128, 128, lambda u, v, d0=a0, d1=a1: _broadleaf_px(u, v, d0, d1))
         imgs[f"{sp}_b"] = make_packed_texture(TEX_CACHE / f"foliage_{sp}_b.png", 128, 128, lambda u, v, d0=b0, d1=b1: _broadleaf_px(u, v, d0, d1))
         imgs[f"{sp}_core"] = make_packed_texture(TEX_CACHE / f"foliage_{sp}_core.png", 128, 128, lambda u, v, d0=c0, d1=c1: _core_px(u, v, d0, d1))
 
-    imgs["cyp_a"] = make_packed_texture(TEX_CACHE / "foliage_cyp_a.png", 128, 128, lambda u, v: _cypress_px(u, v, (0.17, 0.35, 0.18), (0.27, 0.49, 0.24)))
-    imgs["cyp_b"] = make_packed_texture(TEX_CACHE / "foliage_cyp_b.png", 128, 128, lambda u, v: _cypress_px(u, v, (0.22, 0.42, 0.21), (0.34, 0.56, 0.28)))
-    imgs["cyp_core"] = make_packed_texture(TEX_CACHE / "foliage_cyp_core.png", 128, 128, lambda u, v: _core_px(u, v, (0.10, 0.22, 0.11), (0.18, 0.34, 0.17)))
+    imgs["cyp_a"] = make_packed_texture(TEX_CACHE / "foliage_cyp_a.png", 128, 128, lambda u, v: _cypress_px(u, v, (0.16, 0.46, 0.36), (0.28, 0.66, 0.48)))
+    imgs["cyp_b"] = make_packed_texture(TEX_CACHE / "foliage_cyp_b.png", 128, 128, lambda u, v: _cypress_px(u, v, (0.20, 0.54, 0.40), (0.34, 0.74, 0.52)))
+    imgs["cyp_core"] = make_packed_texture(TEX_CACHE / "foliage_cyp_core.png", 128, 128, lambda u, v: _core_px(u, v, (0.10, 0.30, 0.24), (0.18, 0.46, 0.34)))
     return imgs
 
 
@@ -563,7 +563,7 @@ def main() -> None:
     m_cyp_b = make_pbr_material("Tree_CypressLeafB", (1.0, 1.0, 1.0), roughness=0.72, image=foliage["cyp_b"], double_sided=True, alpha_cutoff=0.36, use_vertex_color=True)
     m_cyp_core = make_pbr_material("Tree_CypressCore", (1.0, 1.0, 1.0), roughness=0.84, image=foliage["cyp_core"])
 
-    m_palm_frond = make_pbr_material("Tree_PalmFrond", (0.36, 0.58, 0.24), roughness=0.46, specular=0.55, double_sided=True)
+    m_palm_frond = make_pbr_material("Tree_PalmFrond", (0.34, 0.80, 0.34), roughness=0.46, specular=0.55, double_sided=True)
     m_coconut = make_pbr_material("Tree_Coconut", (0.34, 0.21, 0.11), roughness=0.76)
 
     _build_canopy_tree("Tree_Cherry_A", "cherry", 101, m_bark_cherry, m_cherry_a, m_cherry_b, m_cherry_core)

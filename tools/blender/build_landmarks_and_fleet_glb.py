@@ -80,7 +80,7 @@ def _make_shared_textures():
         256,
         lambda u, v: (
             lambda n1, n2: (
-                *mix_rgb((0.48, 0.50, 0.45), (0.76, 0.74, 0.67), clamp01(n1 * 0.7 + n2 * 0.3)),
+                *mix_rgb((0.46, 0.52, 0.66), (0.76, 0.80, 0.90), clamp01(n1 * 0.7 + n2 * 0.3)),
                 1.0,
             )
         )(fbm2(u * 6.0, v * 6.0, seed=23, octaves=4), fbm2(u * 18.0, v * 18.0, seed=41, octaves=2)),
@@ -90,7 +90,7 @@ def _make_shared_textures():
         256,
         256,
         lambda u, v: (
-            lambda n: (*mix_rgb((0.92, 0.87, 0.78), (0.98, 0.95, 0.90), n), 1.0)
+            lambda n: (*mix_rgb((0.96, 0.93, 0.88), (1.00, 0.98, 0.95), n), 1.0)
         )(fbm2(u * 9.0, v * 9.0, seed=71, octaves=3)),
     )
     img_terracotta = make_packed_texture(
@@ -100,9 +100,9 @@ def _make_shared_textures():
         lambda u, v: (
             lambda wave, n: (
                 *mix_rgb(
-                    (0.68, 0.32, 0.21),
-                    (0.84, 0.46, 0.32),
-                    clamp01(0.45 + 0.35 * math.sin(u * math.tau * 8.0) + (n - 0.5) * 0.45 - 0.18 * (1.0 - ((v * 6.0) % 1.0))),
+                    (0.20, 0.39, 0.68),
+                    (0.36, 0.59, 0.89),
+                    clamp01(0.45 + 0.35 * math.sin(u * math.tau * 8.0) + (n - 0.5) * 0.35 - 0.16 * (1.0 - ((v * 6.0) % 1.0))),
                 ),
                 1.0,
             )
@@ -146,7 +146,7 @@ def _make_shared_textures():
         256,
         lambda u, v: (
             lambda row, edge, n: (
-                *mix_rgb((0.28, 0.21, 0.16), (0.44, 0.35, 0.28), clamp01(0.5 + (n - 0.5) * 0.6 - edge * 0.4)),
+                *mix_rgb((0.20, 0.38, 0.66), (0.36, 0.58, 0.88), clamp01(0.5 + (n - 0.5) * 0.5 - edge * 0.35)),
                 1.0,
             )
         )(int(v * 10.0), 1.0 if ((v * 10.0) % 1.0) < 0.12 else 0.0, fbm2(u * 12.0, v * 12.0, seed=99)),
@@ -324,11 +324,11 @@ def _add_blossom_cluster(bm: bmesh.types.BMesh, center: Vector, scale: float, se
 def build_monet_pond_glb(out_path: Path) -> None:
     reset_scene()
     tex = _make_shared_textures()
-    m_rock = make_pbr_material("Pond_Limestone", (0.58, 0.59, 0.56), roughness=0.88, image=tex["rock"], normal_image=tex["rock_nrm"], normal_strength=0.95)
-    m_moss = make_pbr_material("Pond_Moss", (0.28, 0.48, 0.24), roughness=0.92)
-    m_sage = make_pbr_material("Monet_SageWood", (0.48, 0.61, 0.51), roughness=0.58)
-    m_deck = make_pbr_material("Monet_BridgeDeck", (0.56, 0.66, 0.57), roughness=0.64, normal_image=tex["wood_nrm"], normal_strength=0.55)
-    m_shelf = make_pbr_material("Pond_ShelfStone", (0.76, 0.75, 0.70), roughness=0.74, image=tex["rock"], normal_image=tex["rock_nrm"], normal_strength=0.80)
+    m_rock = make_pbr_material("Pond_Limestone", (0.76, 0.80, 0.90), roughness=0.82, image=tex["rock"], normal_image=tex["rock_nrm"], normal_strength=0.85)
+    m_moss = make_pbr_material("Pond_Moss", (0.28, 0.70, 0.34), roughness=0.84)
+    m_sage = make_pbr_material("Monet_SageWood", (0.30, 0.68, 0.72), roughness=0.52)
+    m_deck = make_pbr_material("Monet_BridgeDeck", (0.40, 0.74, 0.76), roughness=0.58, normal_image=tex["wood_nrm"], normal_strength=0.45)
+    m_shelf = make_pbr_material("Pond_ShelfStone", (0.86, 0.89, 0.94), roughness=0.70, image=tex["rock"], normal_image=tex["rock_nrm"], normal_strength=0.72)
 
     root = _new_empty("MonetPondRoot")
 
@@ -729,8 +729,8 @@ def build_lighthouse_glb(out_path: Path) -> None:
 def build_windmill_glb(out_path: Path) -> None:
     reset_scene()
     tex = _make_shared_textures()
-    m_stone = make_pbr_material("WM_Stone", (0.82, 0.79, 0.72), roughness=0.84, image=tex["stone"], normal_image=tex["stone_nrm"], normal_strength=0.85)
-    m_shingle = make_pbr_material("WM_Shingle", (0.38, 0.29, 0.22), roughness=0.76, image=tex["shingle"], normal_image=tex["wood_nrm"], normal_strength=0.55)
+    m_stone = make_pbr_material("WM_Stone", (0.92, 0.93, 0.96), roughness=0.78, image=tex["stone"], normal_image=tex["stone_nrm"], normal_strength=0.72)
+    m_shingle = make_pbr_material("WM_Shingle", (0.94, 0.97, 1.00), roughness=0.66, image=tex["shingle"], normal_image=tex["wood_nrm"], normal_strength=0.48)
     m_cedar = make_pbr_material("WM_Cedar", (0.58, 0.38, 0.24), roughness=0.54, image=tex["wood"], normal_image=tex["wood_nrm"], normal_strength=0.65)
     m_sail = make_pbr_material("WM_SailCanvas", (0.96, 0.94, 0.89), roughness=0.86, double_sided=True)
     m_iron = make_pbr_material("WM_Iron", (0.16, 0.18, 0.20), roughness=0.40, metallic=0.82)
@@ -1010,14 +1010,14 @@ def build_gazebo_glb(out_path: Path) -> None:
 def build_cottage_glb(out_path: Path) -> None:
     reset_scene()
     tex = _make_shared_textures()
-    m_stone = make_pbr_material("Cot_Stone", (0.79, 0.76, 0.70), roughness=0.84, image=tex["stone"], normal_image=tex["stone_nrm"], normal_strength=0.85)
-    m_plaster = make_pbr_material("Cot_Plaster", (0.95, 0.90, 0.82), roughness=0.82, image=tex["plaster"], normal_image=tex["plaster_nrm"], normal_strength=0.45)
-    m_roof = make_pbr_material("Cot_Terracotta", (0.78, 0.41, 0.28), roughness=0.72, image=tex["terracotta"], normal_image=tex["terracotta_nrm"], normal_strength=0.90)
-    m_shutter = make_pbr_material("Cot_SageShutter", (0.42, 0.52, 0.44), roughness=0.60)
-    m_wood = make_pbr_material("Cot_Oak", (0.46, 0.29, 0.17), roughness=0.58, image=tex["wood"], normal_image=tex["wood_nrm"], normal_strength=0.65)
-    m_win = make_pbr_material("Cot_WarmWindow", (0.98, 0.90, 0.72), roughness=0.24, emission=(1.0, 0.72, 0.36), emission_strength=0.18)
-    m_soil = make_pbr_material("Cot_Soil", (0.30, 0.22, 0.15), roughness=0.95)
-    m_green = make_pbr_material("Cot_GardenGreen", (0.32, 0.48, 0.28), roughness=0.82)
+    m_stone = make_pbr_material("Cot_Stone", (0.90, 0.92, 0.96), roughness=0.78, image=tex["stone"], normal_image=tex["stone_nrm"], normal_strength=0.75)
+    m_plaster = make_pbr_material("Cot_Plaster", (0.99, 0.97, 0.92), roughness=0.76, image=tex["plaster"], normal_image=tex["plaster_nrm"], normal_strength=0.35)
+    m_roof = make_pbr_material("Cot_Terracotta", (0.95, 0.97, 1.00), roughness=0.64, image=tex["terracotta"], normal_image=tex["terracotta_nrm"], normal_strength=0.75)
+    m_shutter = make_pbr_material("Cot_SageShutter", (0.28, 0.62, 0.74), roughness=0.54)
+    m_wood = make_pbr_material("Cot_Oak", (0.56, 0.36, 0.20), roughness=0.56, image=tex["wood"], normal_image=tex["wood_nrm"], normal_strength=0.58)
+    m_win = make_pbr_material("Cot_WarmWindow", (0.98, 0.92, 0.74), roughness=0.22, emission=(1.0, 0.76, 0.40), emission_strength=0.28)
+    m_soil = make_pbr_material("Cot_Soil", (0.34, 0.24, 0.16), roughness=0.95)
+    m_green = make_pbr_material("Cot_GardenGreen", (0.30, 0.72, 0.36), roughness=0.74)
 
     root = _new_empty("ProvencalCottageRoot")
     cw, cd = 8.2, 5.8

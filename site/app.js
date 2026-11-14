@@ -27,6 +27,7 @@ import { buildFloraAndFX } from "./modules/flora-and-fx.js";
 import { buildHarborVillaWorld } from "./modules/harbor-villa-world.js";
 import { createExplorationControls, findNearestWalkableSpot } from "./modules/exploration-camera.js";
 import { createCoupleMode } from "./modules/couple-mode-babylon.js";
+import { installGenshinToonShading } from "./modules/genshin-toon-plugin.js";
 import { resolveGiftConfig } from "./modules/gift-config.js";
 import { createHarborAudio } from "./audio.js";
 
@@ -159,6 +160,8 @@ async function init() {
 
   const havokBodies = havokCtrl ? havokCtrl.syncColliders() : 0;
   scene.blockMaterialDirtyMechanism = false;
+
+  const genshinToon = installGenshinToonShading(scene, oceanSky.sunLight.position);
 
   const allInteractables = [...flora.interactables, ...world.interactables];
   const interactableById = new Map(allInteractables.map((it) => [it.id, it]));
@@ -428,6 +431,7 @@ async function init() {
   function applyNightMix(mix) {
     nightMix = clamp(mix, 0, 1);
     oceanSky.setNightMix?.(nightMix);
+    genshinToon.setSunState?.(nightMix, oceanSky.sunLight?.position);
     world.setNightMix?.(nightMix);
     horizon.update?.(simTime, nightMix);
     scene.clearColor.set(scene.fogColor.r, scene.fogColor.g, scene.fogColor.b, 1.0);

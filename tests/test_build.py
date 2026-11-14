@@ -41,6 +41,7 @@ class IrisBayCoastalEstateTests(unittest.TestCase):
                 "harbor-villa-world.js",
                 "couple-rigged-controller.js",
                 "couple-mode-babylon.js",
+                "genshin-toon-plugin.js",
                 "exploration-camera.js",
                 "gift-config.js",
             ):
@@ -216,7 +217,7 @@ class IrisBayCoastalEstateTests(unittest.TestCase):
             SITE / "audio.js",
             *sorted((SITE / "modules").glob("*.js")),
         ]
-        self.assertEqual(len(js_files), 12)
+        self.assertEqual(len(js_files), 13)
         for js_path in js_files:
             proc = subprocess.run(
                 [node, "--check", str(js_path)],

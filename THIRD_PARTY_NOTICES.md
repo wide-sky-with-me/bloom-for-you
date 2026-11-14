@@ -98,12 +98,23 @@ All 18 real-world scanned furniture, lighting, tableware, and vintage prop model
 34. `site/assets/models/ph_lifebuoy.glb` — `lifebuoy` (Poly Haven, CC0 1.0)
 35. `site/assets/models/ph_picnic_table.glb` — `wooden_picnic_table` (Poly Haven, CC0 1.0)
 
-## 5. First-Party Blender 4.0.2 Sculpted & Rigged `.glb` Assets
-The 12 architectural, landscape, flora, fleet, and skeletal character `.glb` bundles below are first-party assets generated specifically for this project via Blender 4.0.2 scripts in `tools/blender/`:
+## 5. CC0 VRM 0.x Anime Character Base Models & Custom Rigging (`couple_*.glb`)
+The couple character avatars below combine **CC0 1.0 Universal** VRM 0.x base meshes with custom Blender 4.0.2 outfits, accessories, MToon-to-PBR texture baking, facial shape-key consolidation, and 17 NLA animation tracks built via `tools/blender/build_couple_vrm_glb.py`:
 
-- `site/assets/models/couple_xian.glb` — Stylized anime couple character ("小贤贤"), full armature, 17 NLA animation clips, Head/Lash shape keys (`EyeBlink`, `Smile`, `Kiss`, `ShyBlush`), painted iris/skin UVs
-- `site/assets/models/couple_ran.glb` — Stylized anime couple character ("小冉子"), full armature, 17 NLA animation clips, Head/Lash shape keys
-- `site/assets/models/coastal_villa.glb` — Two-story Provencal stone & timber villa with walkthrough doorway, staircase, interior paneling, animated shutters/doors/gramophone/globe/coffee-lever
+36. `site/assets/models/couple_xian.glb` ("小贤贤")
+   - Base Model: `Victoria_Rubin.vrm` (source: `madjin/vrm-samples` CC0 sample library)
+   - License: CC0 1.0 Universal (Public Domain Dedication)
+   - Modifications: Converted MToon materials to Principled PBR with baked shading and downscaled (`<= 512px`) textures, separated facial overlay features from skin outline mesh, added Hydro Vision waist charm, consolidated facial blendshapes (`EyeBlink`, `Smile`, `Kiss`, `ShyBlush`), and retargeted 17 interactive couple NLA clips.
+
+37. `site/assets/models/couple_ran.glb` ("小冉子")
+   - Base Model: `Sakurada_Fumiriya.vrm` (source: `madjin/vrm-samples` CC0 sample library)
+   - License: CC0 1.0 Universal (Public Domain Dedication)
+   - Modifications: Restyled textures in royal sapphire, ivory, crimson, and gold; modeled Fontaine-inspired coat tail, gold trim, wrist bracers, and Hydro Vision chest brooch; consolidated facial blendshapes (`EyeBlink`, `Smile`, `Kiss`, `ShyBlush`); and retargeted 17 interactive couple NLA clips.
+
+## 6. First-Party Blender 4.0.2 Sculpted Architectural, Flora & Maritime `.glb` Assets
+The 10 architectural, landscape, flora, and fleet `.glb` bundles below are first-party assets generated specifically for this project via Blender 4.0.2 scripts in `tools/blender/`:
+
+- `site/assets/models/coastal_villa.glb` — Two-story coastal stone & timber villa with walkthrough doorway, staircase, interior paneling, animated shutters/doors/gramophone/globe/coffee-lever
 - `site/assets/models/garden_monet_pond.glb` — Monet cascading stone pond & waterfall tiers
 - `site/assets/models/garden_swing_arches.glb` — Bougainvillea swing pergola & bench arches
 - `site/assets/models/coastal_lighthouse.glb` — Harbor stone & crimson-stripe lighthouse with gallery & lantern room

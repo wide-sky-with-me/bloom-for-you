@@ -22,3 +22,4 @@ dist-vite/
 .vite/
 studies/
 tools/blender/_tex_cache/
+tools/blender/_vrm_cache/
