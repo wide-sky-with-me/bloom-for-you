@@ -222,6 +222,7 @@ async function init() {
       panel: document.getElementById("couple-panel"),
       prompt: document.getElementById("couple-prompt"),
       toast: document.getElementById("couple-toast"),
+      showToast: (msg, ms) => showWorldToast(msg, ms),
       enterBtn: document.getElementById("btn-couple"),
     },
     onActiveChange(on) {
@@ -625,6 +626,20 @@ async function init() {
     return { interactive: null, hitPoint: pickInfo.pickedPoint };
   }
 
+  const worldToastEl = document.getElementById("couple-toast");
+  let worldToastTimer = null;
+  function showWorldToast(msg, ms = 4500) {
+    if (!worldToastEl || !msg) return;
+    worldToastEl.textContent = msg;
+    worldToastEl.hidden = false;
+    worldToastEl.classList.add("is-show");
+    if (worldToastTimer) clearTimeout(worldToastTimer);
+    worldToastTimer = setTimeout(() => {
+      worldToastEl.classList.remove("is-show");
+      worldToastEl.hidden = true;
+    }, ms);
+  }
+
   let pondCloseupToggle = true;
 
   function triggerInteraction(id) {
@@ -634,9 +649,13 @@ async function init() {
     }
     const item = interactableById.get(resolvedId);
     if (item) {
-      const msg = couple.isActive()
+      const inCouple = couple.isActive();
+      const msg = inCouple
         ? couple.activateById(resolvedId)
         : item.activate?.({ actor: "xian", audio });
+      if (!inCouple && typeof msg === "string" && msg) {
+        showWorldToast(msg);
+      }
       if (resolvedId === "flora-rose-pick" || resolvedId === "garden-swing-ride") {
         flora.burstPetals?.();
       }

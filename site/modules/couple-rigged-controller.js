@@ -65,26 +65,33 @@ function resolveClipKey(groupName) {
   return null;
 }
 
-function createNameplateTag(scene, id, label, accentHex, parentNode) {
-  const tex = new DynamicTexture(`CoupleTagTex_${id}`, { width: 256, height: 76 }, scene, true);
+export function createNameplateTag(
+  scene,
+  id,
+  label,
+  accentHex,
+  parentNode,
+  { texWidth = 256, width = 0.72, height = 0.215, fontPx = 30, y = 1.92, renderingGroupId = 1, borderWidth = 4.5 } = {}
+) {
+  const tex = new DynamicTexture(`CoupleTagTex_${id}`, { width: texWidth, height: 76 }, scene, true);
   tex.hasAlpha = true;
   const ctx = tex.getContext();
-  ctx.clearRect(0, 0, 256, 76);
+  ctx.clearRect(0, 0, texWidth, 76);
 
   // Pill background with soft translucent frosted card + colored border
   ctx.fillStyle = "rgba(255, 249, 252, 0.94)";
   ctx.strokeStyle = accentHex;
-  ctx.lineWidth = 4.5;
+  ctx.lineWidth = borderWidth;
   ctx.beginPath();
-  ctx.roundRect(14, 10, 228, 56, 28);
+  ctx.roundRect(14, 10, texWidth - 28, 56, 28);
   ctx.fill();
   ctx.stroke();
 
   ctx.fillStyle = "#2b1924";
-  ctx.font = "700 30px 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif";
+  ctx.font = `700 ${fontPx}px 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(label, 128, 39);
+  ctx.fillText(label, texWidth * 0.5, 39);
   tex.update();
 
   const mat = new StandardMaterial(`CoupleTagMat_${id}`, scene);
@@ -96,14 +103,14 @@ function createNameplateTag(scene, id, label, accentHex, parentNode) {
   mat.disableLighting = true;
   mat.backFaceCulling = false;
 
-  const plane = CreatePlane(`CoupleTag_${id}`, { width: 0.72, height: 0.215 }, scene);
+  const plane = CreatePlane(`CoupleTag_${id}`, { width, height }, scene);
   plane.parent = parentNode;
   scene.getGlowLayerByName?.("EstateGlow")?.addExcludedMesh?.(plane);
   plane.material = mat;
   plane.billboardMode = Mesh.BILLBOARDMODE_ALL;
   plane.isPickable = false;
-  plane.renderingGroupId = 1;
-  plane.position.set(0, 1.92, 0);
+  plane.renderingGroupId = renderingGroupId;
+  plane.position.set(0, y, 0);
   return plane;
 }
 

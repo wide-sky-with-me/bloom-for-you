@@ -31,6 +31,10 @@ export const MODEL_MANIFEST = {
   provencal_cottage: "./assets/models/provencal_cottage.glb",
   harbor_fleet: "./assets/models/harbor_fleet.glb",
   stylized_trees: "./assets/models/stylized_trees.glb",
+  stylized_critters: "./assets/models/stylized_critters.glb",
+  npc_vita: "./assets/models/npc_vita.glb",
+  npc_shino: "./assets/models/npc_shino.glb",
+  npc_vivi: "./assets/models/npc_vivi.glb",
   // Curated Photogrammetry, Botanical & Aquatic GLBs
   freshwater_shrimp: "./assets/models/freshwater_shrimp.glb",
   ryukin_goldfish: "./assets/models/ryukin_goldfish.glb",

@@ -1840,7 +1840,7 @@ function buildButterflySwarm(scene, parent, count = 10) {
 
 function buildFloraInteractables(scene, floraRoot, { treeInfo, roseInfo, hydInfo, petals, containers }) {
   const fx = createInteractionFX(floraRoot, { name: "FloraInteractionFX", maxSparks: 360, maxPetals: 220, maxRings: 4, scene });
-  const butterflies = buildButterflySwarm(scene, floraRoot, 10);
+  const butterflies = buildButterflySwarm(scene, floraRoot, 26);
   const interactables = [];
   const persistent = [];
   const terrainPt = (x, z, lift = 0) => new Vector3(x, getWorldTerrainY(x, z) + lift, z);

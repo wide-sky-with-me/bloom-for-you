@@ -23,3 +23,5 @@ dist-vite/
 studies/
 tools/blender/_tex_cache/
 tools/blender/_vrm_cache/
+tools/blender/_tex_baked_npc/
+tools/blender/_tex_trees/

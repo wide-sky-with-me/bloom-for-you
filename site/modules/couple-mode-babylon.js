@@ -169,12 +169,20 @@ export function createCoupleMode({
 
   let toastTimer = null;
   function toast(msg, ms = 2400) {
+    if (ui.showToast) {
+      ui.showToast(msg, ms);
+      return;
+    }
     if (!ui.toast || !msg) return;
     ui.toast.textContent = msg;
     ui.toast.hidden = false;
+    ui.toast.classList.add("is-show");
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(() => {
-      if (ui.toast) ui.toast.hidden = true;
+      if (ui.toast) {
+        ui.toast.classList.remove("is-show");
+        ui.toast.hidden = true;
+      }
     }, ms);
   }
 
@@ -954,6 +962,25 @@ export function createCoupleMode({
       const targetId = pid === "char-xian" ? "xian" : "ran";
       if (targetId !== controlledId) setControlled(targetId);
       else doAction("heart");
+      return true;
+    }
+
+    if (pid && /^(npc-|critter-)/.test(pid)) {
+      interactables = collectInteractables();
+      const it = interactables.find((x) => x.id === pid);
+      const L = leader();
+      if (it && Math.hypot(it.position.x - L.pos.x, it.position.z - L.pos.z) > Math.max(4.2, it.radius || 2.6)) {
+        const dx = L.pos.x - it.position.x;
+        const dz = L.pos.z - it.position.z;
+        const dist = Math.hypot(dx, dz) || 1;
+        const tx = it.position.x + (dx / dist) * 1.85;
+        const tz = it.position.z + (dz / dist) * 1.85;
+        if (isPositionWalkable(tx, tz, 0.25, L.pos.y)) {
+          if (seatSession) standUp(true);
+          walkWaypoints = buildWalkWaypoints(L.pos.x, L.pos.z, tx, tz, L.pos.y, it.floorY ?? L.pos.y);
+        }
+      }
+      activateById(pid);
       return true;
     }
 
