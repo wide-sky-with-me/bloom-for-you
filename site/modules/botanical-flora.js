@@ -31,11 +31,25 @@ const WEST_GAZEBO_TRAIL = [
 
 const NORTH_WINDMILL_TRAIL = [
   [-8.0, -13.5],
-  [2.0, -28.0],
-  [8.4, -44.0],
+  [1.2, -28.0],
+  [2.9, -44.0],
   [-12.0, -52.0],
   [-34.0, -60.0],
   [-52.0, -68.0],
+];
+
+const EAST_HARBOR_BRIDGE_TRAIL = [
+  [14.2, -25.5],
+  [15.0, -35.0],
+  [13.9, -44.0],
+  [8.4, -44.0],
+  [2.8, -44.2],
+];
+
+const COTTAGE_SPUR_TRAILS = [
+  [[-48.2, -65.0], [-62.5, -60.5], [-73.5, -56.5]],
+  [[-14.0, -53.0], [-16.2, -66.5], [-17.8, -76.5]],
+  [[14.2, -45.5], [19.2, -55.5], [23.2, -63.0]],
 ];
 
 function distToSegment2D(px, pz, ax, az, bx, bz) {
@@ -78,25 +92,31 @@ export function isMeadowFloraAllowed(x, z) {
   // 3c. Exclude Bougainvillea Two-Person Swing Secret Garden Clearing & Pebble Walk
   if (x >= -34.8 && x <= -22.2 && z >= 8.8 && z <= 22.4) return false;
 
-  // 3d. Exclude Central Monet Giverny Flagstone Walk
+  // 3d. Exclude Central Monet Giverny Flagstone Walk & East Pond Spur
   if (x >= -16.4 && x <= -11.6 && z >= 11.2 && z <= 23.8) return false;
+  if (distToSegment2D(x, z, -12.8, 14.4, -4.6, 19.4) < 1.35) return false;
 
   // 4. Exclude Sandy Cove Beach
   if (x >= -35.0 && x <= 9.0 && z >= 22.0 && z <= 60.0 && y < 2.15) return false;
 
-  // 5. Exclude Creek Channel
+  // 5. Exclude Creek Channel & Arched Bridge Abutments
   if (z >= -114.0 && z <= -23.0 && Math.abs(x - getCreekCenterX(z)) < 3.6) return false;
+  if (z >= -49.0 && z <= -39.0 && Math.abs(x - getCreekCenterX(z)) < 6.8) return false;
 
   // 6. Exclude Cliffside Gazebo Terrace, Hilltop Windmill Terrace & 3 Northern Cottages
-  if (Math.hypot(x + 64.0, z - 42.0) < 6.4) return false;
-  if (Math.hypot(x + 52.0, z + 68.0) < 6.8) return false;
-  if (Math.hypot(x + 78.0, z + 56.0) < 5.8) return false;
-  if (Math.hypot(x + 18.0, z + 82.0) < 6.2) return false;
-  if (Math.hypot(x - 24.5, z + 68.0) < 5.6) return false;
+  if (Math.hypot(x + 64.0, z - 42.0) < 6.6) return false;
+  if (Math.hypot(x + 52.0, z + 68.0) < 7.0) return false;
+  if (Math.hypot(x + 78.0, z + 56.0) < 8.8) return false;
+  if (Math.hypot(x + 18.0, z + 82.0) < 9.2) return false;
+  if (Math.hypot(x - 24.5, z + 68.0) < 8.4) return false;
 
   // 7. Exclude Scenic Footpaths (width ~ 2.6m -> half-clearance < 1.85m)
   if (distToPolyline2D(x, z, WEST_GAZEBO_TRAIL) < 1.85) return false;
   if (distToPolyline2D(x, z, NORTH_WINDMILL_TRAIL) < 1.85) return false;
+  if (distToPolyline2D(x, z, EAST_HARBOR_BRIDGE_TRAIL) < 1.85) return false;
+  for (let i = 0; i < COTTAGE_SPUR_TRAILS.length; i += 1) {
+    if (distToPolyline2D(x, z, COTTAGE_SPUR_TRAILS[i]) < 1.85) return false;
+  }
 
   return true;
 }
@@ -108,13 +128,19 @@ function isTreeSpotAllowed(x, z, placedTrees, minSpacing = 4.2) {
   // Extra clearance from footpaths, terraces, villa walls, cottages, and steep cliff drops
   if (distToPolyline2D(x, z, WEST_GAZEBO_TRAIL) < 2.65) return false;
   if (distToPolyline2D(x, z, NORTH_WINDMILL_TRAIL) < 2.65) return false;
-  if (Math.hypot(x + 64.0, z - 42.0) < 7.6) return false;
-  if (Math.hypot(x + 52.0, z + 68.0) < 8.2) return false;
-  if (Math.hypot(x + 78.0, z + 56.0) < 7.8) return false;
-  if (Math.hypot(x + 18.0, z + 82.0) < 8.2) return false;
-  if (Math.hypot(x - 24.5, z + 68.0) < 7.6) return false;
-  if (x >= -36.5 && x <= 6.8 && z >= -14.6 && z <= 24.5) return false;
+  if (distToPolyline2D(x, z, EAST_HARBOR_BRIDGE_TRAIL) < 2.65) return false;
+  for (let i = 0; i < COTTAGE_SPUR_TRAILS.length; i += 1) {
+    if (distToPolyline2D(x, z, COTTAGE_SPUR_TRAILS[i]) < 2.65) return false;
+  }
+  if (Math.hypot(x + 64.0, z - 42.0) < 7.8) return false;
+  if (Math.hypot(x + 52.0, z + 68.0) < 9.0) return false;
+  if (Math.hypot(x + 78.0, z + 56.0) < 10.4) return false;
+  if (Math.hypot(x + 18.0, z + 82.0) < 10.8) return false;
+  if (Math.hypot(x - 24.5, z + 68.0) < 9.8) return false;
+  if (x >= -37.0 && x <= 7.5 && z >= -18.8 && z <= 25.2) return false;
+  if (x >= 1.5 && x <= 49.5 && z >= -29.5 && z <= 25.0) return false;
   if (z >= -114.0 && z <= -23.0 && Math.abs(x - getCreekCenterX(z)) < 4.5) return false;
+  if (z >= -49.5 && z <= -38.5 && Math.abs(x - getCreekCenterX(z)) < 8.2) return false;
 
   const nrm = getTerrainNormal(x, z, _tmpNormal);
   if (nrm.y < 0.78) return false;
@@ -1029,35 +1055,35 @@ function buildAllBotanicalTrees(group, uTimeRef) {
 
   // 1. 26 Flowering Coastal Cherry/Almond Trees (Villa courtyard edge, Gazebo trail, Creek bridge, North hills)
   const cherryHints = [
-    [-32.5, -4.5], [-32.0, 7.5], [-24.5, 14.5], [-19.5, -16.2], [-3.2, -16.5],
+    [-32.5, -4.5], [-32.0, 7.5], [-24.5, 14.5], [-20.5, -20.5], [-4.5, -21.5],
     [-35.0, 12.2], [-44.5, 12.8], [-44.2, 23.5], [-53.5, 25.0], [-60.5, 34.5],
-    [2.8, -33.5], [14.2, -39.5], [4.2, -48.5], [15.5, -49.0], [-5.5, -56.0],
+    [2.8, -33.5], [14.2, -39.5], [10.5, -51.5], [17.5, -49.0], [-5.5, -56.0],
     [-22.0, -45.0], [-36.0, -34.0], [-48.0, -24.0], [-62.0, -12.0], [-74.0, 16.0],
-    [-18.0, -68.0], [-40.0, -76.0], [18.0, -64.0], [-68.0, 54.0], [-82.0, -32.0], [-28.0, -28.0],
+    [-18.0, -68.0], [-40.0, -76.0], [15.5, -60.5], [-68.0, 54.0], [-82.0, -32.0], [-28.0, -28.0],
   ];
   cherryHints.forEach((p) => spawnList.push({ sp: "cherry", x: p[0], z: p[1] }));
 
   // 2. 26 Sunlit Coastal Oak (13) & Silver Birch (13) Trees (woodland hills & creek)
   const oakBirchHints = [
-    [-42, -46], [-58, -40], [-76, -54], [-92, -36], [-88, -10], [-96, 18], [-86, 44],
+    [-42, -46], [-58, -40], [-76, -44], [-92, -36], [-88, -10], [-96, 18], [-86, 44],
     [-72, 66], [-48, 56], [22, -38], [26, -54], [20, -78], [4, -84],
-    [-14, -88], [-34, -92], [-64, -84], [-84, -76], [16, -94], [-8, -36], [-24, -58],
-    [-54, -18], [-68, 8], [-78, 28], [-42, 34], [28, -70], [-98, -58],
+    [-14, -93], [-34, -92], [-64, -84], [-84, -76], [16, -94], [-8, -36], [-24, -58],
+    [-54, -18], [-68, 8], [-78, 28], [-42, 34], [34, -74], [-98, -58],
   ];
   oakBirchHints.forEach((p, idx) => spawnList.push({ sp: idx % 2 === 0 ? "oak" : "birch", x: p[0], z: p[1] }));
 
   // 3. 18 Mediterranean Olive Trees (Harbor promenade rim, Villa terrace perimeter & coastal bluffs)
   const oliveHints = [
-    [-0.2, -22.0], [0.4, -16.5], [5.5, -31.2], [14.5, -31.8], [24.0, -31.5], [33.5, -31.2],
-    [-0.5, 14.8], [-31.8, -11.5], [-33.5, 16.5], [-38.5, 24.5], [-46.0, 38.0], [-54.0, 48.0],
+    [-0.2, -22.0], [-3.8, -21.0], [5.5, -31.2], [14.5, -31.8], [24.0, -31.5], [33.5, -31.2],
+    [-1.2, 26.5], [-31.8, -11.5], [-33.5, 16.5], [-38.5, 24.5], [-46.0, 38.0], [-54.0, 48.0],
     [-72.0, 38.0], [-56.0, 62.0], [-82.0, 58.0], [-66.0, 26.0], [28.0, -44.0], [-40.0, -18.0],
   ];
   oliveHints.forEach((p) => spawnList.push({ sp: "olive", x: p[0], z: p[1] }));
 
   // 4. 18 Tall Slender Italian Coastal Cypresses (Villa approach, Windmill road & Sea-Stack Islet at (58, 56))
   const cypressHints = [
-    [-31.2, -8.5], [-31.2, -1.8], [-12.5, -16.0], [-6.0, -16.0], [-2.0, -24.5],
-    [5.2, -39.0], [-6.5, -49.0], [-18.5, -56.0], [-29.0, -63.0], [-41.5, -67.5],
+    [-31.2, -8.5], [-31.2, -1.8], [-12.5, -20.5], [-7.5, -20.5], [-2.0, -24.5],
+    [10.2, -37.0], [-6.5, -49.0], [-18.5, -56.0], [-29.0, -63.0], [-41.5, -67.5],
     [-46.0, -76.5], [-59.5, -74.0], [-61.0, -61.5], [-26.0, -21.0], [-36.0, -52.0],
   ];
   cypressHints.forEach((p) => spawnList.push({ sp: "cypress", x: p[0], z: p[1] }));
@@ -1545,34 +1571,44 @@ function buildEstateRoseGardens(group, uTimeRef) {
     roses.push({ x, y, z, rx, ry, rz, scale, colorIdx, withBushFoliage });
   };
 
-  // 1. Villa front garden beds: X in [-24, -4], Z ~ +7.2, leaving stairs X in [-16.5, -11.5] open
+  // 1. Villa outer garden beds outside courtSlab & plinth (West plaza edge, East court border, North veranda)
   for (let side = 0; side < 2; side += 1) {
-    const xMin = side === 0 ? -24.0 : -11.1;
-    const xMax = side === 0 ? -16.9 : -4.0;
-    for (let i = 0; i < 96; i += 1) {
-      const rx = lerp(xMin, xMax, (i + rng() * 0.8) / 96.0);
-      const rz = 7.2 + (rng() - 0.5) * 0.92;
-      const mound = Math.sin(((rx - xMin) / (xMax - xMin)) * Math.PI) * 0.24;
-      const ry = 2.20 + 0.34 + mound + rng() * 0.36;
-      pushRose(
-        rx,
-        ry,
-        rz,
-        0.35 + (rng() - 0.5) * 0.55,
-        rng() * Math.PI * 2,
-        (rng() - 0.5) * 0.45,
-        0.95 + rng() * 0.38,
-        i + side * 2,
-        i % 2 === 0
-      );
+    if (side === 0) {
+      // West front lawn edge outside courtSlab (X in [-25.0, -20.5], Z ~ 7.3)
+      for (let i = 0; i < 64; i += 1) {
+        const rx = lerp(-25.0, -20.6, (i + rng() * 0.8) / 64.0);
+        const rz = 7.3 + (rng() - 0.5) * 0.82;
+        const mound = Math.sin((i / 63) * Math.PI) * 0.22;
+        const ry = 2.20 + 0.30 + mound + rng() * 0.32;
+        pushRose(rx, ry, rz, 0.35 + (rng() - 0.5) * 0.55, rng() * Math.PI * 2, (rng() - 0.5) * 0.45, 0.92 + rng() * 0.36, i, i % 2 === 0);
+      }
+      // East courtyard outer rose border outside courtSlab (X ~ 2.4, Z in [6.2, 11.4])
+      for (let i = 0; i < 48; i += 1) {
+        const rz = lerp(6.2, 11.4, (i + rng() * 0.8) / 48.0);
+        const rx = 2.4 + (rng() - 0.5) * 0.68;
+        const mound = Math.sin((i / 47) * Math.PI) * 0.22;
+        const ry = 2.20 + 0.30 + mound + rng() * 0.32;
+        pushRose(rx, ry, rz, 0.35 + (rng() - 0.5) * 0.55, rng() * Math.PI * 2, (rng() - 0.5) * 0.45, 0.92 + rng() * 0.36, i + 1, i % 2 === 0);
+      }
+    } else {
+      // North Villa veranda border (X in [-24.2, -4.5], Z ~ -11.3)
+      for (let i = 0; i < 80; i += 1) {
+        const rx = lerp(-24.2, -4.5, (i + rng() * 0.8) / 80.0);
+        const rz = -11.35 + (rng() - 0.5) * 0.72;
+        const mound = Math.sin((i / 79) * Math.PI) * 0.22;
+        const ry = 2.20 + 0.32 + mound + rng() * 0.32;
+        pushRose(rx, ry, rz, 0.35 + (rng() - 0.5) * 0.55, rng() * Math.PI * 2, (rng() - 0.5) * 0.45, 0.94 + rng() * 0.36, i + 2, i % 2 === 0);
+      }
     }
   }
 
-  // Helper for Climbing Rose Arches
-  const populateArchGarland = (cx, baseY, cz, spanAlongZ, count) => {
+  // Helper for Climbing Rose Arches (respecting Three.js rotation.y = rotY)
+  const populateArchGarland = (cx, baseY, cz, rotY, count) => {
     const halfSpan = 1.52;
     const legTop = 2.05;
     const vaultH = 0.85;
+    const cosR = Math.cos(rotY);
+    const sinR = Math.sin(rotY);
     for (let i = 0; i < count; i += 1) {
       const u = i / (count - 1);
       let sOff;
@@ -1588,31 +1624,34 @@ function buildEstateRoseGardens(group, uTimeRef) {
         sOff = Math.cos(ang) * halfSpan;
         hOff = legTop + Math.sin(ang) * vaultH;
       }
-      const jitterA = (rng() - 0.5) * 0.36;
-      const jitterB = (rng() - 0.5) * 0.42;
-      const px = spanAlongZ ? cx + jitterB : cx + sOff + jitterA;
-      const pz = spanAlongZ ? cz + sOff + jitterA : cz + jitterB;
+      const edgeBlend = Math.min(1.0, Math.min(u, 1.0 - u) / 0.14);
+      const jitterA = (rng() - 0.5) * (0.14 + 0.22 * edgeBlend);
+      const jitterB = (rng() - 0.5) * (0.18 + 0.24 * edgeBlend);
+      const lx = sOff + jitterA;
+      const lz = jitterB;
+      const px = cx + lx * cosR + lz * sinR;
+      const pz = cz - lx * sinR + lz * cosR;
       const py = baseY + 0.18 + hOff + (rng() - 0.5) * 0.16;
       pushRose(px, py, pz, 0.75 + (rng() - 0.5) * 0.7, rng() * Math.PI * 2, (rng() - 0.5) * 0.6, 0.92 + rng() * 0.36, i, i % 2 === 0);
     }
   };
 
-  // 2. Front Rose Arch (-14.0, 2.20, +9.6) & West Trail Rose Arch (-31.0, 2.22, +1.0)
-  populateArchGarland(-14.0, 2.20, 9.6, false, 96);
-  populateArchGarland(-31.0, 2.22, 1.0, true, 88);
+  // 2. Front Rose Arch (-14.0, 2.20, +10.2, ry=0) & West Trail Rose Arch (-31.0, 2.22, +1.0, ry=0.78)
+  populateArchGarland(-14.0, 2.20, 10.2, 0.0, 96);
+  populateArchGarland(-31.0, 2.22, 1.0, 0.78, 88);
 
-  // 3. Central Courtyard Fountain (-4.5, 2.20, +4.5)
+  // 3. Central Courtyard Fountain (-4.8, 2.22, +9.5) — outer rose halo clear of 2.1m limestone coping
   for (let i = 0; i < 68; i += 1) {
     const th = (i / 68) * Math.PI * 2.0 + (rng() - 0.5) * 0.08;
-    const r = 2.12 + (rng() - 0.5) * 0.36;
+    const r = 2.38 + (rng() - 0.5) * 0.22;
     pushRose(
-      -4.5 + Math.cos(th) * r,
-      2.20 + 0.28 + rng() * 0.30,
-      4.5 + Math.sin(th) * r,
+      -4.8 + Math.cos(th) * r,
+      2.22 + 0.26 + rng() * 0.26,
+      9.5 + Math.sin(th) * r,
       0.52,
       -th + Math.PI * 0.5,
       (rng() - 0.5) * 0.3,
-      0.90 + rng() * 0.34,
+      0.86 + rng() * 0.30,
       i,
       i % 2 === 0
     );
@@ -1636,14 +1675,14 @@ function buildEstateRoseGardens(group, uTimeRef) {
     );
   }
 
-  // 5. Cliffside Gazebo (-64.0, 7.80, +42.0) — perimeter beds & upper frieze garland
+  // 5. Cliffside Gazebo (-64.0, 7.80, +42.0) — outer perimeter beds clear of 5.02m balustrade & upper frieze garland
+  const gazeboEntryAng = Math.atan2(-11.0, 7.0);
   for (let i = 0; i < 96; i += 1) {
     const upper = i >= 58;
     const th = ((i % 58) / 58) * Math.PI * 2.0;
-    // Leave NE footpath entry around th = -0.92 rad clear at ground level
-    if (!upper && Math.abs(Math.atan2(Math.sin(th + 0.92), Math.cos(th + 0.92))) < 0.38) continue;
-    const r = upper ? 4.08 + (rng() - 0.5) * 0.22 : 4.58 + (rng() - 0.5) * 0.38;
-    const py = upper ? 7.80 + 2.75 + (rng() - 0.5) * 0.22 : 7.80 + 0.34 + rng() * 0.36;
+    if (!upper && Math.abs(Math.atan2(Math.sin(th - gazeboEntryAng), Math.cos(th - gazeboEntryAng))) < 0.48) continue;
+    const r = upper ? 4.08 + (rng() - 0.5) * 0.22 : 5.82 + (rng() - 0.5) * 0.28;
+    const py = upper ? 7.80 + 2.75 + (rng() - 0.5) * 0.22 : 7.80 + 0.24 + rng() * 0.32;
     pushRose(
       -64.0 + Math.cos(th) * r,
       py,
@@ -1934,7 +1973,12 @@ function sampleOrganicMeadowSpot(rng, speciesIdx) {
     }
     return { x, z };
   }
-  return { x: -48.0 - rng() * 30.0, z: 18.0 + rng() * 20.0 };
+  for (let tries = 0; tries < 60; tries += 1) {
+    const fx = -52.0 - rng() * 44.0;
+    const fz = -40.0 + rng() * 70.0;
+    if (isMeadowFloraAllowed(fx, fz)) return { x: fx, z: fz };
+  }
+  return { x: -62.0, z: -20.0 };
 }
 
 function buildMeadowAndFlowerSea(group, uTimeRef) {

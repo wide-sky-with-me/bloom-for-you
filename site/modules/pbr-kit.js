@@ -585,11 +585,13 @@ export function getTerrainNormal(x, z, target = new THREE.Vector3()) {
 
 const _walkZones = [];
 const _boxColliders = [];
+const _rotatedBoxColliders = [];
 const _circleColliders = [];
 
 export function clearNavigationRegistry() {
   _walkZones.length = 0;
   _boxColliders.length = 0;
+  _rotatedBoxColliders.length = 0;
   _circleColliders.length = 0;
 }
 
@@ -600,6 +602,19 @@ export function registerWalkZone(fn) {
 
 export function registerBoxCollider(xMin, xMax, zMin, zMax, yMin = -Infinity, yMax = Infinity) {
   _boxColliders.push({ xMin, xMax, zMin, zMax, yMin, yMax });
+}
+
+export function registerRotatedBoxCollider(cx, cz, ry, halfW, halfD, yMin = -Infinity, yMax = Infinity) {
+  _rotatedBoxColliders.push({
+    cx,
+    cz,
+    cosR: Math.cos(ry),
+    sinR: Math.sin(ry),
+    halfW,
+    halfD,
+    yMin,
+    yMax,
+  });
 }
 
 export function registerCircleCollider(cx, cz, radius, yMin = -Infinity, yMax = Infinity) {
@@ -657,6 +672,19 @@ export function isPositionWalkable(x, z, radius = 0.38, refY = null) {
       z > b.zMin - radius &&
       z < b.zMax + radius
     ) {
+      return false;
+    }
+  }
+  for (let i = 0; i < _rotatedBoxColliders.length; i += 1) {
+    const b = _rotatedBoxColliders[i];
+    if (surfY < b.yMin || surfY > b.yMax) continue;
+    const dxw = x - b.cx;
+    const dzw = z - b.cz;
+    const lx = dxw * b.cosR - dzw * b.sinR;
+    const lz = dxw * b.sinR + dzw * b.cosR;
+    const cx = Math.max(0, Math.abs(lx) - b.halfW);
+    const cz = Math.max(0, Math.abs(lz) - b.halfD);
+    if (cx * cx + cz * cz < radius * radius) {
       return false;
     }
   }

@@ -91,7 +91,7 @@ export function createCoupleMode({ scene, camera, canvas, audio, sources = [], u
 
   function burstBetween(n = 14) {
     const m = midpoint();
-    m.y += Math.max(xian.hipY, ran.hipY) + 0.75;
+    m.y += Math.max(xian.hipY, ran.hipY) + 0.52;
     hearts.burst(m, n, 0.35);
   }
 
@@ -119,26 +119,33 @@ export function createCoupleMode({ scene, camera, canvas, audio, sources = [], u
     const { p, yaw } = seatWorld(seat, attach);
     if (type === "sit") {
       c.state = "sit";
+      c.lieRecline = 0;
       c.rootQuat = null;
       c.yaw = yaw;
-      // seat surface → pelvis sits ~6cm above it
-      c.pos.set(p.x, p.y - (c.hipY - 0.07), p.z);
+      // seat surface -> pelvis sits ~6cm above it
+      c.pos.set(p.x, p.y - (c.hipY - 0.06), p.z);
       const fx = -Math.sin(yaw);
       const fz = -Math.cos(yaw);
       c.pos.x -= fx * 0.02;
       c.pos.z -= fz * 0.02;
     } else if (type === "lie") {
       c.state = "lie";
-      // head points along yaw direction, face up
-      const yAxis = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-      const faceDir = new THREE.Vector3(0, 1, 0);
+      const rec = seat.recline || 0;
+      c.lieRecline = rec;
+      const fx = -Math.sin(yaw);
+      const fz = -Math.cos(yaw);
+      // head points along yaw (+Y_body), pitched up by `rec` for sun loungers; face looks up
+      const yAxis = new THREE.Vector3(fx * Math.cos(rec), Math.sin(rec), fz * Math.cos(rec)).normalize();
+      const faceDir = new THREE.Vector3(-fx * Math.sin(rec), Math.cos(rec), -fz * Math.sin(rec)).normalize();
       const rootZ = faceDir.clone().negate();
       const rootX = new THREE.Vector3().crossVectors(yAxis, rootZ).normalize();
       _m.makeBasis(rootX, yAxis, rootZ);
       c.rootQuat = new THREE.Quaternion().setFromRotationMatrix(_m);
-      c.pos.copy(p).addScaledVector(yAxis, -c.hipY).add(new THREE.Vector3(0, 0.1, 0));
+      const headClear = Math.max(c.dims.headR * 1.15, 0.24) + (rec > 0 ? 0.045 : 0.04);
+      c.pos.copy(p).addScaledVector(yAxis, -c.hipY).addScaledVector(faceDir, headClear);
     } else {
       c.state = "stand";
+      c.lieRecline = 0;
       c.rootQuat = null;
       c.yaw = yaw;
       c.pos.copy(p);
@@ -166,6 +173,7 @@ export function createCoupleMode({ scene, camera, canvas, audio, sources = [], u
           }
         }
         c.state = "stand";
+        c.lieRecline = 0;
         c.rootQuat = null;
         c.pos.set(nx, getWalkSurfaceY(nx, nz, refY ?? c.pos.y + c.hipY), nz);
       }
@@ -268,7 +276,7 @@ export function createCoupleMode({ scene, camera, canvas, audio, sources = [], u
     hug() {
       standUp();
       setCarry(false);
-      faceEachOther(0.3);
+      faceEachOther(0.52);
       xian.startAction("hug", 3.2);
       ran.startAction("hug", 3.2);
       xian.setExpression("happy");
@@ -284,7 +292,7 @@ export function createCoupleMode({ scene, camera, canvas, audio, sources = [], u
     kiss() {
       standUp();
       setCarry(false);
-      faceEachOther(0.3);
+      faceEachOther(0.54);
       xian.startAction("kiss", 3.0);
       ran.startAction("kiss", 3.0);
       xian.setExpression("kiss");
@@ -304,7 +312,7 @@ export function createCoupleMode({ scene, camera, canvas, audio, sources = [], u
     pat() {
       standUp();
       setCarry(false);
-      faceEachOther(0.42);
+      faceEachOther(0.58);
       ran.startAction("pat", 2.6, { giver: true });
       xian.startAction("pat", 2.6, { giver: false });
       xian.setExpression("happy");
@@ -315,7 +323,7 @@ export function createCoupleMode({ scene, camera, canvas, audio, sources = [], u
     dance() {
       standUp();
       setCarry(false);
-      faceEachOther(0.55);
+      faceEachOther(0.60);
       danceT = 4.5;
       xian.startAction("dance", 4.5);
       ran.startAction("dance", 4.5);
@@ -575,9 +583,13 @@ export function createCoupleMode({ scene, camera, canvas, audio, sources = [], u
       const yaw = M.yaw;
       const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
       const rgt = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
-      const C = M.pos.clone().addScaledVector(fwd, 0.3).add(new THREE.Vector3(0, M.hipY + 0.2, 0));
+      const C = M.pos
+        .clone()
+        .addScaledVector(fwd, 0.34)
+        .addScaledVector(rgt, -0.04)
+        .add(new THREE.Vector3(0, M.hipY + 0.01, 0));
       const yAxis = rgt.clone().negate();
-      const face = new THREE.Vector3(0, 1, 0).multiplyScalar(0.85).addScaledVector(fwd, -0.5).normalize();
+      const face = new THREE.Vector3(0, 1, 0).multiplyScalar(0.88).addScaledVector(fwd, -0.47).normalize();
       face.addScaledVector(yAxis, -face.dot(yAxis)).normalize();
       const rootZ = face.clone().negate();
       const rootX = new THREE.Vector3().crossVectors(yAxis, rootZ).normalize();
@@ -629,8 +641,8 @@ export function createCoupleMode({ scene, camera, canvas, audio, sources = [], u
       const side = controlledId === "ran" ? 1 : -1;
       const rx = Math.cos(L.yaw);
       const rz = -Math.sin(L.yaw);
-      const tx = L.pos.x + rx * 0.56 * side;
-      const tz = L.pos.z + rz * 0.56 * side;
+      const tx = L.pos.x + rx * 0.58 * side;
+      const tz = L.pos.z + rz * 0.58 * side;
       if (isPositionWalkable(tx, tz, 0.18, L.pos.y) && Math.abs(getWalkSurfaceY(tx, tz, L.pos.y) - L.pos.y) < 0.5) {
         target = { x: tx, z: tz };
       }
@@ -706,7 +718,7 @@ export function createCoupleMode({ scene, camera, canvas, audio, sources = [], u
       P.lookTarget = L.getHeadWorld();
       P.getEyeWorld(camPos);
       L.getHeadWorld(camLook);
-      camLook.y -= 0.25;
+      camLook.y -= 0.12;
       const dist = camPos.distanceTo(camLook);
       if (dist < 0.9) {
         // too close (hug/kiss): pull back along partner's view a bit

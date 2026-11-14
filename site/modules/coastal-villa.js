@@ -720,8 +720,12 @@ function addFloweringPlanter(
     flowerType = "hydrangeaPink",
     scale = 1.0,
     glbTag = null,
+    noCollider = false,
   } = {}
 ) {
+  if (!noCollider && glbTag) {
+    registerCircleCollider(x, z, 0.28 * scale, y - 0.6, y + 2.5);
+  }
   const { ivyLeafGeo, floretGeo } = getBotanicalGeos();
   const g = new THREE.Group();
   g.position.set(x, y, z);
@@ -1260,6 +1264,8 @@ function buildPlinthTerracesAndWalkZones(group, mats) {
   }
   addBox(group, 0.18, 0.58, 2.24, mats.limestone, -16.3, 2.38, 7.72);
   addBox(group, 0.18, 0.58, 2.24, mats.limestone, -11.7, 2.38, 7.72);
+  registerBoxCollider(-16.45, -16.15, 6.55, 8.90, 2.0, 4.0);
+  registerBoxCollider(-11.85, -11.55, 6.55, 8.90, 2.0, 4.0);
 
   for (let i = 0; i < 4; i += 1) {
     const topY = 2.60 - (i + 0.5) * 0.095;
@@ -1278,8 +1284,8 @@ function buildPlinthTerracesAndWalkZones(group, mats) {
 
   // Multi-Level Walk Zone Registry (1F at Y=2.60m + Indoor Staircase Ramp + 2F Master & Terraces at Y=6.12m)
   registerWalkZone((x, z, refY) => {
-    // Indoor Walnut Staircase Lane: X in [-23.1, -20.1], Z in [-9.3, -3.2]
-    if (x >= -23.1 && x <= -20.1 && z >= -9.3 && z <= -3.2) {
+    // Indoor Walnut Staircase Lane: X in [-22.42, -20.82], Z in [-9.3, -3.2]
+    if (x >= -22.42 && x <= -20.82 && z >= -9.3 && z <= -3.2) {
       const stairT = clamp((-3.2 - z) / 5.8, 0, 1);
       const stairY = lerp(2.60, 6.12, stairT);
       if (typeof refY !== "number" || Math.abs(refY - stairY) < 2.2) {
@@ -1372,7 +1378,7 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
     interiorSign,
     floorBase,
     floorTop,
-    { bays = 3, theme = "sage", shutters = true, flowerBox = true, interactiveKey = null } = {}
+    { bays = 3, theme = "sage", shutters = true, flowerBox = true, interactiveKey = null, dropToY = null, sillOffset = 0.76 } = {}
   ) => {
     const span = u1 - u0;
     const midU = (u0 + u1) * 0.5;
@@ -1392,7 +1398,7 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
         drapeRec.roses.push({ holder, mesh: roseC, baseX: px, baseZ: pz, localSide, tieParts });
       }
     };
-    const sillY = floorBase + 0.76;
+    const sillY = floorBase + sillOffset;
     const headY = floorTop - 0.52;
     const sillH = sillY - floorBase;
     const headH = floorTop - headY;
@@ -1448,7 +1454,8 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
       rod.rotation.z = Math.PI * 0.5;
       rod.position.set(midU, headY + 0.14, cz);
       group.add(rod);
-      const dropH = headY + 0.12 - floorBase;
+      const curtainBottomY = dropToY !== null ? dropToY : floorBase;
+      const dropH = headY + 0.12 - curtainBottomY;
       for (const side of [-1, 1]) {
         const sheer = createPleatedCurtain(mats.sheerCurtain, 0.62, dropH);
         sheer.position.set(midU + side * (span * 0.5 - 0.28), headY + 0.13, cz);
@@ -1500,7 +1507,8 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
       rod.rotation.x = Math.PI * 0.5;
       rod.position.set(cx, headY + 0.14, midU);
       group.add(rod);
-      const dropH = headY + 0.12 - floorBase;
+      const curtainBottomY = dropToY !== null ? dropToY : floorBase;
+      const dropH = headY + 0.12 - curtainBottomY;
       for (const side of [-1, 1]) {
         const sheer = createPleatedCurtain(mats.sheerCurtain, 0.62, dropH);
         sheer.rotation.y = Math.PI * 0.5;
@@ -1569,7 +1577,7 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
   // 1F NE Conservatory Study South Wall (Z = -1.4, X in [-10.4, -4.0]): Sunlit Bay Window [-9.0, -5.2]
   addBox(group, 1.4, h1, 0.24, mats.extPlaster, -9.7, mid1, -1.4);
   addInteriorVintageWallFace(group, mats, "x", -10.3, -9.0, -1.4, -1, y1Base, y1Top, { theme: "study" });
-  addVillaWindow("x", -9.0, -5.2, -1.4, -1, y1Base, y1Top, { bays: 3, theme: "study" });
+  addVillaWindow("x", -9.0, -5.2, -1.4, -1, y1Base, y1Top, { bays: 3, theme: "study", dropToY: 3.42 });
   addBox(group, 1.2, h1, 0.24, mats.extPlaster, -4.6, mid1, -1.4);
   addInteriorVintageWallFace(group, mats, "x", -5.2, -4.1, -1.4, -1, y1Base, y1Top, { theme: "study" });
   registerBoxCollider(-10.45, -3.95, -1.54, -1.26, 2.0, 5.2);
@@ -1577,14 +1585,14 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
   // 1F NE Conservatory Study East Wall (X = -4.0, Z in [-9.8, -1.4]): Harbor-View Window [-7.8, -3.6]
   addBox(group, 0.24, h1, 2.0, mats.extPlaster, -4.0, mid1, -8.8);
   addInteriorVintageWallFace(group, mats, "z", -9.7, -7.8, -4.0, -1, y1Base, y1Top, { theme: "study" });
-  addVillaWindow("z", -7.8, -3.6, -4.0, -1, y1Base, y1Top, { bays: 3, theme: "study" });
+  addVillaWindow("z", -7.8, -3.6, -4.0, -1, y1Base, y1Top, { bays: 3, theme: "study", dropToY: 3.42 });
   addBox(group, 0.24, h1, 2.2, mats.extPlaster, -4.0, mid1, -2.5);
   addInteriorVintageWallFace(group, mats, "z", -3.6, -1.5, -4.0, -1, y1Base, y1Top, { theme: "study" });
   registerBoxCollider(-4.14, -3.86, -9.9, -1.35, 2.0, 5.2);
 
   // 1F West Exterior Wall (X = -23.4, Z in [-9.8, +4.0]): Stair Window [-8.2, -5.0], West French Doorway [+0.1, +2.1]
   addBox(group, 0.24, h1, 1.6, mats.extPlaster, -23.4, mid1, -9.0);
-  addVillaWindow("z", -8.2, -5.0, -23.4, 1, y1Base, y1Top, { bays: 2, theme: "sage" });
+  addVillaWindow("z", -8.2, -5.0, -23.4, 1, y1Base, y1Top, { bays: 2, theme: "sage", dropToY: 3.50 });
   addBox(group, 0.24, h1, 5.1, mats.extPlaster, -23.4, mid1, -2.45);
   addInteriorVintageWallFace(group, mats, "z", -5.0, 0.1, -23.4, 1, y1Base, y1Top, { theme: "sage" });
   addBox(group, 0.24, y1Top - 5.25, 2.0, mats.extPlaster, -23.4, (y1Top + 5.25) * 0.5, 1.1);
@@ -1605,10 +1613,10 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
   // 1F North Exterior Wall (Z = -9.8, X in [-23.4, -4.0]): Kitchen Window [-17.6, -14.8], Study Window [-9.2, -5.4]
   addBox(group, 5.8, h1, 0.24, mats.extPlaster, -20.5, mid1, -9.8);
   addInteriorVintageWallFace(group, mats, "x", -20.0, -17.6, -9.8, 1, y1Base, y1Top, { theme: "sage" });
-  addVillaWindow("x", -17.6, -14.8, -9.8, 1, y1Base, y1Top, { bays: 2, theme: "sage", flowerBox: false });
+  addVillaWindow("x", -17.6, -14.8, -9.8, 1, y1Base, y1Top, { bays: 2, theme: "sage", flowerBox: false, sillOffset: 1.05, dropToY: 3.72 });
   addBox(group, 5.6, h1, 0.24, mats.extPlaster, -12.0, mid1, -9.8);
   addInteriorVintageWallFace(group, mats, "x", -14.8, -10.5, -9.8, 1, y1Base, y1Top, { theme: "sage", skipBoiserie: true });
-  addVillaWindow("x", -9.2, -5.4, -9.8, 1, y1Base, y1Top, { bays: 3, theme: "study", flowerBox: false });
+  addVillaWindow("x", -9.2, -5.4, -9.8, 1, y1Base, y1Top, { bays: 3, theme: "study", flowerBox: false, dropToY: 3.45 });
   addBox(group, 1.4, h1, 0.24, mats.extPlaster, -4.7, mid1, -9.8);
   addInteriorVintageWallFace(group, mats, "x", -5.4, -4.1, -9.8, 1, y1Base, y1Top, { theme: "study" });
   registerBoxCollider(-23.5, -3.9, -9.94, -9.66, 2.0, 5.2);
@@ -1713,7 +1721,7 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
   addWroughtBalustrade(group, mats, "z", -8.55, -3.2, -20.02, 6.12, 5.4, 9.8);
   addWroughtBalustrade(group, mats, "x", -23.2, -20.02, -3.2, 6.12, 5.4, 9.8);
   // Prevent walking underneath the low half of the stair stringer on 1F
-  registerBoxCollider(-23.2, -20.7, -9.6, -6.2, 2.0, 4.2);
+  registerBoxCollider(-22.55, -20.75, -9.6, -5.2, 2.0, 3.4);
 
   // =========================================================================
   // 2F ROMANTIC SEA-VIEW MASTER VILLA TOWER (X in [-23.4, -11.2], Z in [-9.8, +4.0], Y = 6.12..9.40m)
@@ -1747,7 +1755,7 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
   addBox(group, 0.32, 0.11, 2.36, mats.copingStone, -11.2, 8.73, -5.3);
   addBox(group, 0.24, h2, 2.4, mats.extPlaster, -11.2, mid2, -3.0);
   addInteriorVintageWallFace(group, mats, "z", -4.2, -1.8, -11.2, -1, y2Base, y2Top, { theme: "rose" });
-  addVillaWindow("z", -1.8, 1.8, -11.2, -1, y2Base, y2Top, { bays: 3, theme: "rose" });
+  addVillaWindow("z", -1.8, 1.8, -11.2, -1, y2Base, y2Top, { bays: 3, theme: "rose", dropToY: 6.95 });
   addBox(group, 0.24, h2, 2.2, mats.extPlaster, -11.2, mid2, 2.9);
   addInteriorVintageWallFace(group, mats, "z", 1.8, 3.9, -11.2, -1, y2Base, y2Top, { theme: "rose" });
   registerBoxCollider(-11.34, -11.06, -9.9, -6.4, 5.4, 9.8);
@@ -1772,7 +1780,7 @@ function buildTwoStoryPetiteVillaShell(group, mats, curtainAnimList, hangingPlan
 
   // 2F North Wall (Z = -9.8, X in [-23.4, -11.2]): Window [-19.2, -15.6]
   addBox(group, 4.2, h2, 0.24, mats.extPlaster, -21.3, mid2, -9.8);
-  addVillaWindow("x", -19.2, -15.6, -9.8, 1, y2Base, y2Top, { bays: 3, theme: "rose", flowerBox: false });
+  addVillaWindow("x", -19.2, -15.6, -9.8, 1, y2Base, y2Top, { bays: 3, theme: "rose", flowerBox: false, dropToY: 6.95 });
   addBox(group, 4.4, h2, 0.24, mats.extPlaster, -13.4, mid2, -9.8);
   addInteriorVintageWallFace(group, mats, "x", -15.6, -11.3, -9.8, 1, y2Base, y2Top, { theme: "rose" });
   registerBoxCollider(-23.5, -11.1, -9.94, -9.66, 5.4, 9.8);
@@ -1953,7 +1961,7 @@ function buildVintageSalonDiningKitchen(group, mats, emberState, hangingPlantAni
   registerCircleCollider(-22.45, 3.15, 0.36, 2.0, 5.2);
   addFloweringPlanter(group, mats, -16.4, 2.60, 3.35, { potStyle: "rose", flowerType: "hydrangeaPink", scale: 1.25, glbTag: "isIndoorGLBRosePot" });
   addFloweringPlanter(group, mats, -21.95, 2.60, 2.45, { potStyle: "rose", flowerType: "hydrangeaBlush", scale: 1.15, glbTag: "isIndoorGLBMargaritaPot" });
-  addFloweringPlanter(group, mats, -17.15, 2.66, -2.35, { potStyle: "celadon", flowerType: "hydrangeaLilac", scale: 1.08, glbTag: "isIndoorGLBFernPot" });
+  addFloweringPlanter(group, mats, -16.15, 2.60, -2.58, { potStyle: "celadon", flowerType: "hydrangeaLilac", scale: 1.08, glbTag: "isIndoorGLBFernPot" });
   addHangingSpiderPlant(group, mats, hangingPlantAnimList, -16.6, 5.88, 1.55, { drop: 0.44, scale: 0.98, rosePot: true });
   addHangingSpiderPlant(group, mats, hangingPlantAnimList, -19.6, 5.88, -0.95, { drop: 0.44, scale: 0.96, rosePot: false });
   addHangingSpiderPlant(group, mats, hangingPlantAnimList, -21.2, 5.88, 3.35, { drop: 0.52, scale: 1.0, rosePot: true });
@@ -1976,8 +1984,10 @@ function buildVintageSalonDiningKitchen(group, mats, emberState, hangingPlantAni
   group.add(smegFridge);
   refs.fridge = smegFridge;
 
-  // Checkered Dusty-Rose Zellige Tile Backsplash across North Wall
-  addBox(group, 6.6, 0.96, 0.03, mats.checkeredTile, -14.55, 3.98, -9.62);
+  // Checkered Dusty-Rose Zellige Tile Backsplash split cleanly around North Kitchen Window [-17.6, -14.8]
+  addBox(group, 0.25, 0.96, 0.03, mats.checkeredTile, -17.725, 3.98, -9.62);
+  addBox(group, 2.80, 0.18, 0.03, mats.checkeredTile, -16.20, 3.56, -9.62);
+  addBox(group, 3.55, 0.96, 0.03, mats.checkeredTile, -13.025, 3.98, -9.62);
 
   // Left Shaker Base Cabinetry Bank [-17.95, -14.24] + Right Shaker Bank [-12.96, -11.15] (leaving 1.28m bay for La Cornue!)
   addBox(group, 3.71, 0.88, 0.68, mats.boiserieSage, -16.095, 3.04, -9.28);
@@ -2099,7 +2109,8 @@ function buildConservatoryStudyAndLetter(group, mats, hangingPlantAnimList, refs
   for (let s = 0; s < 6; s += 1) {
     addBox(group, 0.46, 0.04, 2.92, mats.walnut, -10.02, 2.66 + s * 0.48, -7.95);
   }
-  addTrailingVine(group, mats, -9.82, 5.50, -7.95, 2.4, 8, 1);
+  const bookcaseVine = addTrailingVine(group, mats, -9.78, 5.48, -7.95, 2.5, 8, 1);
+  bookcaseVine.rotation.y = Math.PI * 0.5;
 
   // 84 Varied Clothbound Vintage Books via InstancedMesh
   const rng = mulberry32(8842);
@@ -2321,6 +2332,8 @@ function buildSecondFloorMasterSuite(group, mats, hangingPlantAnimList, refs = {
   group.add(bed);
   refs.bed = bed;
   registerBoxCollider(-17.95, -15.65, -8.68, -5.75, 5.4, 9.8);
+  registerBoxCollider(-18.75, -18.08, -8.65, -8.02, 5.4, 9.8);
+  registerBoxCollider(-15.52, -14.85, -8.65, -8.02, 5.4, 9.8);
 
   // Porcelain Ginger-Jar Bedside Lamps + Hero Rose Vase resting atop Photogrammetry ph_nightstand.glb (top Y = 6.820m)
   const leftLamp = buildPorcelainTableLamp(mats, false);
@@ -2529,8 +2542,8 @@ function buildInteriorDetailsAndInteractions(group, mats, emberState, refs) {
   detailGroup.add(portraitMantel);
 
   const portraitStudy = buildFramedPortrait(mats, { w: 0.16, h: 0.21, variant: 1 });
-  portraitStudy.position.set(-7.92, 3.386, -8.40);
-  portraitStudy.rotation.y = 0.38;
+  portraitStudy.position.set(-7.58, 3.386, -8.46);
+  portraitStudy.rotation.y = 0.24;
   detailGroup.add(portraitStudy);
 
   const portraitVanity = buildFramedPortrait(mats, { w: 0.15, h: 0.19, variant: 2 });
@@ -2544,7 +2557,7 @@ function buildInteriorDetailsAndInteractions(group, mats, emberState, refs) {
   detailGroup.add(salonBooks);
 
   const studyBooks = buildBookStack(mats, 3, 41);
-  studyBooks.position.set(-6.90, 3.386, -8.10);
+  studyBooks.position.set(-6.80, 3.386, -8.42);
   studyBooks.rotation.y = -0.26;
   detailGroup.add(studyBooks);
 
@@ -2559,7 +2572,7 @@ function buildInteriorDetailsAndInteractions(group, mats, emberState, refs) {
   detailGroup.add(bedSlippers);
 
   const fruitBowl = buildFruitBowl(mats);
-  fruitBowl.position.set(-14.28, 3.519, -6.32);
+  fruitBowl.position.set(-13.72, 3.520, -6.30);
   detailGroup.add(fruitBowl);
 
   const teaService = buildPorcelainTeaService(mats);
@@ -2597,12 +2610,12 @@ function buildInteriorDetailsAndInteractions(group, mats, emberState, refs) {
   detailGroup.add(apothecaryJars);
 
   const logBasket = buildLogBasket(mats);
-  logBasket.position.set(-19.44, 2.62, -2.50);
+  logBasket.position.set(-19.44, 2.695, -2.50);
   logBasket.rotation.y = 0.26;
   detailGroup.add(logBasket);
 
   const fireTools = buildFireToolStand(mats);
-  fireTools.position.set(-17.40, 2.62, -2.52);
+  fireTools.position.set(-17.40, 2.695, -2.52);
   fireTools.rotation.y = -0.24;
   detailGroup.add(fireTools);
 
@@ -2826,8 +2839,8 @@ function buildInteriorDetailsAndInteractions(group, mats, emberState, refs) {
       pose: {
         type: "sit",
         seats: [
-          { x: -19.22, y: 2.60 + 0.45, z: 2.02, yaw: Math.PI },
-          { x: -18.38, y: 2.60 + 0.45, z: 2.02, yaw: Math.PI },
+          { x: -19.22, y: 2.60 + 0.48, z: 1.88, yaw: 0 },
+          { x: -18.38, y: 2.60 + 0.48, z: 1.88, yaw: 0 },
         ],
       },
       activate(ctx = {}) {
@@ -2903,8 +2916,8 @@ function buildInteriorDetailsAndInteractions(group, mats, emberState, refs) {
       pose: {
         type: "sit",
         seats: [
-          { x: -13.17, y: 2.60 + 0.44, z: 0.47, yaw: Math.PI },
-          { x: -12.13, y: 2.60 + 0.44, z: 1.83, yaw: 0 },
+          { x: -13.17, y: 2.60 + 0.51, z: 0.47, yaw: Math.PI },
+          { x: -12.13, y: 2.60 + 0.51, z: 1.83, yaw: 0 },
         ],
       },
       activate(ctx = {}) {
@@ -2985,7 +2998,7 @@ function buildInteriorDetailsAndInteractions(group, mats, emberState, refs) {
       floorY: 2.60,
       activate(ctx = {}) {
         state.globeSpinSpeed = 9.0;
-        fx.burst(new THREE.Vector3(-6.90, 3.72, -8.35), { count: 18, colors: [0x9fd8ff, 0xffe29e], speed: [0.28, 0.8], size: 0.06 });
+        fx.burst(new THREE.Vector3(-8.04, 3.66, -8.09), { count: 18, colors: [0x9fd8ff, 0xffe29e], speed: [0.28, 0.8], size: 0.06 });
         ctx.audio?.playPetalGlissando?.();
         return "拨动黄铜地球仪，约定好下次还要一起看遍海湾与远山 🌍";
       },
@@ -3015,8 +3028,8 @@ function buildInteriorDetailsAndInteractions(group, mats, emberState, refs) {
       pose: {
         type: "lie",
         seats: [
-          { x: -17.24, y: 6.12 + 0.62, z: -7.50, yaw: Math.PI },
-          { x: -16.36, y: 6.12 + 0.62, z: -7.50, yaw: Math.PI },
+          { x: -17.24, y: 6.12 + 0.78, z: -7.02, yaw: 0 },
+          { x: -16.36, y: 6.12 + 0.78, z: -7.02, yaw: 0 },
         ],
       },
       activate(ctx = {}) {

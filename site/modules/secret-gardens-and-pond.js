@@ -23,6 +23,7 @@ import {
   getPondNormalizedRadius,
   getWorldTerrainY,
   registerWalkZone,
+  registerBoxCollider,
   registerCircleCollider,
   tagInteractive,
   enablePBRShadows,
@@ -567,16 +568,18 @@ function buildMonetPondZone(parent, models, extracted, animState) {
   pondRoot.name = "MonetWaterfallFishShrimpPond";
   const { cx, cz, rx, rz, waterY, bedY } = POND_CONFIG;
 
-  // Prevent walking directly into deep water while keeping the entire stone rim walkable!
-  for (let a = 0; a < 16; a += 1) {
-    const ang = (a / 16) * Math.PI * 2;
-    const px = cx + Math.cos(ang) * (rx * 0.68);
-    const pz = cz + Math.sin(ang) * (rz * 0.68);
-    registerCircleCollider(px, pz, 1.35);
+  // Prevent walking directly into deep water while keeping the entire stone rim walkable (with sinusoidal bend)!
+  for (let a = 0; a < 18; a += 1) {
+    const ang = (a / 18) * Math.PI * 2;
+    const px = cx + Math.cos(ang) * (rx * 0.70);
+    const pz = cz + Math.sin(ang) * (rz * 0.70) - 0.34 * Math.sin(px * 0.46);
+    registerCircleCollider(px, pz, 1.32);
   }
-  registerCircleCollider(cx, cz, 2.2);
-  // Waterfall cliff collider on North bank
-  registerCircleCollider(cx, cz - 4.3, 2.6);
+  registerCircleCollider(cx, cz - 0.18, 2.25);
+  // Waterfall cliff + flanking boulder colliders on North bank
+  registerCircleCollider(cx, cz - 4.3, 2.65);
+  registerCircleCollider(cx - 2.9, cz - 3.6, 1.2);
+  registerCircleCollider(cx + 2.9, cz - 3.6, 1.2);
 
   // Flat walkable mossy viewing terrace around the South, West & East pond banks
   registerWalkZone((x, z) => {
@@ -1204,6 +1207,7 @@ function buildMonetPondZone(parent, models, extracted, animState) {
     palm.position.set(px, 2.18, pz);
     palm.rotation.y = rotY;
     pondRoot.add(palm);
+    registerCircleCollider(px, pz, 0.34, 1.5, 5.5);
   }
 
   // Interactive tag on the pond group so clicking ANY part of the pond/waterfall dives in & ripples!
@@ -1340,10 +1344,10 @@ function buildTwoPersonSwingZone(parent, animState) {
     apexCap.position.copy(pTop);
     swingGroup.add(apexCap);
 
-    registerCircleCollider(cx + xFoot, cz, 0.42);
+    registerBoxCollider(cx + xFoot - 0.24, cx + xFoot + 0.24, cz - footSpreadZ - 0.14, cz + footSpreadZ + 0.14, groundY - 0.5, groundY + 2.5);
   }
-  // Center swing bench collider so player walks around or stands right in front without clipping through seat
-  registerCircleCollider(cx, cz, 0.78);
+  // Rectangular swing bench collider matching loveseat width without blocking front stand point
+  registerBoxCollider(cx - 0.96, cx + 0.96, cz - 0.48, cz + 0.42, groundY - 0.5, groundY + 2.5);
 
   // Heavy Top Crossbeam with decorative end finials
   addTubeSeg(
@@ -1506,6 +1510,8 @@ function buildTwoPersonSwingZone(parent, animState) {
     );
     archTube.castShadow = true;
     swingGarden.add(archTube);
+    registerCircleCollider(cx - halfA, archZ, 0.16, groundY - 0.5, groundY + 2.5);
+    registerCircleCollider(cx + halfA, archZ, 0.16, groundY - 0.5, groundY + 2.5);
   }
 
   parent.add(swingGarden);
@@ -1688,6 +1694,20 @@ function buildAllGLBFlora(parent, extracted) {
   const monetStoneMat = pbrStoneMat(0xded6c5, { roughness: 0.82, repeatX: 2, repeatY: 2 });
   const ironArchMat = pbrMetalMat(0x3d4a42, { roughness: 0.5, metalness: 0.7 });
 
+  const distToSeg2D = (px, pz, ax, az, bx, bz) => {
+    const vx = bx - ax;
+    const vz = bz - az;
+    const l2 = vx * vx + vz * vz;
+    const t = l2 > 1e-6 ? clamp(((px - ax) * vx + (pz - az) * vz) / l2, 0, 1) : 0;
+    return Math.hypot(px - (ax + t * vx), pz - (az + t * vz));
+  };
+
+  registerWalkZone((x, z) => {
+    if (x >= -15.3 && x <= -12.7 && z >= 11.4 && z <= 22.8) return 2.22;
+    if (distToSeg2D(x, z, -14.0, 14.2, -4.6, 19.4) <= 1.05) return 2.22;
+    return null;
+  });
+
   // Stepping flagstones from Courtyard (z = 11.8) south to z = 22.4, and east to Pond (-5.5, 18.5)
   const walkSegments = [
     ...Array.from({ length: 11 }, (_, k) => [-14.0 + Math.sin(k * 0.6) * 0.25, 12.4 + k * 0.98]),
@@ -1711,6 +1731,8 @@ function buildAllGLBFlora(parent, extracted) {
 
   // Two Monet Giverny Wisteria & Climbing-Rose Arches over the Central Walk (z = 15.2 & z = 19.6)
   for (const az of [15.2, 19.6]) {
+    registerCircleCollider(-15.75, az, 0.18, 1.5, 5.0);
+    registerCircleCollider(-12.25, az, 0.18, 1.5, 5.0);
     const archCurve = new THREE.CatmullRomCurve3([
       new THREE.Vector3(-15.75, 2.2, az),
       new THREE.Vector3(-15.65, 4.2, az),
@@ -1762,12 +1784,13 @@ function buildAllGLBFlora(parent, extracted) {
     0x9ec4f8, // Delphinium Sky-Blue
   ];
 
-  // Dense borders flanking x = -14.0 walk (z = 11.8 .. 22.8)
+  // Dense borders flanking x = -14.0 walk (z = 11.8 .. 22.8), leaving Monet East Spur walkway clear!
   for (let i = 0; i < 56; i += 1) {
     const side = i % 2 === 0 ? -1 : 1;
     const zPos = 11.8 + (i / 56) * 10.8 + (rng() - 0.5) * 0.35;
     const tier = i % 3; // 0 = low front drift, 1 = mid rose bush, 2 = tall back border
     const xPos = -14.0 + side * (1.55 + tier * 0.85 + rng() * 0.45);
+    if (distToSeg2D(xPos, zPos, -14.0, 14.2, -4.6, 19.4) < 1.25) continue;
     rosePlacements.push({
       x: xPos,
       y: 2.16,
@@ -1779,31 +1802,37 @@ function buildAllGLBFlora(parent, extracted) {
       color: givernyPalette[(i * 3 + tier) % givernyPalette.length],
     });
     if (tier === 0) {
-      daisyPlacements.push({
-        x: -14.0 + side * (1.28 + rng() * 0.45),
-        y: 2.18,
-        z: zPos + 0.22,
-        ry: rng() * Math.PI * 2,
-        s: 0.36 + rng() * 0.14,
-      });
-      periwinklePlacements.push({
-        x: -14.0 + side * (1.18 + rng() * 0.35),
-        y: 2.19,
-        z: zPos - 0.18,
-        ry: rng() * Math.PI * 2,
-        s: 0.78 + rng() * 0.25,
-      });
+      const dxPos = -14.0 + side * (1.28 + rng() * 0.45);
+      const pxPos = -14.0 + side * (1.18 + rng() * 0.35);
+      if (distToSeg2D(dxPos, zPos + 0.22, -14.0, 14.2, -4.6, 19.4) >= 1.15) {
+        daisyPlacements.push({
+          x: dxPos,
+          y: 2.18,
+          z: zPos + 0.22,
+          ry: rng() * Math.PI * 2,
+          s: 0.36 + rng() * 0.14,
+        });
+      }
+      if (distToSeg2D(pxPos, zPos - 0.18, -14.0, 14.2, -4.6, 19.4) >= 1.15) {
+        periwinklePlacements.push({
+          x: pxPos,
+          y: 2.19,
+          z: zPos - 0.18,
+          ry: rng() * Math.PI * 2,
+          s: 0.78 + rng() * 0.25,
+        });
+      }
     }
   }
 
-  // Connecting Floral Meadow Drifts uniting Swing Secret Garden, Monet Walk & Pond Terrace!
+  // Connecting Floral Meadow Drifts uniting Swing Secret Garden, Monet Walk & Pond Terrace (clear of East Spur & Villa Plinth)!
   const ribbonSpots = [
     [-24.2, 10.6], [-22.6, 11.4], [-21.0, 12.2], [-19.4, 12.6], [-23.4, 13.6], [-21.5, 14.2],
     [-23.8, 16.0], [-21.6, 16.8], [-19.5, 15.6], [-18.2, 17.8], [-22.8, 19.2], [-20.4, 20.5], [-18.0, 21.2],
-    [-11.2, 13.4], [-9.6, 14.4], [-8.2, 15.2], [-10.8, 16.8], [-9.0, 18.2], [-7.4, 19.4],
-    [-10.6, 20.2], [-8.8, 21.0], [-6.8, 21.4],
-    // Villa south & east garden beds
-    [-23.2, 5.4], [-21.4, 5.6], [-19.6, 5.5], [-8.2, 5.5], [-6.4, 5.6], [-2.2, 6.2], [0.8, 7.6], [2.4, 9.8],
+    [-10.2, 13.2], [-8.8, 13.8], [-9.2, 19.2], [-7.6, 20.4],
+    [-10.6, 20.6], [-8.8, 21.4], [-6.8, 21.6],
+    // Garden perimeter outside Villa plinth & courtSlab
+    [-26.2, 6.2], [-26.0, 7.8], [-21.2, 8.2], [2.4, 6.8], [2.8, 9.6],
   ];
   for (let i = 0; i < ribbonSpots.length; i += 1) {
     const [rx, rz] = ribbonSpots[i];
@@ -1999,7 +2028,7 @@ function buildBeardedIrisClumps(parent) {
   const { cx: scx, cz: scz, groundY: sy } = SWING_CONFIG;
   const irisSpots = [];
 
-  // 1) Waterside Bearded Irises framing the Monet Lily & Fish/Shrimp Pond!
+  // 1) Waterside Bearded Irises framing the Monet Lily & Fish/Shrimp Pond (with serpentine bend)!
   for (let i = 0; i < 64; i += 1) {
     const ang = (i / 64) * Math.PI * 2 + (rng() - 0.5) * 0.08;
     // Leave south viewing stones & waterfall plunge clear
@@ -2007,19 +2036,27 @@ function buildBeardedIrisClumps(parent) {
     if (Math.sin(ang) < -0.82 && Math.abs(Math.cos(ang)) < 0.42) continue;
     const rScale = 1.06 + (i % 3) * 0.09 + rng() * 0.08;
     const ix = pcx + Math.cos(ang) * POND_CONFIG.rx * rScale;
-    const iz = pcz + Math.sin(ang) * POND_CONFIG.rz * rScale;
+    const iz = pcz + Math.sin(ang) * POND_CONFIG.rz * rScale - 0.34 * Math.sin(ix * 0.46);
     irisSpots.push({ x: ix, y: Math.max(2.14, getWorldTerrainY(ix, iz)), z: iz });
   }
 
-  // 2) Monet's Giverny Iris Allee along Central Flagstone Walk & Connecting Garden Ribbons
+  // 2) Monet's Giverny Iris Allee along Central Flagstone Walk (leaving Monet East Spur clear)
+  const distSeg = (px, pz, ax, az, bx, bz) => {
+    const vx = bx - ax;
+    const vz = bz - az;
+    const l2 = vx * vx + vz * vz;
+    const t = l2 > 1e-6 ? clamp(((px - ax) * vx + (pz - az) * vz) / l2, 0, 1) : 0;
+    return Math.hypot(px - (ax + t * vx), pz - (az + t * vz));
+  };
   for (let i = 0; i < 62; i += 1) {
     const side = i % 2 === 0 ? -1 : 1;
     const iz = 11.6 + (i / 62) * 11.4 + (rng() - 0.5) * 0.28;
     const ix = -14.0 + side * (1.32 + (i % 2) * 0.48 + rng() * 0.32);
+    if (distSeg(ix, iz, -14.0, 14.2, -4.6, 19.4) < 1.25) continue;
     irisSpots.push({ x: ix, y: 2.18, z: iz });
   }
 
-  // 3) Swing Garden & Coastal Beach Boardwalk Terrace Borders
+  // 3) Swing Garden & Coastal Beach Boardwalk Terrace Borders (safely north of z = 22.9 curb & clear of stairs)
   for (let i = 0; i < 46; i += 1) {
     if (i < 24) {
       const side = i % 2 === 0 ? -1 : 1;
@@ -2029,7 +2066,8 @@ function buildBeardedIrisClumps(parent) {
     } else {
       const k = i - 24;
       const ix = -26.0 + (k / 22) * 30.0 + (rng() - 0.5) * 0.8;
-      const iz = 22.8 + Math.sin(k * 0.6) * 0.9;
+      if (ix >= -16.2 && ix <= -11.4) continue;
+      const iz = 22.05 + Math.sin(k * 0.6) * 0.35;
       irisSpots.push({ x: ix, y: getWorldTerrainY(ix, iz), z: iz });
     }
   }

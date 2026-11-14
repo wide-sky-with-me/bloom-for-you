@@ -165,20 +165,20 @@ function drawFace(ctx, w, h, look, expr) {
   const female = look.gender === "f";
   const k = w / 512;
 
-  // Blush (soft radial + anime hatch)
-  const blushStrength = expr === "kiss" ? 0.62 : expr === "happy" ? 0.46 : female ? 0.34 : 0.2;
+  // Blush (soft peachy-rose Q-version glow + cute anime hatch)
+  const blushStrength = expr === "kiss" ? 0.68 : expr === "happy" ? 0.52 : female ? 0.42 : 0.30;
   for (const s of [-1, 1]) {
-    const [bx, by] = faceXY(s * 0.5, -0.3, w, h);
-    const g = ctx.createRadialGradient(bx, by, 2, bx, by, 46 * k);
-    g.addColorStop(0, `rgba(240,120,130,${blushStrength})`);
-    g.addColorStop(1, "rgba(240,120,130,0)");
+    const [bx, by] = faceXY(s * 0.49, -0.33, w, h);
+    const g = ctx.createRadialGradient(bx, by, 2, bx, by, 52 * k);
+    g.addColorStop(0, `rgba(246,125,138,${blushStrength})`);
+    g.addColorStop(1, "rgba(246,125,138,0)");
     ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.ellipse(bx, by, 50 * k, 30 * k, 0, 0, TAU);
+    ctx.ellipse(bx, by, 56 * k, 34 * k, 0, 0, TAU);
     ctx.fill();
-    if (female || expr === "kiss") {
-      ctx.strokeStyle = `rgba(220,90,105,${blushStrength * 0.9})`;
-      ctx.lineWidth = 2.2 * k;
+    if (female || expr === "kiss" || expr === "happy") {
+      ctx.strokeStyle = `rgba(226,92,110,${blushStrength * 0.85})`;
+      ctx.lineWidth = 2.4 * k;
       for (let i = -1; i <= 1; i += 1) {
         ctx.beginPath();
         ctx.moveTo(bx + i * 11 * k - 4 * k, by + 6 * k);
@@ -188,183 +188,200 @@ function drawFace(ctx, w, h, look, expr) {
     }
   }
 
-  // Eyebrows
+  // Eyebrows (soft rounded arches placed comfortably below air bangs)
   ctx.strokeStyle = look.browColor;
   ctx.lineCap = "round";
   for (const s of [-1, 1]) {
-    const [x0, y0] = faceXY(s * 0.2, female ? 0.2 : 0.19, w, h);
-    const [x1, y1] = faceXY(s * 0.5, female ? 0.18 : 0.2, w, h);
-    ctx.lineWidth = (female ? 5 : 8) * k;
+    const [x0, y0] = faceXY(s * 0.21, female ? 0.16 : 0.15, w, h);
+    const [x1, y1] = faceXY(s * 0.49, female ? 0.14 : 0.15, w, h);
+    ctx.lineWidth = (female ? 5.5 : 7.5) * k;
     ctx.beginPath();
-    ctx.moveTo(x0, y0 + 3 * k);
-    ctx.quadraticCurveTo((x0 + x1) / 2, y0 - (female ? 9 : 6) * k, x1, y1 + 4 * k);
+    ctx.moveTo(x0, y0 + 2 * k);
+    ctx.quadraticCurveTo((x0 + x1) / 2, y0 - (female ? 9 : 7) * k, x1, y1 + 3 * k);
     ctx.stroke();
   }
 
-  // Eyes
-  const eyeW = (female ? 0.27 : 0.24) * (w / FACE_W);
-  const eyeH = (female ? 0.24 : 0.18) * (h / FACE_H);
+  // Big sparkling Q-version anime eyes (lower-set golden chibi ratio)
+  const eyeW = (female ? 0.34 : 0.31) * (w / FACE_W);
+  const eyeH = (female ? 0.32 : 0.27) * (h / FACE_H);
   for (const s of [-1, 1]) {
-    const [ex, ey] = faceXY(s * 0.35, -0.04, w, h);
+    const [ex, ey] = faceXY(s * 0.36, -0.10, w, h);
     if (expr === "open") {
       // sclera
       ctx.fillStyle = "#fffaf6";
       ctx.beginPath();
       ctx.ellipse(ex, ey, eyeW * 0.5, eyeH * 0.5, 0, 0, TAU);
       ctx.fill();
-      // iris gradient
-      const ir = eyeH * (female ? 0.46 : 0.44);
+      // soft pastel upper eyelid shadow
+      ctx.fillStyle = female ? "rgba(235,175,180,0.34)" : "rgba(180,155,150,0.22)";
+      ctx.beginPath();
+      ctx.ellipse(ex, ey - eyeH * 0.22, eyeW * 0.48, eyeH * 0.26, 0, Math.PI, TAU);
+      ctx.fill();
+      // iris gradient (gemstone shine)
+      const ir = eyeH * (female ? 0.47 : 0.46);
       const ig = ctx.createLinearGradient(ex, ey - ir, ex, ey + ir);
       ig.addColorStop(0, look.irisTop);
-      ig.addColorStop(0.55, look.irisMid);
+      ig.addColorStop(0.52, look.irisMid);
       ig.addColorStop(1, look.irisBottom);
       ctx.fillStyle = ig;
       ctx.beginPath();
-      ctx.ellipse(ex, ey + eyeH * 0.03, ir * 0.82, ir, 0, 0, TAU);
+      ctx.ellipse(ex, ey + eyeH * 0.03, ir * 0.85, ir, 0, 0, TAU);
       ctx.fill();
-      ctx.strokeStyle = "rgba(40,20,15,0.85)";
-      ctx.lineWidth = 2.5 * k;
+      ctx.strokeStyle = "rgba(38,18,14,0.88)";
+      ctx.lineWidth = 2.8 * k;
       ctx.stroke();
       // pupil
-      ctx.fillStyle = "#1d100c";
+      ctx.fillStyle = "#1a0e0a";
       ctx.beginPath();
-      ctx.ellipse(ex, ey + eyeH * 0.04, ir * 0.36, ir * 0.46, 0, 0, TAU);
+      ctx.ellipse(ex, ey + eyeH * 0.04, ir * 0.37, ir * 0.44, 0, 0, TAU);
       ctx.fill();
-      // iris ring sparkles
-      ctx.fillStyle = "rgba(255,230,190,0.55)";
+      // lower crescent iris glow
+      ctx.fillStyle = "rgba(255,235,195,0.68)";
       ctx.beginPath();
-      ctx.ellipse(ex, ey + ir * 0.55, ir * 0.5, ir * 0.18, 0, 0, Math.PI);
+      ctx.ellipse(ex, ey + ir * 0.54, ir * 0.52, ir * 0.21, 0, 0, Math.PI);
       ctx.fill();
-      // highlights
+      // big kawaii catchlights (primary + secondary + starry micro dot)
       ctx.fillStyle = "#ffffff";
       ctx.beginPath();
-      ctx.ellipse(ex - s * ir * 0.3 - ir * 0.05, ey - ir * 0.32, ir * 0.27, ir * 0.22, -0.5, 0, TAU);
+      ctx.ellipse(ex - s * ir * 0.28 - ir * 0.05, ey - ir * 0.30, ir * 0.31, ir * 0.25, -0.45, 0, TAU);
       ctx.fill();
       ctx.beginPath();
-      ctx.arc(ex + ir * 0.32, ey + ir * 0.35, ir * 0.11, 0, TAU);
+      ctx.arc(ex + ir * 0.30, ey + ir * 0.32, ir * 0.13, 0, TAU);
       ctx.fill();
-      // upper lash line
-      ctx.strokeStyle = "#24140f";
-      ctx.lineWidth = (female ? 7 : 6) * k;
       ctx.beginPath();
-      ctx.moveTo(ex - eyeW * 0.52, ey + eyeH * 0.02);
-      ctx.quadraticCurveTo(ex, ey - eyeH * 0.78, ex + eyeW * 0.54, ey - eyeH * 0.02);
+      ctx.arc(ex + s * ir * 0.26, ey - ir * 0.34, ir * 0.08, 0, TAU);
+      ctx.fill();
+      // thick curvy upper lash line
+      ctx.strokeStyle = "#22120d";
+      ctx.lineWidth = (female ? 9 : 8) * k;
+      ctx.beginPath();
+      ctx.moveTo(ex - eyeW * 0.53, ey + eyeH * 0.02);
+      ctx.quadraticCurveTo(ex, ey - eyeH * 0.76, ex + eyeW * 0.55, ey - eyeH * 0.02);
       ctx.stroke();
       if (female) {
-        // outer flick + individual lashes
-        const ox = ex + s * eyeW * 0.5;
-        ctx.lineWidth = 4 * k;
+        const ox = ex + s * eyeW * 0.52;
+        ctx.lineWidth = 4.6 * k;
         ctx.beginPath();
-        ctx.moveTo(ox, ey - eyeH * 0.05);
-        ctx.lineTo(ox + s * 12 * k, ey - eyeH * 0.32);
+        ctx.moveTo(ox, ey - eyeH * 0.06);
+        ctx.lineTo(ox + s * 14 * k, ey - eyeH * 0.33);
         ctx.stroke();
-        ctx.lineWidth = 2.6 * k;
+        ctx.lineWidth = 2.8 * k;
         for (let i = 0; i < 3; i += 1) {
           const lx = ex + s * eyeW * (0.18 + i * 0.12);
           const ly = ey - eyeH * (0.42 - i * 0.1);
           ctx.beginPath();
           ctx.moveTo(lx, ly);
-          ctx.lineTo(lx + s * 7 * k, ly - 9 * k);
+          ctx.lineTo(lx + s * 8 * k, ly - 10 * k);
           ctx.stroke();
         }
       }
       // double-lid crease
       ctx.strokeStyle = "rgba(150,90,80,0.45)";
-      ctx.lineWidth = 2 * k;
+      ctx.lineWidth = 2.2 * k;
       ctx.beginPath();
-      ctx.moveTo(ex - eyeW * 0.4, ey - eyeH * 0.5);
-      ctx.quadraticCurveTo(ex, ey - eyeH * 0.92, ex + eyeW * 0.42, ey - eyeH * 0.46);
+      ctx.moveTo(ex - eyeW * 0.4, ey - eyeH * 0.52);
+      ctx.quadraticCurveTo(ex, ey - eyeH * 0.90, ex + eyeW * 0.42, ey - eyeH * 0.48);
       ctx.stroke();
       // lower lash
-      ctx.strokeStyle = "rgba(60,30,25,0.55)";
-      ctx.lineWidth = 2 * k;
+      ctx.strokeStyle = "rgba(60,30,25,0.52)";
+      ctx.lineWidth = 2.2 * k;
       ctx.beginPath();
-      ctx.moveTo(ex - eyeW * 0.25, ey + eyeH * 0.47);
-      ctx.quadraticCurveTo(ex, ey + eyeH * 0.56, ex + eyeW * 0.32, ey + eyeH * 0.4);
+      ctx.moveTo(ex - eyeW * 0.26, ey + eyeH * 0.48);
+      ctx.quadraticCurveTo(ex, ey + eyeH * 0.57, ex + eyeW * 0.32, ey + eyeH * 0.42);
       ctx.stroke();
     } else if (expr === "happy") {
       ctx.strokeStyle = "#24140f";
-      ctx.lineWidth = 6 * k;
+      ctx.lineWidth = 7.5 * k;
       ctx.beginPath();
-      ctx.moveTo(ex - eyeW * 0.45, ey + eyeH * 0.12);
-      ctx.quadraticCurveTo(ex, ey - eyeH * 0.55, ex + eyeW * 0.45, ey + eyeH * 0.12);
+      ctx.moveTo(ex - eyeW * 0.44, ey + eyeH * 0.10);
+      ctx.quadraticCurveTo(ex, ey - eyeH * 0.56, ex + eyeW * 0.44, ey + eyeH * 0.10);
       ctx.stroke();
     } else {
       // closed (blink / kiss): downward curve with lashes
       ctx.strokeStyle = "#24140f";
-      ctx.lineWidth = 6 * k;
+      ctx.lineWidth = 7 * k;
       ctx.beginPath();
-      ctx.moveTo(ex - eyeW * 0.48, ey - eyeH * 0.02);
-      ctx.quadraticCurveTo(ex, ey + eyeH * 0.32, ex + eyeW * 0.48, ey - eyeH * 0.02);
+      ctx.moveTo(ex - eyeW * 0.46, ey - eyeH * 0.02);
+      ctx.quadraticCurveTo(ex, ey + eyeH * 0.30, ex + eyeW * 0.46, ey - eyeH * 0.02);
       ctx.stroke();
       if (female) {
-        ctx.lineWidth = 2.6 * k;
+        ctx.lineWidth = 2.8 * k;
         for (let i = 0; i < 4; i += 1) {
           const t = 0.2 + i * 0.2;
-          const lx = ex - eyeW * 0.48 + eyeW * 0.96 * t;
-          const ly = ey + eyeH * 0.3 * Math.sin(t * Math.PI) - eyeH * 0.02;
+          const lx = ex - eyeW * 0.46 + eyeW * 0.92 * t;
+          const ly = ey + eyeH * 0.28 * Math.sin(t * Math.PI) - eyeH * 0.02;
           ctx.beginPath();
           ctx.moveTo(lx, ly);
-          ctx.lineTo(lx + s * 3 * k, ly + 8 * k);
+          ctx.lineTo(lx + s * 3.5 * k, ly + 8.5 * k);
           ctx.stroke();
         }
       }
     }
   }
 
-  // Nose shade (dainty soft anime nose bridge + highlight dot)
-  const [nx, ny] = faceXY(0.02, -0.20, w, h);
-  ctx.fillStyle = "rgba(218,136,122,0.52)";
+  // Tiny button chibi nose shade
+  const [nx, ny] = faceXY(0.015, -0.25, w, h);
+  ctx.fillStyle = "rgba(222,140,126,0.46)";
   ctx.beginPath();
-  ctx.ellipse(nx - 2 * k, ny + 2 * k, 5.5 * k, 3.2 * k, 0.15, 0, TAU);
+  ctx.ellipse(nx - 1.5 * k, ny + 1.5 * k, 4.5 * k, 2.6 * k, 0.12, 0, TAU);
   ctx.fill();
-  ctx.strokeStyle = "rgba(182,102,90,0.68)";
-  ctx.lineWidth = 2.4 * k;
+  ctx.strokeStyle = "rgba(182,102,90,0.58)";
+  ctx.lineWidth = 2.0 * k;
   ctx.beginPath();
-  ctx.moveTo(nx, ny - 8 * k);
-  ctx.quadraticCurveTo(nx + 4.5 * k, ny + 1.5 * k, nx - 2 * k, ny + 4.5 * k);
+  ctx.moveTo(nx, ny - 5 * k);
+  ctx.quadraticCurveTo(nx + 3.5 * k, ny + 1 * k, nx - 1.5 * k, ny + 3.5 * k);
   ctx.stroke();
 
   // Soft glossy anime blush highlight dots
   for (const s of [-1, 1]) {
-    const [bx, by] = faceXY(s * 0.48, -0.29, w, h);
-    ctx.fillStyle = `rgba(255,252,248,${female ? 0.55 : 0.25})`;
+    const [bx, by] = faceXY(s * 0.47, -0.32, w, h);
+    ctx.fillStyle = `rgba(255,252,248,${female ? 0.65 : 0.38})`;
     ctx.beginPath();
-    ctx.ellipse(bx - s * 10 * k, by - 5 * k, 6 * k, 3.5 * k, -0.25, 0, TAU);
+    ctx.ellipse(bx - s * 11 * k, by - 5 * k, 7 * k, 4 * k, -0.25, 0, TAU);
     ctx.fill();
   }
 
-  // Mouth
-  const [mx, my] = faceXY(0, -0.43, w, h);
+  // Cute chibi mouth (:3 cat-smile / bright laugh / sweet kiss)
+  const [mx, my] = faceXY(0, -0.44, w, h);
   if (expr === "kiss") {
     ctx.fillStyle = look.lipColor;
     ctx.beginPath();
-    ctx.ellipse(mx, my, 9 * k, 7 * k, 0, 0, TAU);
+    ctx.ellipse(mx, my, 9.5 * k, 7.5 * k, 0, 0, TAU);
     ctx.fill();
     ctx.strokeStyle = "rgba(150,60,70,0.8)";
-    ctx.lineWidth = 2 * k;
+    ctx.lineWidth = 2.2 * k;
     ctx.stroke();
   } else {
     const wide = expr === "happy" ? 1.25 : 1.0;
-    if (female || expr === "happy") {
-      ctx.fillStyle = expr === "happy" ? "#b8505e" : look.lipColor;
+    if (expr === "happy") {
+      ctx.fillStyle = "#b8505e";
       ctx.beginPath();
-      ctx.moveTo(mx - 20 * k * wide, my - 2 * k);
-      ctx.quadraticCurveTo(mx, my + (expr === "happy" ? 22 : 12) * k, mx + 20 * k * wide, my - 2 * k);
-      ctx.quadraticCurveTo(mx, my + 3 * k, mx - 20 * k * wide, my - 2 * k);
+      ctx.moveTo(mx - 22 * k * wide, my - 3 * k);
+      ctx.quadraticCurveTo(mx, my + 24 * k, mx + 22 * k * wide, my - 3 * k);
+      ctx.quadraticCurveTo(mx, my + 2 * k, mx - 22 * k * wide, my - 3 * k);
       ctx.fill();
-      if (expr === "happy") {
-        ctx.fillStyle = "#f09aa5";
-        ctx.beginPath();
-        ctx.ellipse(mx, my + 10 * k, 9 * k, 4 * k, 0, 0, TAU);
-        ctx.fill();
-      }
+      ctx.fillStyle = "#f4a2ad";
+      ctx.beginPath();
+      ctx.ellipse(mx, my + 11 * k, 10 * k, 4.5 * k, 0, 0, TAU);
+      ctx.fill();
+    } else if (female) {
+      ctx.fillStyle = look.lipColor;
+      ctx.beginPath();
+      ctx.ellipse(mx, my + 3 * k, 12 * k, 5.5 * k, 0, 0, TAU);
+      ctx.fill();
     }
-    ctx.strokeStyle = "rgba(120,50,50,0.85)";
-    ctx.lineWidth = 3 * k;
+    ctx.strokeStyle = "rgba(120,50,50,0.88)";
+    ctx.lineWidth = 3.2 * k;
     ctx.beginPath();
-    ctx.moveTo(mx - 20 * k * wide, my - 3 * k);
-    ctx.quadraticCurveTo(mx, my + 7 * k, mx + 20 * k * wide, my - 3 * k);
+    if (expr === "open") {
+      // Cute gentle ":3" scalloped smile
+      ctx.moveTo(mx - 19 * k, my - 2 * k);
+      ctx.quadraticCurveTo(mx - 9.5 * k, my + 7.5 * k, mx, my - 1 * k);
+      ctx.quadraticCurveTo(mx + 9.5 * k, my + 7.5 * k, mx + 19 * k, my - 2 * k);
+    } else {
+      ctx.moveTo(mx - 21 * k * wide, my - 3 * k);
+      ctx.quadraticCurveTo(mx, my + 8 * k, mx + 21 * k * wide, my - 3 * k);
+    }
     ctx.stroke();
   }
 }
@@ -523,29 +540,29 @@ export const COUPLE_DEFS = {
     gender: "f",
     tagColor: "#c4506a",
     dims: {
-      foot: 0.07,
-      shin: 0.38,
-      thigh: 0.39,
-      spine: 0.2,
-      chest: 0.19,
-      neck: 0.07,
-      headR: 0.125,
-      shoulder: 0.148,
-      hipW: 0.082,
-      upper: 0.26,
-      fore: 0.23,
-      hand: 1.0,
+      foot: 0.06,
+      shin: 0.245,
+      thigh: 0.255,
+      spine: 0.145,
+      chest: 0.145,
+      neck: 0.04,
+      headR: 0.188,
+      shoulder: 0.128,
+      hipW: 0.068,
+      upper: 0.175,
+      fore: 0.155,
+      hand: 0.88,
     },
     look: {
       gender: "f",
-      skin: 0xf7d9c8,
-      hair: "#3b241d",
-      hairLight: "rgba(160,100,80,A)",
+      skin: 0xf9dfd0,
+      hair: "#422820",
+      hairLight: "rgba(175,112,88,A)",
       browColor: "#4a2d22",
       irisTop: "#3a1f16",
-      irisMid: "#7a4a2c",
-      irisBottom: "#c98f52",
-      lipColor: "#e07c8a",
+      irisMid: "#824f30",
+      irisBottom: "#d69a5c",
+      lipColor: "#e67f90",
     },
   },
   ran: {
@@ -554,29 +571,29 @@ export const COUPLE_DEFS = {
     gender: "m",
     tagColor: "#3f6a8a",
     dims: {
-      foot: 0.075,
-      shin: 0.43,
-      thigh: 0.44,
-      spine: 0.22,
-      chest: 0.23,
-      neck: 0.08,
-      headR: 0.128,
-      shoulder: 0.184,
-      hipW: 0.095,
-      upper: 0.3,
-      fore: 0.26,
-      hand: 1.12,
+      foot: 0.064,
+      shin: 0.27,
+      thigh: 0.28,
+      spine: 0.155,
+      chest: 0.16,
+      neck: 0.044,
+      headR: 0.194,
+      shoulder: 0.148,
+      hipW: 0.074,
+      upper: 0.195,
+      fore: 0.172,
+      hand: 0.94,
     },
     look: {
       gender: "m",
-      skin: 0xf0cfb8,
-      hair: "#1e1714",
-      hairLight: "rgba(120,95,80,A)",
-      browColor: "#21160f",
-      irisTop: "#1c120d",
-      irisMid: "#4a2e1f",
-      irisBottom: "#86603d",
-      lipColor: "#c98a84",
+      skin: 0xf3d4bf,
+      hair: "#231b17",
+      hairLight: "rgba(130,104,88,A)",
+      browColor: "#261912",
+      irisTop: "#1f140e",
+      irisMid: "#573724",
+      irisBottom: "#9e7246",
+      lipColor: "#d18c88",
     },
   },
 };
@@ -612,23 +629,23 @@ function buildHand(mats, scale, side) {
 
 function buildShoe(mats, female, scale) {
   const g = new THREE.Group();
-  const upper = addMesh(g, new THREE.SphereGeometry(1, 20, 14, 0, TAU, 0, Math.PI * 0.58), mats.shoe, 0, 0, 0.045 * scale);
-  upper.scale.set(0.046 * scale, 0.07 * scale, 0.118 * scale);
-  const sole = addMesh(g, new THREE.CylinderGeometry(1, 1, 1, 20), mats.sole, 0, -0.004, 0.045 * scale);
-  sole.scale.set(0.048 * scale, 0.014, 0.12 * scale);
+  const upper = addMesh(g, new THREE.SphereGeometry(1, 20, 14, 0, TAU, 0, Math.PI * 0.58), mats.shoe, 0, 0, 0.036 * scale);
+  upper.scale.set(0.056 * scale, 0.072 * scale, 0.098 * scale);
+  const sole = addMesh(g, new THREE.CylinderGeometry(1, 1, 1, 20), mats.sole, 0, -0.004, 0.036 * scale);
+  sole.scale.set(0.058 * scale, 0.015, 0.100 * scale);
   if (female) {
-    const strap = addMesh(g, new THREE.TorusGeometry(0.044, 0.005, 6, 20, Math.PI), mats.shoe, 0, 0.03, 0.02, 0, Math.PI / 2, 0);
+    const strap = addMesh(g, new THREE.TorusGeometry(0.044 * scale, 0.005, 6, 20, Math.PI), mats.shoe, 0, 0.032 * scale, 0.016 * scale, 0, Math.PI / 2, 0);
     strap.rotation.set(0, Math.PI / 2, 0);
-    const bow = addMesh(g, new THREE.SphereGeometry(0.012, 8, 6), mats.ribbon, 0, 0.045, 0.12);
-    bow.scale.set(1.6, 0.8, 0.7);
-    // ankle socks with lace frill
-    addMesh(g, new THREE.CylinderGeometry(0.037, 0.035, 0.06, 16), mats.sock, 0, 0.05, 0.0);
-    addMesh(g, new THREE.TorusGeometry(0.038, 0.006, 6, 18), mats.sock, 0, 0.08, 0, Math.PI / 2, 0, 0);
+    const bow = addMesh(g, new THREE.SphereGeometry(0.012, 8, 6), mats.ribbon, 0, 0.044 * scale, 0.095 * scale);
+    bow.scale.set(1.5, 0.85, 0.7);
+    // cute frilly ankle socks matching shin ankle (r=0.028..0.033)
+    addMesh(g, new THREE.CylinderGeometry(0.033, 0.031, 0.052, 16), mats.sock, 0, 0.046, 0.0);
+    addMesh(g, new THREE.TorusGeometry(0.034, 0.0055, 6, 18), mats.sock, 0, 0.072, 0, Math.PI / 2, 0, 0);
   } else {
-    // penny-loafer saddle + heel
-    const saddle = addMesh(g, new THREE.BoxGeometry(0.06, 0.012, 0.03), mats.sole, 0, 0.045, 0.085);
+    // cozy chunky chibi penny-loafer saddle + trouser cuff
+    const saddle = addMesh(g, new THREE.BoxGeometry(0.056 * scale, 0.012, 0.026 * scale), mats.sole, 0, 0.042 * scale, 0.068 * scale);
     saddle.rotation.x = -0.35;
-    addMesh(g, new THREE.CylinderGeometry(0.036, 0.034, 0.05, 16), mats.trouser, 0, 0.06, 0);
+    addMesh(g, new THREE.CylinderGeometry(0.041, 0.039, 0.046, 16), mats.trouser, 0, 0.052, 0);
   }
   return g;
 }
@@ -844,12 +861,13 @@ function makeMaterials(def) {
   } else {
     mats.shirt = new THREE.MeshPhysicalMaterial({
       color: 0xffffff,
-      map: makeLinenTexture("#f7f4ee"),
-      roughness: 0.8,
-      sheen: 0.4,
+      map: makeLinenTexture("#faf7f1"),
+      roughness: 0.78,
+      sheen: 0.45,
       sheenColor: new THREE.Color(0xffffff),
     });
-    mats.trouser = new THREE.MeshStandardMaterial({ color: 0xffffff, map: makeLinenTexture("#3c4b61"), roughness: 0.78 });
+    mats.trouser = new THREE.MeshStandardMaterial({ color: 0xffffff, map: makeLinenTexture("#465973"), roughness: 0.76 });
+    mats.kerchief = new THREE.MeshPhysicalMaterial({ color: 0x7aa4c0, roughness: 0.42, sheen: 0.75, sheenColor: new THREE.Color(0xd2e7f5) });
     mats.belt = new THREE.MeshStandardMaterial({ color: 0x6a4029, roughness: 0.42 });
     mats.shoe = new THREE.MeshPhysicalMaterial({ color: 0x7a4a2c, roughness: 0.35, clearcoat: 0.7 });
     mats.button = new THREE.MeshStandardMaterial({ color: 0xeee6da, roughness: 0.3 });
@@ -876,7 +894,7 @@ function buildCharacter(def) {
   J.pelvis.position.y = hipY;
   body.add(J.pelvis);
   J.spine = new THREE.Group();
-  J.spine.position.y = 0.04;
+  J.spine.position.y = female ? 0.028 : 0.03;
   J.pelvis.add(J.spine);
   J.chest = new THREE.Group();
   J.chest.position.y = D.spine;
@@ -885,71 +903,79 @@ function buildCharacter(def) {
   J.neck.position.y = D.chest;
   J.chest.add(J.neck);
   J.head = new THREE.Group();
-  J.head.position.y = D.neck + D.headR * 0.92;
+  J.head.position.y = D.neck + D.headR * 0.88;
   J.neck.add(J.head);
 
   // --- Torso ---
-  const depthScale = 0.74;
+  const depthScale = 0.76;
   if (female) {
+    const hT = D.spine + D.chest;
+    const sY = hT / 0.39;
+    const sX = D.shoulder / 0.148;
     const bodice = addMesh(
       J.spine,
       lathe(
         [
-          [0.0005, -0.07],
-          [0.12, -0.07],
-          [0.128, -0.02],
-          [0.112, 0.06],
-          [0.1, 0.12],
-          [0.118, 0.19],
-          [0.132, 0.25],
-          [0.128, 0.3],
-          [0.112, 0.33],
-          [0.06, 0.36],
-          [0.0005, 0.36],
+          [0.0005, -0.055 * sY],
+          [0.114 * sX, -0.055 * sY],
+          [0.120 * sX, -0.015 * sY],
+          [0.106 * sX, 0.06 * sY],
+          [0.096 * sX, 0.12 * sY],
+          [0.114 * sX, 0.19 * sY],
+          [0.128 * sX, 0.25 * sY],
+          [0.124 * sX, 0.30 * sY],
+          [0.106 * sX, 0.33 * sY],
+          [0.056 * sX, 0.355 * sY],
+          [0.0005, 0.355 * sY],
         ],
         40
       ),
       mats.dress
     );
     bodice.scale.z = depthScale;
-    // Peter-Pan collar
+    // Peter-Pan lace collar
     for (const s of [-1, 1]) {
-      const col = addMesh(J.chest, new THREE.CircleGeometry(0.05, 20, 0, Math.PI), mats.white, s * 0.035, 0.165, 0.07, -1.2, 0, s * 0.4);
+      const col = addMesh(J.chest, new THREE.CircleGeometry(0.042, 20, 0, Math.PI), mats.white, s * 0.03, D.chest * 0.86, 0.062, -1.2, 0, s * 0.4);
       col.material = mats.lace;
     }
-    // Necklace with heart pendant
-    const neckl = addMesh(J.chest, new THREE.TorusGeometry(0.058, 0.0022, 6, 32), mats.gold, 0, 0.17, 0.01, Math.PI / 2 + 0.35, 0, 0);
+    // Necklace with sweet heart pendant
+    const neckl = addMesh(J.chest, new THREE.TorusGeometry(0.050, 0.0022, 6, 32), mats.gold, 0, D.chest * 0.84, 0.008, Math.PI / 2 + 0.35, 0, 0);
     neckl.scale.z = 0.8;
-    const pend = addMesh(J.chest, new THREE.SphereGeometry(0.008, 10, 8), mats.ribbon, 0, 0.11, 0.098);
+    const pend = addMesh(J.chest, new THREE.SphereGeometry(0.007, 10, 8), mats.ribbon, 0, D.chest * 0.56, 0.084);
     pend.scale.set(1.2, 1, 0.5);
-    // Sage satin waist sash + back bow
-    const sash = addMesh(J.spine, new THREE.TorusGeometry(0.104, 0.014, 8, 36), mats.sash, 0, 0.1, 0, Math.PI / 2, 0, 0);
+    // Sage satin waist sash + dainty back bow
+    const sashY = 0.095 * sY;
+    const sash = addMesh(J.spine, new THREE.TorusGeometry(0.090, 0.013, 8, 36), mats.sash, 0, sashY, 0, Math.PI / 2, 0, 0);
     sash.scale.y = depthScale;
     const sbow = new THREE.Group();
-    sbow.position.set(0, 0.1, -0.085);
+    sbow.position.set(0, sashY, -0.073);
+    sbow.scale.setScalar(0.76);
     for (const s of [-1, 1]) {
       const l = addMesh(sbow, new THREE.TorusGeometry(0.032, 0.011, 8, 16), mats.sash, s * 0.035, 0.005, 0);
       l.scale.set(1.25, 0.7, 0.5);
-      const t = addMesh(sbow, new THREE.BoxGeometry(0.026, 0.16, 0.004), mats.sash, s * 0.02, -0.08, -0.01);
+      const t = addMesh(sbow, new THREE.BoxGeometry(0.026, 0.14, 0.004), mats.sash, s * 0.02, -0.072, -0.01);
       t.rotation.z = s * 0.18;
     }
     addMesh(sbow, new THREE.SphereGeometry(0.014, 8, 6), mats.sash);
     J.spine.add(sbow);
   } else {
+    const hT = D.spine + D.chest;
+    const sY = hT / 0.45;
+    const sX = D.shoulder / 0.184;
     const shirt = addMesh(
       J.spine,
       lathe(
         [
-          [0.0005, -0.06],
-          [0.135, -0.06],
-          [0.14, 0.0],
-          [0.132, 0.08],
-          [0.138, 0.16],
-          [0.155, 0.26],
-          [0.16, 0.34],
-          [0.14, 0.4],
-          [0.07, 0.44],
-          [0.0005, 0.44],
+          [0.0005, -0.045 * sY],
+          [0.134 * sX, -0.045 * sY],
+          [0.140 * sX, 0.0],
+          [0.132 * sX, 0.08 * sY],
+          [0.138 * sX, 0.16 * sY],
+          [0.152 * sX, 0.26 * sY],
+          [0.156 * sX, 0.34 * sY],
+          [0.134 * sX, 0.39 * sY],
+          [0.068 * sX, 0.425 * sY],
+          [0.0005, 0.425 * sY],
         ],
         40
       ),
@@ -957,42 +983,50 @@ function buildCharacter(def) {
     );
     shirt.scale.z = depthScale;
     // Placket + buttons
-    addMesh(J.spine, new THREE.BoxGeometry(0.026, 0.4, 0.004), mats.shirt, 0, 0.2, 0.108);
-    for (let i = 0; i < 5; i += 1) {
-      addMesh(J.spine, new THREE.CylinderGeometry(0.0055, 0.0055, 0.003, 10), mats.button, 0, 0.05 + i * 0.075, 0.112, Math.PI / 2, 0, 0);
+    addMesh(J.spine, new THREE.BoxGeometry(0.022, 0.36 * sY, 0.004), mats.shirt, 0, 0.19 * sY, 0.092);
+    for (let i = 0; i < 4; i += 1) {
+      addMesh(J.spine, new THREE.CylinderGeometry(0.005, 0.005, 0.003, 10), mats.button, 0, (0.06 + i * 0.09) * sY, 0.095, Math.PI / 2, 0, 0);
     }
-    // Spread collar
+    // Spread collar + preppy coastal bowtie
     for (const s of [-1, 1]) {
-      const c = addMesh(J.chest, new THREE.BoxGeometry(0.07, 0.045, 0.006), mats.shirt, s * 0.04, 0.2, 0.065);
+      const c = addMesh(J.chest, new THREE.BoxGeometry(0.050, 0.032, 0.005), mats.shirt, s * 0.028, D.chest * 0.84, 0.046);
       c.rotation.set(-0.5, s * 0.5, s * 0.55);
     }
+    const bt = new THREE.Group();
+    bt.position.set(0, D.chest * 0.72, 0.090);
+    for (const s of [-1, 1]) {
+      const wing = addMesh(bt, new THREE.BoxGeometry(0.028, 0.017, 0.007), mats.kerchief, s * 0.016, 0, 0);
+      wing.rotation.z = s * 0.14;
+    }
+    addMesh(bt, new THREE.SphereGeometry(0.009, 10, 8), mats.kerchief, 0, 0, 0.002);
+    J.chest.add(bt);
     // Chest pocket + pink rose boutonniere
-    addMesh(J.spine, new THREE.BoxGeometry(0.06, 0.065, 0.004), mats.shirt, 0.07, 0.29, 0.112);
-    const rose = addMesh(J.spine, new THREE.SphereGeometry(0.013, 10, 8), mats.ribbon, 0.075, 0.33, 0.118);
+    addMesh(J.spine, new THREE.BoxGeometry(0.048, 0.052, 0.004), mats.shirt, 0.056, 0.28 * sY, 0.094);
+    const rose = addMesh(J.spine, new THREE.SphereGeometry(0.011, 10, 8), mats.ribbon, 0.060, 0.32 * sY, 0.099);
     rose.scale.set(1, 0.85, 0.85);
     // Belt + buckle + trouser seat
-    const belt = addMesh(J.pelvis, new THREE.TorusGeometry(0.137, 0.014, 6, 36), mats.belt, 0, 0.0, 0, Math.PI / 2, 0, 0);
+    const belt = addMesh(J.pelvis, new THREE.TorusGeometry(0.114, 0.013, 6, 36), mats.belt, 0, 0.0, 0, Math.PI / 2, 0, 0);
     belt.scale.y = depthScale;
-    addMesh(J.pelvis, new THREE.BoxGeometry(0.036, 0.026, 0.008), mats.gold, 0, 0.0, 0.104);
+    addMesh(J.pelvis, new THREE.BoxGeometry(0.030, 0.022, 0.007), mats.gold, 0, 0.0, 0.088);
     const seat = addMesh(
       J.pelvis,
       lathe(
         [
-          [0.0005, -0.12],
-          [0.12, -0.12],
-          [0.142, -0.06],
-          [0.138, 0.0],
+          [0.0005, -0.105],
+          [0.092, -0.105],
+          [0.114, -0.048],
+          [0.115, 0.0],
           [0.0005, 0.0],
         ],
         32
       ),
       mats.trouser
     );
-    seat.scale.z = 0.8;
+    seat.scale.z = 0.78;
   }
 
   // --- Neck & Head ---
-  addMesh(J.neck, new THREE.CylinderGeometry(0.04, 0.046, D.neck + 0.06, 16), mats.skin, 0, D.neck * 0.5, 0);
+  addMesh(J.neck, new THREE.CylinderGeometry(0.033, 0.039, D.neck + 0.045, 16), mats.skin, 0, D.neck * 0.5, 0);
   const R = D.headR;
   const hasSculptHead = Boolean(_coupleParts?.HeadSculpt);
   if (hasSculptHead) {
@@ -1007,9 +1041,8 @@ function buildCharacter(def) {
       const z = p.getZ(i);
       if (y < -R * 0.2) {
         const t = (-y - R * 0.2) / (R * 0.8);
-        p.setX(i, x * (1 - 0.24 * t * t));
-        p.setZ(i, z * (1 - 0.1 * t * t) + (z > 0 ? 0.004 * t : 0));
-        p.setY(i, y - 0.012 * t * (z > 0 ? 1 : 0.2));
+        p.setX(i, x * (1 - 0.14 * t * t));
+        p.setZ(i, z * (1 - 0.08 * t * t) + (z > 0 ? 0.003 * t : 0));
       }
     }
     headGeo.computeVertexNormals();
@@ -1037,16 +1070,16 @@ function buildCharacter(def) {
   face.renderOrder = 2;
   J.head.add(face);
   if (!hasSculptHead) {
-    const nose = addMesh(J.head, new THREE.SphereGeometry(R * 0.055, 12, 10), mats.skin);
-    nose.position.copy(sph(0, -0.2, R * 0.985));
+    const nose = addMesh(J.head, new THREE.SphereGeometry(R * 0.045, 12, 10), mats.skin);
+    nose.position.copy(sph(0, -0.25, R * 0.985));
     nose.scale.set(0.7, 0.9, 0.55);
   }
   for (const s of [-1, 1]) {
     const ear = addMesh(J.head, new THREE.SphereGeometry(R * 0.19, 12, 10), mats.skin);
-    ear.position.set(s * R * 0.97, -R * 0.10, -R * 0.06);
-    ear.scale.set(0.36, 0.95, 0.68);
+    ear.position.set(s * R * 1.02, -R * 0.14, -R * 0.04);
+    ear.scale.set(0.35, 0.88, 0.65);
     if (female) {
-      addMesh(J.head, new THREE.SphereGeometry(0.0055, 8, 6), mats.gold, ear.position.x * 1.02, ear.position.y - R * 0.18, ear.position.z);
+      addMesh(J.head, new THREE.SphereGeometry(0.006, 8, 6), mats.gold, ear.position.x * 1.02, ear.position.y - R * 0.18, ear.position.z);
     }
   }
   let hairGroup = null;
@@ -1055,26 +1088,26 @@ function buildCharacter(def) {
     const hm = addMesh(hairGroup, _coupleParts.HairSculptF, mats.hair);
     hm.scale.setScalar(R);
     const pin = new THREE.Group();
-    pin.position.set(-R * 0.84, R * 0.44, R * 0.70);
+    pin.position.set(-R * 0.89, R * 0.35, R * 0.72);
     pin.lookAt(pin.position.clone().multiplyScalar(2));
     for (let p = 0; p < 5; p += 1) {
       const a = (p / 5) * TAU;
-      const pet = addMesh(pin, new THREE.SphereGeometry(0.014, 10, 8), mats.petal, Math.cos(a) * 0.014, Math.sin(a) * 0.014, 0);
+      const pet = addMesh(pin, new THREE.SphereGeometry(0.015, 10, 8), mats.petal, Math.cos(a) * 0.015, Math.sin(a) * 0.015, 0);
       pet.scale.set(1, 0.75, 0.35);
       pet.rotation.z = a;
     }
-    addMesh(pin, new THREE.SphereGeometry(0.007, 8, 6), mats.gold, 0, 0, 0.004);
+    addMesh(pin, new THREE.SphereGeometry(0.008, 8, 6), mats.gold, 0, 0, 0.004);
     hairGroup.add(pin);
     const bow = new THREE.Group();
-    bow.position.set(0, R * 0.32, -R * 1.15);
+    bow.position.set(0, R * 0.24, -R * 1.28);
     bow.rotation.y = Math.PI;
     for (const s of [-1, 1]) {
-      const loop = addMesh(bow, new THREE.TorusGeometry(0.032, 0.011, 8, 18), mats.ribbon, s * 0.034, 0, 0);
+      const loop = addMesh(bow, new THREE.TorusGeometry(0.028, 0.010, 8, 18), mats.ribbon, s * 0.030, 0, 0);
       loop.scale.set(1.2, 0.75, 0.6);
-      const tail = addMesh(bow, new THREE.BoxGeometry(0.02, 0.095, 0.004), mats.ribbon, s * 0.018, -0.052, -0.004);
+      const tail = addMesh(bow, new THREE.BoxGeometry(0.016, 0.072, 0.004), mats.ribbon, s * 0.015, -0.042, -0.004);
       tail.rotation.z = s * 0.25;
     }
-    addMesh(bow, new THREE.SphereGeometry(0.014, 10, 8), mats.ribbon);
+    addMesh(bow, new THREE.SphereGeometry(0.013, 10, 8), mats.ribbon);
     hairGroup.add(bow);
     J.head.add(hairGroup);
   } else if (!female && _coupleParts?.HairSculptM) {
@@ -1091,7 +1124,7 @@ function buildCharacter(def) {
   for (const side of [1, -1]) {
     const key = side === 1 ? "L" : "R";
     const sh = new THREE.Group();
-    sh.position.set(side * D.shoulder, D.chest - 0.062, 0);
+    sh.position.set(side * D.shoulder, D.chest * 0.72, 0);
     J.chest.add(sh);
     const el = new THREE.Group();
     el.position.y = -D.upper;
@@ -1123,30 +1156,30 @@ function buildCharacter(def) {
       const sleeveKey = side === 1 ? "SleeveF_L" : "SleeveF_R";
       if (_coupleParts?.[sleeveKey]) {
         addMesh(sh, _coupleParts[sleeveKey], mats.dress);
-        addMesh(sh, new THREE.TorusGeometry(0.051, 0.005, 6, 20), mats.lace, side * 0.004, -0.095, 0, Math.PI / 2, 0, 0);
+        addMesh(sh, new THREE.TorusGeometry(0.044, 0.0045, 6, 20), mats.lace, side * 0.002, -0.084, 0, Math.PI / 2, 0, 0);
       } else {
-        addMesh(sh, new THREE.TorusGeometry(0.046, 0.007, 6, 20), mats.lace, side * 0.004, -0.098, 0, Math.PI / 2, 0, 0);
+        addMesh(sh, new THREE.TorusGeometry(0.042, 0.006, 6, 20), mats.lace, side * 0.002, -0.084, 0, Math.PI / 2, 0, 0);
       }
-      addUpperArm(0.034);
-      addForeArm(0.029);
+      addUpperArm(0.031);
+      addForeArm(0.027);
       if (side === 1) {
         // pearl bracelet
-        addMesh(wr, new THREE.TorusGeometry(0.026, 0.0045, 6, 18), mats.white, 0, 0.02, 0, Math.PI / 2, 0, 0);
+        addMesh(wr, new THREE.TorusGeometry(0.024, 0.004, 6, 18), mats.white, 0, 0.018, 0, Math.PI / 2, 0, 0);
       }
     } else {
       const sleeveKey = side === 1 ? "SleeveM_L" : "SleeveM_R";
       if (_coupleParts?.[sleeveKey]) {
         addMesh(sh, _coupleParts[sleeveKey], mats.shirt);
-        addUpperArm(0.040);
+        addUpperArm(0.036);
       } else {
-        addMesh(sh, limbGeo(0.048, 0.042, D.upper, 0.05), mats.shirt);
-        addMesh(el, new THREE.TorusGeometry(0.042, 0.011, 8, 20), mats.shirt, 0, 0.03, 0, Math.PI / 2, 0, 0);
+        addMesh(sh, limbGeo(0.045, 0.039, D.upper, 0.05), mats.shirt);
+        addMesh(el, new THREE.TorusGeometry(0.038, 0.010, 8, 20), mats.shirt, 0, 0.03, 0, Math.PI / 2, 0, 0);
       }
-      addForeArm(0.034);
+      addForeArm(0.031);
       if (side === 1) {
-        addMesh(wr, new THREE.TorusGeometry(0.029, 0.006, 6, 18), mats.belt, 0, 0.022, 0, Math.PI / 2, 0, 0);
-        addMesh(wr, new THREE.CylinderGeometry(0.014, 0.014, 0.006, 16), mats.gold, side * 0.029, 0.022, 0, 0, 0, Math.PI / 2);
-        addMesh(wr, new THREE.CylinderGeometry(0.011, 0.011, 0.007, 16), mats.watchFace, side * 0.031, 0.022, 0, 0, 0, Math.PI / 2);
+        addMesh(wr, new THREE.TorusGeometry(0.027, 0.005, 6, 18), mats.belt, 0, 0.020, 0, Math.PI / 2, 0, 0);
+        addMesh(wr, new THREE.CylinderGeometry(0.012, 0.012, 0.005, 16), mats.gold, side * 0.027, 0.020, 0, 0, 0, Math.PI / 2);
+        addMesh(wr, new THREE.CylinderGeometry(0.0095, 0.0095, 0.006, 16), mats.watchFace, side * 0.029, 0.020, 0, 0, 0, Math.PI / 2);
       }
     }
     const hand = buildHand(mats, D.hand, side);
@@ -1157,7 +1190,7 @@ function buildCharacter(def) {
   for (const side of [1, -1]) {
     const key = side === 1 ? "L" : "R";
     const hip = new THREE.Group();
-    hip.position.set(side * D.hipW, -0.02, 0);
+    hip.position.set(side * D.hipW, -0.015, 0);
     J.pelvis.add(hip);
     const kn = new THREE.Group();
     kn.position.y = -D.thigh;
@@ -1169,29 +1202,30 @@ function buildCharacter(def) {
     J[`kn${key}`] = kn;
     J[`an${key}`] = an;
     if (female) {
-      addMesh(hip, limbGeo(0.062, 0.042, D.thigh, 0.02), mats.skin);
-      addMesh(kn, limbGeo(0.043, 0.028, D.shin, 0.12), mats.skin);
+      addMesh(hip, limbGeo(0.052, 0.036, D.thigh, 0.02), mats.skin);
+      addMesh(kn, limbGeo(0.038, 0.028, D.shin, 0.12), mats.skin);
     } else {
-      addMesh(hip, limbGeo(0.075, 0.056, D.thigh, 0.03), mats.trouser);
-      addMesh(kn, limbGeo(0.057, 0.046, D.shin, 0.02), mats.trouser);
+      addMesh(hip, limbGeo(0.062, 0.048, D.thigh, 0.03), mats.trouser);
+      addMesh(kn, limbGeo(0.050, 0.040, D.shin, 0.02), mats.trouser);
     }
-    const shoe = buildShoe(mats, female, female ? 1.0 : 1.12);
-    shoe.position.y = -D.foot + 0.012;
+    const shoe = buildShoe(mats, female, female ? 0.84 : 0.90);
+    shoe.position.y = -D.foot + 0.010;
     an.add(shoe);
   }
 
-  // --- Skirt (attached to pelvis; deformed per frame for sit / sway) ---
+  // --- Skirt (attached to pelvis; deformed cleanly on sit/carry) ---
   let skirt = null;
   if (female) {
     skirt = new THREE.Group();
     J.pelvis.add(skirt);
-    const skirtLen = D.thigh + 0.04;
+    const skirtLen = D.thigh * 0.88;
+    const yTop = 0.092;
     const prof = [];
     const steps = 14;
     for (let i = 0; i <= steps; i += 1) {
       const t = i / steps;
-      const y = 0.135 - t * (0.135 + skirtLen);
-      const r = 0.098 + Math.pow(t, 0.85) * 0.252;
+      const y = yTop - t * (yTop + skirtLen);
+      const r = 0.082 + Math.pow(t, 0.84) * 0.145;
       prof.push([r, y]);
     }
     const skirtGeo = lathe(prof.reverse(), 72);
@@ -1200,23 +1234,23 @@ function buildCharacter(def) {
       const x = p.getX(i);
       const z = p.getZ(i);
       const y = p.getY(i);
-      const t = clamp((0.12 - y) / (0.12 + skirtLen), 0, 1);
+      const t = clamp((yTop - y) / (yTop + skirtLen), 0, 1);
       const a = Math.atan2(z, x);
-      const pleat = 1 + Math.sin(a * 16) * 0.045 * t;
+      const pleat = 1 + Math.sin(a * 16) * 0.042 * t;
       p.setX(i, x * pleat);
-      p.setZ(i, z * pleat * (0.74 + 0.12 * t));
+      p.setZ(i, z * pleat * (0.76 + 0.10 * t));
     }
     skirtGeo.computeVertexNormals();
     skirtGeo.userData.base = Float32Array.from(p.array);
     const skirtMesh = addMesh(skirt, skirtGeo, mats.dress);
     // lace petticoat hem
-    const hemY = 0.135 - (0.135 + skirtLen);
+    const hemY = yTop - (yTop + skirtLen);
     const hem = addMesh(
       skirt,
       lathe(
         [
-          [0.36, hemY - 0.035],
-          [0.352, hemY + 0.01],
+          [0.232, hemY - 0.024],
+          [0.226, hemY + 0.008],
         ],
         72
       ),
@@ -1231,7 +1265,7 @@ function buildCharacter(def) {
     new THREE.SpriteMaterial({ map: makeTagTexture(def.name, def.tagColor), transparent: true, depthWrite: false, depthTest: true })
   );
   tag.scale.set(0.42, 0.13, 1);
-  tag.position.y = hipY + D.spine + D.chest + D.neck + R * 2 + 0.25;
+  tag.position.y = hipY + D.spine + D.chest + D.neck + R * 2.15 + 0.14;
   tag.renderOrder = 5;
   root.add(tag);
 
@@ -1259,10 +1293,10 @@ const JOINT_KEYS = [
 function zeroPose() {
   const p = {};
   for (const k of JOINT_KEYS) p[k] = 0;
-  p.shLz = 0.12;
-  p.shRz = -0.12;
-  p.elLx = -0.12;
-  p.elRx = -0.12;
+  p.shLz = 0.28;
+  p.shRz = -0.28;
+  p.elLx = -0.14;
+  p.elRx = -0.14;
   return p;
 }
 
@@ -1285,6 +1319,7 @@ export class CoupleCharacter {
     this.expr = "open";
     this.exprOverride = null;
     this.state = "stand"; // stand | sit | lie | carried
+    this.lieRecline = 0;
     this.action = null; // { name, t, dur, data }
     this.lookTarget = null;
     this.rootQuat = null; // when set (lie/carried), overrides yaw
@@ -1356,45 +1391,46 @@ export class CoupleCharacter {
     if (s === "sit") {
       T.hipLx = -1.52;
       T.hipRx = -1.52;
-      T.knLx = 1.5;
-      T.knRx = 1.5;
-      T.anLx = 0.05;
-      T.anRx = 0.05;
+      T.knLx = 1.18;
+      T.knRx = 1.18;
+      T.anLx = 0.24;
+      T.anRx = 0.24;
       T.hipLz = female ? -0.04 : 0.1;
       T.hipRz = female ? 0.04 : -0.1;
       T.pelvisY = 0;
-      T.spineX = -0.06;
-      T.shLx = -0.35;
-      T.shRx = -0.35;
-      T.elLx = -0.9;
-      T.elRx = -0.9;
-      T.shLz = 0.05;
-      T.shRz = -0.05;
+      T.spineX = -0.05;
+      T.shLx = -0.32;
+      T.shRx = -0.32;
+      T.elLx = -0.82;
+      T.elRx = -0.82;
+      T.shLz = 0.20;
+      T.shRz = -0.20;
     } else if (s === "lie") {
-      T.hipLx = -0.06;
-      T.hipRx = -0.08;
-      T.knLx = 0.14;
-      T.knRx = 0.2;
-      T.shLz = 0.32;
-      T.shRz = -0.32;
-      T.elLx = -0.35;
-      T.elRx = -0.35;
-      T.headX = -0.2;
+      const rec = this.lieRecline || 0;
+      T.hipLx = -rec - 0.04;
+      T.hipRx = -rec - 0.06;
+      T.knLx = rec > 0.1 ? 0.24 : 0.14;
+      T.knRx = rec > 0.1 ? 0.28 : 0.2;
+      T.shLz = 0.34;
+      T.shRz = -0.34;
+      T.elLx = -0.30;
+      T.elRx = -0.30;
+      T.headX = rec > 0.1 ? -0.18 : -0.12;
     } else if (s === "carried") {
-      T.hipLx = -1.45;
-      T.hipRx = -1.35;
-      T.knLx = 1.35;
-      T.knRx = 1.2;
-      T.spineX = 0.18;
+      T.hipLx = -0.62;
+      T.hipRx = -0.56;
+      T.knLx = 0.78;
+      T.knRx = 0.72;
+      T.spineX = 0.04;
       // one arm around his neck, other resting on chest
-      T.shRx = -2.2;
-      T.shRz = 0.25;
-      T.elRx = -1.1;
-      T.shLx = -0.8;
-      T.shLz = -0.2;
-      T.elLx = -1.6;
-      T.headX = -0.3;
-      T.headY = -0.4;
+      T.shRx = -2.0;
+      T.shRz = 0.24;
+      T.elRx = -1.0;
+      T.shLx = -0.75;
+      T.shLz = 0.22;
+      T.elLx = -1.40;
+      T.headX = 0.06;
+      T.headY = 0.42;
     }
 
     if (this.reachT > 0) {
@@ -1415,65 +1451,76 @@ export class CoupleCharacter {
     };
     switch (a.name) {
       case "hug":
-        mix("shLx", -1.25);
-        mix("shRx", -1.25);
-        mix("shLz", female ? 0.55 : 0.35);
-        mix("shRz", female ? -0.55 : -0.35);
-        mix("shLy", -0.6);
-        mix("shRy", 0.6);
-        mix("elLx", -1.25);
-        mix("elRx", -1.25);
-        mix("elLy", 0.6);
-        mix("elRy", -0.6);
+        mix("shLx", -1.24);
+        mix("shRx", -1.24);
+        mix("shLz", female ? 0.44 : 0.36);
+        mix("shRz", female ? -0.44 : -0.36);
+        mix("shLy", -0.55);
+        mix("shRy", 0.55);
+        mix("elLx", -0.96);
+        mix("elRx", -0.96);
+        mix("elLy", 0.55);
+        mix("elRy", -0.55);
         if (female) {
-          mix("headY", 0.55);
-          mix("headZ", 0.15);
-          mix("pelvisY", 0.03);
-          mix("anLx", 0.4);
-          mix("anRx", 0.4);
+          mix("headY", 0.62);
+          mix("headZ", 0.16);
+          mix("headX", -0.04);
+          mix("spineX", 0.02);
+          mix("pelvisY", 0.022);
+          mix("anLx", 0.32);
+          mix("anRx", 0.32);
         } else {
-          mix("headX", 0.32);
-          mix("spineX", 0.08);
+          mix("headX", 0.10);
+          mix("headY", 0.56);
+          mix("headZ", 0.14);
+          mix("spineX", 0.03);
         }
         break;
       case "kiss": {
-        mix("shLx", female ? -1.0 : -0.75);
-        mix("shRx", female ? -1.0 : -0.75);
-        mix("shLz", 0.25);
-        mix("shRz", -0.25);
-        mix("elLx", -1.1);
-        mix("elRx", -1.1);
+        mix("shLx", female ? -1.05 : -0.78);
+        mix("shRx", female ? -1.05 : -0.78);
+        mix("shLz", 0.30);
+        mix("shRz", -0.30);
+        mix("elLx", -0.92);
+        mix("elRx", -0.92);
         if (female) {
-          mix("pelvisY", 0.07);
-          mix("anLx", 0.75);
-          mix("anRx", 0.75);
-          mix("knRx", 0.9);
-          mix("hipRx", 0.55);
-          mix("headX", -0.32);
+          mix("pelvisY", 0.045);
+          mix("anLx", 0.60);
+          mix("anRx", 0.60);
+          mix("knRx", 0.70);
+          mix("hipRx", 0.40);
+          mix("spineX", 0.02);
+          mix("headX", -0.14);
+          mix("headY", 0.12);
           mix("headZ", -0.18);
         } else {
-          mix("spineX", 0.14);
-          mix("neckX", 0.2);
-          mix("headX", 0.38);
-          mix("headZ", 0.2);
+          mix("spineX", 0.03);
+          mix("neckX", 0.06);
+          mix("headX", 0.12);
+          mix("headY", 0.12);
+          mix("headZ", -0.18);
         }
         break;
       }
       case "pat":
         if (a.data.giver) {
-          mix("shRx", -2.5);
-          mix("shRz", 0.3);
-          mix("elRx", -0.7);
-          mix("wrRx", Math.sin(a.t * 9) * 0.25);
+          mix("shRx", -2.26);
+          mix("shRz", 0.28);
+          mix("elRx", -0.22);
+          mix("wrRx", Math.sin(a.t * 9) * 0.22);
+          mix("spineX", 0.03);
+          mix("headX", 0.08);
         } else {
-          mix("headX", 0.22);
-          mix("headZ", 0.12);
-          mix("shLx", -0.2);
-          mix("shRx", -0.2);
-          mix("elLx", -1.9);
-          mix("elRx", -1.9);
-          mix("shLz", -0.25);
-          mix("shRz", 0.25);
+          mix("headX", 0.06);
+          mix("headZ", 0.10);
+          mix("shLx", -0.18);
+          mix("shRx", -0.18);
+          mix("elLx", -1.45);
+          mix("elRx", -1.45);
+          mix("shLy", -0.35);
+          mix("shRy", 0.35);
+          mix("shLz", 0.28);
+          mix("shRz", -0.28);
         }
         break;
       case "heart":
@@ -1512,25 +1559,25 @@ export class CoupleCharacter {
         break;
       }
       case "carry":
-        mix("shLx", -1.1);
-        mix("shRx", -1.1);
-        mix("shLz", 0.2);
-        mix("shRz", -0.2);
-        mix("elLx", -1.05);
-        mix("elRx", -1.05);
-        mix("spineX", -0.1);
-        mix("headX", 0.2);
+        mix("shLx", -1.20);
+        mix("shRx", -1.20);
+        mix("shLz", 0.18);
+        mix("shRz", -0.18);
+        mix("elLx", -0.88);
+        mix("elRx", -0.88);
+        mix("spineX", -0.06);
+        mix("headX", 0.16);
         break;
       case "holdhand": {
         const side = a.data.side; // +1: partner on my left
         if (side > 0) {
-          mix("shLz", 0.22);
-          mix("shLx", -0.15);
-          mix("elLx", -0.25);
+          mix("shLz", 0.34);
+          mix("shLx", -0.12);
+          mix("elLx", -0.22);
         } else {
-          mix("shRz", -0.22);
-          mix("shRx", -0.15);
-          mix("elRx", -0.25);
+          mix("shRz", -0.34);
+          mix("shRx", -0.12);
+          mix("elRx", -0.22);
         }
         break;
       }
@@ -1571,7 +1618,8 @@ export class CoupleCharacter {
       let d = want - this.yaw;
       d = Math.atan2(Math.sin(d), Math.cos(d));
       T.headY += clamp(d, -0.9, 0.9) * 0.7;
-      const dy = this.lookTarget.y - (this.pos.y + this.hipY + 0.6);
+      const headOffset = this.dims.spine + this.dims.chest + this.dims.neck + this.dims.headR;
+      const dy = this.lookTarget.y - (this.pos.y + this.hipY + headOffset);
       const dist = Math.max(0.3, Math.hypot(dx, dz));
       T.headX += clamp(-Math.atan2(dy, dist), -0.5, 0.5) * 0.6;
     }
@@ -1602,7 +1650,7 @@ export class CoupleCharacter {
 
     // Secondary motion: hair & skirt sway
     this.hairSway = lerp(this.hairSway, this.speed * 0.05 + Math.sin(this.time * 1.3) * 0.015, clamp(dt * 3, 0, 1));
-    this.hairGroup.rotation.x = this.def.gender === "f" ? -this.hairSway * 0.25 : 0;
+    this.hairGroup.rotation.x = this.def.gender === "f" ? -this.hairSway * 0.22 : 0;
     if (this.skirt) {
       const sitting = this.state === "sit" || this.state === "carried";
       const sk = this.skirt;
@@ -1610,9 +1658,9 @@ export class CoupleCharacter {
       const spinning = this.action && this.action.name === "dance" ? 1 : 0;
       this.skirtSway = lerp(this.skirtSway, spinning, clamp(dt * 3, 0, 1));
       if (sitting) {
-        sk.scale.set(1.12, 0.62, 1.95);
-        sk.position.set(0, 0.03, 0.17);
-        sk.rotation.set(0.15, 0, 0);
+        sk.scale.set(1.06, 0.72, 1.16);
+        sk.position.set(0, 0.025, 0.08);
+        sk.rotation.set(-0.36, 0, 0);
       } else {
         const flare = 1 + this.skirtSway * 0.22;
         sk.scale.set(flare, 1 - this.skirtSway * 0.08, flare);
@@ -1648,7 +1696,7 @@ export class CoupleCharacter {
   // World-space head/eye position
   getEyeWorld(out = new THREE.Vector3()) {
     this.J.head.updateWorldMatrix(true, false);
-    return out.set(0, 0.01, this.dims.headR * 0.85).applyMatrix4(this.J.head.matrixWorld);
+    return out.set(0, -this.dims.headR * 0.08, this.dims.headR * 0.96).applyMatrix4(this.J.head.matrixWorld);
   }
 
   getHeadWorld(out = new THREE.Vector3()) {
