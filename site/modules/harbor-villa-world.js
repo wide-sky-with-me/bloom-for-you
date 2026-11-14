@@ -24,8 +24,10 @@ import {
   clamp,
   getCreekCenterX,
   getGraniteSlabTexture,
+  getGraniteSlabNormalTexture,
   getPondNormalizedRadius,
   getTeakDeckTexture,
+  getTeakDeckNormalTexture,
   getWorldTerrainY,
   hexToColor3,
   lerp,
@@ -105,6 +107,10 @@ function tuneGLBMaterial(mat, { isFoliage = false, isAquatic = false, tintHex = 
   if (!mat) return;
   const name = mat.name || "";
   if (mat instanceof PBRMaterial) {
+    if (mat.albedoTexture) mat.albedoTexture.anisotropicFilteringLevel = 8;
+    if (mat.bumpTexture) mat.bumpTexture.anisotropicFilteringLevel = 8;
+    if (mat.metallicTexture) mat.metallicTexture.anisotropicFilteringLevel = 8;
+    if (mat.metallicF0Factor !== undefined) mat.metallicF0Factor = 0.46;
     if (isFoliage) {
       mat.backFaceCulling = false;
       mat.metallic = 0;
@@ -971,15 +977,16 @@ function buildCoastalVillaSection(scene, root, models, shadowGen, fx) {
     }
 
     state.fireBoost = Math.max(0, state.fireBoost - dt * 0.22);
-    const flicker = 0.88 + 0.14 * Math.sin(elapsed * 13.7) + 0.08 * Math.cos(elapsed * 23.1);
+    // Smooth warm organic firelight breathing without strobing the floor highlights
+    const flicker = 0.95 + 0.038 * Math.sin(elapsed * 2.2) + 0.022 * Math.cos(elapsed * 3.5);
     const fMult = (1.0 + state.fireBoost * 1.4) * flicker;
     for (let i = 0; i < fireplaceFlames.length; i += 1) {
       const fl = fireplaceFlames[i];
-      const fSin = Math.sin(elapsed * 11 + i * 1.9);
-      fl.scaling.set(0.85 + 0.2 * fMult, 0.85 + 0.38 * fMult + 0.12 * fSin, 0.9);
-      fl.rotation.z = 0.08 * fSin;
+      const fSin = Math.sin(elapsed * 4.5 + i * 1.9);
+      fl.scaling.set(0.86 + 0.16 * fMult, 0.86 + 0.32 * fMult + 0.10 * fSin, 0.9);
+      fl.rotation.z = 0.07 * fSin;
     }
-    hearthLight.intensity = lerp(3.4, 7.2, nightMix) * fMult;
+    hearthLight.intensity = lerp(3.4, 6.8, nightMix) * fMult;
 
     for (let i = 0; i < candleFlames.length; i += 1) {
       const cf = candleFlames[i];
@@ -2234,14 +2241,37 @@ function buildEstateAndHarborSection(scene, root, models, shadowGen, fx, courtRe
   const eRoot = new TransformNode("HarborAndEstateGroup", scene);
   eRoot.parent = root;
 
-  const quayDeckMat = makePbrMat(scene, "HarborQuayGranite", 0xc8c1b5, { roughness: 0.78 });
+  const quayDeckMat = makePbrMat(scene, "HarborQuayGranite", 0xc8c1b5, {
+    roughness: 0.62,
+    bumpTexture: getGraniteSlabNormalTexture(scene, 18, 22),
+    bumpLevel: 0.72,
+    specularIntensity: 0.5,
+  });
   quayDeckMat.albedoTexture = getGraniteSlabTexture(scene, 18, 22);
-  const quayWallMat = makePbrMat(scene, "HarborWallStone", 0xb6afa2, { roughness: 0.84 });
+  const quayWallMat = makePbrMat(scene, "HarborWallStone", 0xb6afa2, {
+    roughness: 0.76,
+    bumpTexture: getGraniteSlabNormalTexture(scene, 16, 4),
+    bumpLevel: 0.68,
+  });
   quayWallMat.albedoTexture = getGraniteSlabTexture(scene, 16, 4);
-  const copingMat = makePbrMat(scene, "HarborCoping", 0xd4cdc0, { roughness: 0.74 });
-  const teakMat = makePbrMat(scene, "HarborTeakMat", 0xb88656, { roughness: 0.56 });
+  const copingMat = makePbrMat(scene, "HarborCoping", 0xd4cdc0, {
+    roughness: 0.66,
+    bumpTexture: getGraniteSlabNormalTexture(scene, 6, 6),
+    bumpLevel: 0.32,
+  });
+  const teakMat = makePbrMat(scene, "HarborTeakMat", 0xb88656, {
+    roughness: 0.42,
+    bumpTexture: getTeakDeckNormalTexture(scene, 4, 8),
+    bumpLevel: 0.68,
+    specularIntensity: 0.48,
+  });
   teakMat.albedoTexture = getTeakDeckTexture(scene, 4, 8);
-  const cedarPlankMat = makePbrMat(scene, "BoardwalkCedar", 0xa8764a, { roughness: 0.58 });
+  const cedarPlankMat = makePbrMat(scene, "BoardwalkCedar", 0xa8764a, {
+    roughness: 0.48,
+    bumpTexture: getTeakDeckNormalTexture(scene, 6, 4),
+    bumpLevel: 0.64,
+    specularIntensity: 0.45,
+  });
   cedarPlankMat.albedoTexture = getTeakDeckTexture(scene, 6, 4);
   const pileMat = makePbrMat(scene, "HarborPileWood", 0x4b382a, { roughness: 0.86 });
   const castIronMat = makePbrMat(scene, "HarborCastIron", 0x23272a, { roughness: 0.42, metallic: 0.82 });

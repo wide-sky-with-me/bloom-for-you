@@ -42,8 +42,11 @@ from blender_kit import (
     clamp01,
     create_mesh_object,
     ensure_uv_box,
+    ensure_uv_planar_rect,
     export_glb,
     fbm2,
+    make_packed_normal_texture,
+    make_packed_roughness_texture,
     make_packed_texture,
     make_pbr_material,
     mix_rgb,
@@ -72,16 +75,24 @@ def _make_villa_textures():
             1.0 if ((v * 5.0) % 1.0) < 0.06 or (((u * 2.5 + (0.5 if int(v * 5.0) % 2 else 0.0)) % 1.0) < 0.05) else 0.0,
         ),
     )
+    def _plank_tone_and_seam(u: float, v: float):
+        col = int(u * 8.0)
+        off = 0.5 if (col % 2) else 0.0
+        row = int(v * 3.0 + off)
+        fu = min((u * 8.0) % 1.0, 1.0 - (u * 8.0) % 1.0)
+        fv = min(((v * 3.0 + off) % 1.0), 1.0 - ((v * 3.0 + off) % 1.0))
+        seam = clamp01(min(fu * 22.0, fv * 14.0))
+        grain = fbm2(u * 28.0 + (col * 1.7), v * 4.5 + (row * 2.3), seed=103 + (col % 5), octaves=3)
+        board_shift = (((col * 37 + row * 19) % 7) - 3) * 0.025
+        return seam, clamp01(0.45 + grain * 0.45 + board_shift)
+
     img_parquet = make_packed_texture(
         TEX_CACHE / "villa_parquet.png",
         256,
         256,
         lambda u, v: (
-            lambda plank, n: (*mix_rgb((0.56, 0.37, 0.21), (0.72, 0.52, 0.33), clamp01(0.4 + n * 0.55 - plank * 0.35)), 1.0)
-        )(
-            1.0 if ((u * 8.0) % 1.0) < 0.05 or (((v * 3.0 + (0.5 if int(u * 8.0) % 2 else 0.0)) % 1.0) < 0.04) else 0.0,
-            fbm2(u * 6, v * 20, seed=103, octaves=3),
-        ),
+            lambda seam, g: (*mix_rgb((0.55, 0.37, 0.22), (0.74, 0.54, 0.35), clamp01(g - (1.0 - seam) * 0.24)), 1.0)
+        )(*_plank_tone_and_seam(u, v)),
     )
     img_roof = make_packed_texture(
         TEX_CACHE / "villa_terracotta.png",
@@ -358,34 +369,124 @@ def build_villa_estate_glb(out_path: Path) -> None:
     reset_scene()
     tex = _make_villa_textures()
 
-    m_plaster = make_pbr_material("Villa_Plaster", (0.97, 0.94, 0.88), roughness=0.78, image=tex["plaster"])
-    m_stone = make_pbr_material("Villa_Limestone", (0.87, 0.84, 0.77), roughness=0.76, image=tex["stone"])
-    m_coping = make_pbr_material("Villa_Coping", (0.93, 0.90, 0.84), roughness=0.68, image=tex["plaster"])
-    m_parquet = make_pbr_material("Villa_Parquet", (0.68, 0.48, 0.30), roughness=0.46, image=tex["parquet"])
-    m_cedar = make_pbr_material("Villa_Cedar", (0.58, 0.39, 0.24), roughness=0.56, image=tex["parquet"])
-    m_walnut = make_pbr_material("Villa_Walnut", (0.34, 0.21, 0.13), roughness=0.40)
-    m_oak = make_pbr_material("Villa_NaturalOak", (0.76, 0.58, 0.38), roughness=0.48)
-    m_roof = make_pbr_material("Villa_TerracottaRoof", (0.79, 0.42, 0.29), roughness=0.72, image=tex["roof"], double_sided=True)
+    def _h_plaster(u: float, v: float) -> float:
+        return clamp01(0.45 + 0.55 * fbm2(u * 10.0, v * 10.0, seed=71, octaves=3) + 0.14 * (fbm2(u * 26.0, v * 26.0, seed=171, octaves=2) - 0.5))
+
+    def _h_stone(u: float, v: float) -> float:
+        row = int(v * 5.0)
+        off = 0.5 if (row % 2) else 0.0
+        dv = min((v * 5.0) % 1.0, 1.0 - (v * 5.0) % 1.0)
+        du = min(((u * 2.5 + off) % 1.0), 1.0 - ((u * 2.5 + off) % 1.0))
+        mortar = clamp01(min(dv, du * 0.85) * 14.0)
+        return clamp01(mortar * (0.78 + 0.22 * fbm2(u * 10.0, v * 10.0, seed=11, octaves=3)))
+
+    def _h_parquet(u: float, v: float) -> float:
+        col = int(u * 8.0)
+        off = 0.5 if (col % 2) else 0.0
+        row = int(v * 3.0 + off)
+        fu = min((u * 8.0) % 1.0, 1.0 - (u * 8.0) % 1.0)
+        fv = min(((v * 3.0 + off) % 1.0), 1.0 - ((v * 3.0 + off) % 1.0))
+        seam = clamp01(min(fu * 22.0, fv * 14.0))
+        grain = fbm2(u * 28.0 + (col * 1.7), v * 4.5 + (row * 2.3), seed=103 + (col % 5), octaves=2)
+        return clamp01(seam * (0.80 + 0.20 * grain))
+
+    def _h_roof(u: float, v: float) -> float:
+        wave = math.sin(u * math.tau * 8.0) * 0.5 + 0.5
+        row_step = ((v * 6.0) % 1.0)
+        lip = 1.0 - clamp01((0.12 - row_step) * 10.0) * 0.45
+        return clamp01((0.35 + 0.55 * wave) * lip + (fbm2(u * 12.0, v * 12.0, seed=53, octaves=2) - 0.5) * 0.18)
+
+    def _h_zellige(u: float, v: float) -> float:
+        fu = min((u * 8.0) % 1.0, 1.0 - (u * 8.0) % 1.0)
+        fv = min((v * 8.0) % 1.0, 1.0 - (v * 8.0) % 1.0)
+        grout = clamp01(min(fu, fv) * 14.0)
+        ripple = fbm2(u * 16.0, v * 16.0, seed=64, octaves=2)
+        return clamp01(grout * (0.78 + 0.22 * ripple))
+
+    nrm_plaster = make_packed_normal_texture(TEX_CACHE / "villa_plaster_nrm.png", 256, 256, _h_plaster, strength=1.2)
+    nrm_stone = make_packed_normal_texture(TEX_CACHE / "villa_stone_nrm.png", 256, 256, _h_stone, strength=2.6)
+    rgh_stone = make_packed_roughness_texture(TEX_CACHE / "villa_stone_rgh.png", 256, 256, lambda u, v: 0.90 - 0.22 * _h_stone(u, v))
+    nrm_parquet = make_packed_normal_texture(TEX_CACHE / "villa_parquet_nrm.png", 256, 256, _h_parquet, strength=1.9)
+    rgh_parquet = make_packed_roughness_texture(TEX_CACHE / "villa_parquet_rgh.png", 256, 256, lambda u, v: 0.68 - 0.30 * _h_parquet(u, v))
+    nrm_roof = make_packed_normal_texture(TEX_CACHE / "villa_roof_nrm.png", 256, 256, _h_roof, strength=2.8)
+    nrm_zellige = make_packed_normal_texture(TEX_CACHE / "villa_zellige_nrm.png", 256, 256, _h_zellige, strength=2.4)
+    rgh_zellige = make_packed_roughness_texture(TEX_CACHE / "villa_zellige_rgh.png", 256, 256, lambda u, v: 0.72 - 0.56 * _h_zellige(u, v))
+
+    def _make_aubusson_rug(filename: str, base_rgb, med_rgb, border_rgb, accent_rgb, seed: int):
+        def _col(u: float, v: float) -> tuple:
+            dx = (u - 0.5) * 2.0
+            dy = (v - 0.5) * 2.0
+            r_ell = math.sqrt((dx * 0.86) ** 2 + dy ** 2)
+            box = max(abs(dx), abs(dy))
+            weave = (math.sin(u * 260.0) * math.cos(v * 260.0)) * 0.04 + (fbm2(u * 24.0, v * 24.0, seed=seed, octaves=2) - 0.5) * 0.08
+            c = base_rgb
+            if 0.78 <= box <= 0.87 or 0.92 <= box <= 0.955:
+                c = border_rgb
+            elif 0.87 < box < 0.92:
+                floral = 0.5 + 0.5 * math.cos((dx + dy) * 26.0)
+                c = mix_rgb(border_rgb, accent_rgb, floral * 0.75)
+            elif r_ell < 0.42:
+                ring = math.exp(-((r_ell - 0.34) ** 2) / 0.0022)
+                petals = 0.5 + 0.5 * math.cos(math.atan2(dy, dx) * 12.0)
+                c = mix_rgb(med_rgb, accent_rgb, clamp01(ring * 0.72 + (1.0 - r_ell * 2.0) * petals * 0.45))
+            if box > 0.968:
+                fringe = 0.5 + 0.5 * math.sin((u + v) * 220.0)
+                c = mix_rgb((0.92, 0.88, 0.80), (0.80, 0.74, 0.66), fringe * 0.45)
+            return (clamp01(c[0] + weave), clamp01(c[1] + weave), clamp01(c[2] + weave), 1.0)
+        return make_packed_texture(TEX_CACHE / filename, 256, 256, _col)
+
+    img_rug_rose_hq = _make_aubusson_rug(
+        "villa_aubusson_rose_hq.png",
+        (0.92, 0.84, 0.82),
+        (0.95, 0.89, 0.86),
+        (0.76, 0.49, 0.54),
+        (0.86, 0.67, 0.52),
+        seed=801,
+    )
+    img_rug_sage_hq = _make_aubusson_rug(
+        "villa_aubusson_sage_hq.png",
+        (0.86, 0.88, 0.82),
+        (0.92, 0.92, 0.86),
+        (0.46, 0.58, 0.48),
+        (0.82, 0.72, 0.50),
+        seed=802,
+    )
+    nrm_rug = make_packed_normal_texture(
+        TEX_CACHE / "villa_rug_nrm.png",
+        256,
+        256,
+        lambda u, v: clamp01(0.5 + 0.3 * math.sin(u * 240.0) * math.cos(v * 240.0) + 0.2 * fbm2(u * 30.0, v * 30.0, seed=803, octaves=2)),
+        strength=1.4,
+    )
+
+    m_plaster = make_pbr_material("Villa_Plaster", (0.97, 0.94, 0.88), roughness=0.78, image=tex["plaster"], normal_image=nrm_plaster, normal_strength=0.38)
+    m_stone = make_pbr_material("Villa_Limestone", (0.87, 0.84, 0.77), roughness=0.76, image=tex["stone"], normal_image=nrm_stone, normal_strength=0.52, roughness_image=rgh_stone)
+    m_coping = make_pbr_material("Villa_Coping", (0.93, 0.90, 0.84), roughness=0.68, image=tex["plaster"], normal_image=nrm_stone, normal_strength=0.28)
+    m_parquet = make_pbr_material("Villa_Parquet", (0.74, 0.55, 0.37), roughness=0.42, image=tex["parquet"], normal_image=nrm_parquet, normal_strength=0.30, roughness_image=rgh_parquet, specular=0.48)
+    m_cedar = make_pbr_material("Villa_Cedar", (0.60, 0.41, 0.25), roughness=0.56, image=tex["parquet"], normal_image=nrm_parquet, normal_strength=0.45, roughness_image=rgh_parquet)
+    m_walnut = make_pbr_material("Villa_Walnut", (0.34, 0.21, 0.13), roughness=0.38, normal_image=nrm_parquet, normal_strength=0.22, specular=0.45)
+    m_oak = make_pbr_material("Villa_NaturalOak", (0.76, 0.58, 0.38), roughness=0.46, normal_image=nrm_parquet, normal_strength=0.22)
+    m_roof = make_pbr_material("Villa_TerracottaRoof", (0.81, 0.44, 0.30), roughness=0.70, image=tex["roof"], normal_image=nrm_roof, normal_strength=0.65, double_sided=True)
     m_pot = make_pbr_material("Villa_TerracottaPot", (0.74, 0.39, 0.27), roughness=0.70)
-    m_shutter = make_pbr_material("Villa_SageShutter", (0.43, 0.55, 0.46), roughness=0.58)
-    m_bois_sage = make_pbr_material("Villa_BoiserieSage", (0.76, 0.84, 0.76), roughness=0.62)
-    m_bois_study = make_pbr_material("Villa_BoiserieStudy", (0.86, 0.81, 0.72), roughness=0.64)
-    m_bois_rose = make_pbr_material("Villa_BoiserieRose", (0.92, 0.83, 0.85), roughness=0.62)
-    m_molding = make_pbr_material("Villa_CreamMolding", (0.98, 0.96, 0.91), roughness=0.52)
-    m_ceil = make_pbr_material("Villa_CeilingPlaster", (0.98, 0.96, 0.93), roughness=0.80, double_sided=True)
-    m_iron = make_pbr_material("Villa_WroughtIron", (0.16, 0.18, 0.20), roughness=0.38, metallic=0.84)
-    m_brass = make_pbr_material("Villa_Brass", (0.83, 0.66, 0.35), roughness=0.22, metallic=0.90)
-    m_glass = make_pbr_material("Villa_Glass", (0.85, 0.94, 0.96), roughness=0.06, alpha=0.28, double_sided=True)
+    m_shutter = make_pbr_material("Villa_SageShutter", (0.43, 0.55, 0.46), roughness=0.54)
+    m_bois_sage = make_pbr_material("Villa_BoiserieSage", (0.76, 0.84, 0.76), roughness=0.60, normal_image=nrm_plaster, normal_strength=0.22)
+    m_bois_study = make_pbr_material("Villa_BoiserieStudy", (0.86, 0.81, 0.72), roughness=0.62, normal_image=nrm_plaster, normal_strength=0.22)
+    m_bois_rose = make_pbr_material("Villa_BoiserieRose", (0.92, 0.83, 0.85), roughness=0.60, normal_image=nrm_plaster, normal_strength=0.22)
+    m_molding = make_pbr_material("Villa_CreamMolding", (0.98, 0.96, 0.91), roughness=0.48)
+    m_ceil = make_pbr_material("Villa_CeilingPlaster", (0.98, 0.96, 0.93), roughness=0.80, normal_image=nrm_plaster, normal_strength=0.25, double_sided=True)
+    m_iron = make_pbr_material("Villa_WroughtIron", (0.16, 0.18, 0.20), roughness=0.36, metallic=0.86)
+    m_brass = make_pbr_material("Villa_Brass", (0.84, 0.67, 0.36), roughness=0.20, metallic=0.92)
+    m_glass = make_pbr_material("Villa_Glass", (0.85, 0.94, 0.96), roughness=0.05, alpha=0.28, double_sided=True)
     m_sheer = make_pbr_material("Villa_SheerCurtain", (0.99, 0.97, 0.94), roughness=0.85, alpha=0.62, double_sided=True)
     m_drape = make_pbr_material("Villa_RoseDrape", (0.79, 0.49, 0.56), roughness=0.80, double_sided=True)
-    m_velvet = make_pbr_material("Villa_RoseVelvet", (0.77, 0.43, 0.51), roughness=0.86)
-    m_sage_vel = make_pbr_material("Villa_SageVelvet", (0.46, 0.60, 0.49), roughness=0.86)
-    m_zellige = make_pbr_material("Villa_ZelligeTile", (0.95, 0.90, 0.89), roughness=0.24, image=tex["zellige"])
-    m_smeg = make_pbr_material("Villa_SmegMint", (0.68, 0.84, 0.77), roughness=0.20, metallic=0.08)
-    m_marble = make_pbr_material("Villa_CalacattaMarble", (0.97, 0.96, 0.94), roughness=0.24)
+    m_velvet = make_pbr_material("Villa_RoseVelvet", (0.77, 0.43, 0.51), roughness=0.84)
+    m_sage_vel = make_pbr_material("Villa_SageVelvet", (0.46, 0.60, 0.49), roughness=0.84)
+    m_zellige = make_pbr_material("Villa_ZelligeTile", (0.95, 0.90, 0.89), roughness=0.22, image=tex["zellige"], normal_image=nrm_zellige, normal_strength=0.75, roughness_image=rgh_zellige, specular=0.65)
+    m_smeg = make_pbr_material("Villa_SmegMint", (0.68, 0.84, 0.77), roughness=0.18, metallic=0.10, specular=0.65)
+    m_marble = make_pbr_material("Villa_CalacattaMarble", (0.97, 0.96, 0.94), roughness=0.18, specular=0.62)
     m_linen = make_pbr_material("Villa_IvoryLinen", (0.98, 0.96, 0.91), roughness=0.76)
-    m_rug_rose = make_pbr_material("Villa_RugRose", (0.90, 0.76, 0.78), roughness=0.92, image=tex["rug_rose"])
-    m_rug_sage = make_pbr_material("Villa_RugSage", (0.82, 0.86, 0.80), roughness=0.92, image=tex["rug_sage"])
+    m_rug_rose = make_pbr_material("Villa_RugRose", (0.94, 0.86, 0.86), roughness=0.92, image=img_rug_rose_hq, normal_image=nrm_rug, normal_strength=0.55)
+    m_rug_sage = make_pbr_material("Villa_RugSage", (0.88, 0.90, 0.86), roughness=0.92, image=img_rug_sage_hq, normal_image=nrm_rug, normal_strength=0.55)
     m_leaf = make_pbr_material("Villa_VineLeaf", (0.27, 0.45, 0.22), roughness=0.78)
     m_hyd = make_pbr_material("Villa_HydrangeaPink", (0.96, 0.61, 0.73), roughness=0.65)
     m_amber = make_pbr_material("Villa_LampEmber", (1.0, 0.80, 0.44), roughness=0.25, emission=(1.0, 0.62, 0.24), emission_strength=0.42)
@@ -417,28 +518,30 @@ def build_villa_estate_glb(out_path: Path) -> None:
     # =========================================================================
     # 1. PLINTH, STAIRWAYS, VERANDA DECKS & FLOORS
     # =========================================================================
-    add_beveled_box(bms["stone"], yup(-14.0, 2.175, -2.0), (22.4, 17.2, 0.75), bevel=0.04)
-    add_beveled_box(bms["coping"], yup(-14.0, 2.565, 6.56), (22.56, 0.16, 0.07), bevel=0.015)
-    add_beveled_box(bms["coping"], yup(-14.0, 2.565, -10.56), (22.56, 0.16, 0.07), bevel=0.015)
-    add_beveled_box(bms["coping"], yup(-25.16, 2.565, -2.0), (0.16, 17.2, 0.07), bevel=0.015)
-    add_beveled_box(bms["coping"], yup(-2.84, 2.565, -2.0), (0.16, 17.2, 0.07), bevel=0.015)
+    # Zero-overlap floor architecture: plinth (top=2.515) < perimeter coping (top=2.596) < cedar (top=2.599) < SE stone patio (top=2.602) < 1F parquet (top=2.606)
+    add_beveled_box(bms["stone"], yup(-14.0, 2.155, -2.0), (22.36, 17.16, 0.72), bevel=0.04)
+    add_beveled_box(bms["coping"], yup(-14.0, 2.560, 6.56), (22.48, 0.16, 0.072), bevel=0.015)
+    add_beveled_box(bms["coping"], yup(-14.0, 2.560, -10.56), (22.48, 0.16, 0.072), bevel=0.015)
+    add_beveled_box(bms["coping"], yup(-25.16, 2.560, -2.0), (0.16, 16.96, 0.072), bevel=0.015)
+    add_beveled_box(bms["coping"], yup(-2.84, 2.560, -2.0), (0.16, 16.96, 0.072), bevel=0.015)
 
-    add_beveled_box(bms["cedar"], yup(-14.0, 2.575, 5.26), (22.2, 2.52, 0.05), bevel=0.008)
-    add_beveled_box(bms["cedar"], yup(-14.0, 2.575, -10.16), (22.2, 0.72, 0.05), bevel=0.008)
-    add_beveled_box(bms["cedar"], yup(-24.26, 2.575, -2.9), (1.72, 13.8, 0.05), bevel=0.008)
-    add_beveled_box(bms["coping"], yup(-6.68, 2.574, 2.52), (7.45, 7.85, 0.052), bevel=0.01)
+    add_beveled_box(bms["cedar"], yup(-17.74, 2.565, 5.24), (14.68, 2.48, 0.068), bevel=0.008)
+    add_beveled_box(bms["cedar"], yup(-14.0, 2.565, -10.14), (22.16, 0.68, 0.068), bevel=0.008)
+    add_beveled_box(bms["cedar"], yup(-24.24, 2.565, -2.9), (1.68, 13.80, 0.068), bevel=0.008)
+    add_beveled_box(bms["coping"], yup(-6.66, 2.566, 2.54), (7.48, 7.88, 0.072), bevel=0.01)
 
     # 1F Parquet + 2F Parquet (with Stairwell Void X in [-23.2, -20.0], Z in [-9.6, -3.2])
-    add_beveled_box(bms["parquet"], yup(-16.9, 2.575, -2.9), (13.0, 13.8, 0.054), bevel=0.005)
-    add_beveled_box(bms["parquet"], yup(-7.2, 2.575, -5.6), (6.4, 8.4, 0.054), bevel=0.005)
+    add_beveled_box(bms["parquet"], yup(-16.9, 2.578, -2.9), (13.0, 13.8, 0.056), bevel=0.005)
+    add_beveled_box(bms["parquet"], yup(-7.2, 2.578, -5.6), (6.4, 8.4, 0.056), bevel=0.005)
 
-    add_beveled_box(bms["ceil"], yup(-15.2, 6.02, -2.9), (9.6, 13.8, 0.09), bevel=0.0)
-    add_beveled_box(bms["ceil"], yup(-21.7, 6.02, 0.4), (3.4, 7.2, 0.09), bevel=0.0)
-    add_beveled_box(bms["coping"], yup(-7.55, 6.05, -5.6), (7.3, 8.6, 0.14), bevel=0.015)
-    add_beveled_box(bms["ceil"], yup(-7.55, 5.96, -5.6), (7.1, 8.4, 0.04), bevel=0.0)
-    add_beveled_box(bms["parquet"], yup(-15.6, 6.10, -2.9), (8.8, 13.6, 0.04), bevel=0.0)
-    add_beveled_box(bms["parquet"], yup(-21.65, 6.10, 0.35), (3.3, 7.1, 0.04), bevel=0.0)
-    add_beveled_box(bms["parquet"], yup(-21.5, 6.08, -9.3), (3.4, 0.9, 0.08), bevel=0.01)
+    # Disjoint 1F soffit ceilings (top <= 6.064) and 2F decks/parquet (bot >= 6.078, top = 6.122 / study = 6.118)
+    add_beveled_box(bms["ceil"], yup(-15.2, 6.020, -2.9), (9.6, 13.8, 0.088), bevel=0.0)
+    add_beveled_box(bms["ceil"], yup(-21.7, 6.020, 0.4), (3.4, 7.2, 0.088), bevel=0.0)
+    add_beveled_box(bms["coping"], yup(-7.55, 6.052, -5.6), (7.3, 8.6, 0.132), bevel=0.015)
+    add_beveled_box(bms["ceil"], yup(-7.2, 5.960, -5.6), (6.4, 8.4, 0.040), bevel=0.0)
+    add_beveled_box(bms["parquet"], yup(-15.6, 6.100, -2.9), (8.8, 13.6, 0.044), bevel=0.0)
+    add_beveled_box(bms["parquet"], yup(-21.65, 6.100, 0.35), (3.3, 7.1, 0.044), bevel=0.0)
+    add_beveled_box(bms["parquet"], yup(-21.6, 6.100, -9.3), (3.2, 0.9, 0.044), bevel=0.0)
     add_beveled_box(bms["ceil"], yup(-17.3, 9.40, -2.9), (12.4, 14.0, 0.10), bevel=0.0)
 
     # Walnut Ceiling Beams 1F & 2F
@@ -586,8 +689,8 @@ def build_villa_estate_glb(out_path: Path) -> None:
         add_beveled_box(bms["coping"], yup(px, 2.81, 6.28), (0.42, 0.42, 0.42), bevel=0.02)
         add_cylinder_part(bms["stone"], yup(px, 4.30, 6.28), 0.175, 0.15, 2.55, segs=16)
         add_beveled_box(bms["coping"], yup(px, 5.65, 6.28), (0.40, 0.40, 0.16), bevel=0.015)
-    add_beveled_box(bms["coping"], yup(-14.0, 5.93, 5.14), (6.65, 2.52, 0.38), bevel=0.02)
-    add_beveled_box(bms["coping"], yup(-14.0, 6.09, 5.19), (6.40, 2.38, 0.06), bevel=0.015)
+    add_beveled_box(bms["coping"], yup(-14.0, 5.915, 5.14), (6.65, 2.52, 0.35), bevel=0.02)
+    add_beveled_box(bms["stone"], yup(-14.0, 6.106, 5.19), (6.40, 2.38, 0.030), bevel=0.010)
     for ax in (-16.08, -14.0, -11.92):
         pts = [yup(ax + math.cos((i / 12) * math.pi) * 0.86, 5.02 + math.sin((i / 12) * math.pi) * 0.86, 6.28) for i in range(13)]
         add_tube_along_curve(bms["coping"], pts, [0.11] * 13, radial_segs=8)
@@ -678,13 +781,21 @@ def build_villa_estate_glb(out_path: Path) -> None:
     # =========================================================================
     # 4. SIGNATURE CUSTOM INTERIORS (Zero Overlap with 18 Poly Haven Props!)
     # =========================================================================
-    # Aubusson Rugs
-    add_beveled_box(bms["rug_rose"], yup(-18.9, 2.608, 0.65), (4.4, 3.2, 0.015), bevel=0.003)
-    add_beveled_box(bms["rug_sage"], yup(-7.25, 2.608, -5.65), (4.2, 3.4, 0.014), bevel=0.003)
-    add_beveled_box(bms["rug_rose"], yup(-16.8, 6.128, -6.8), (4.2, 3.6, 0.015), bevel=0.003)
+    # Aubusson Rugs (individual planar [0..1] UV-mapped meshes cleanly +3mm over parquet)
+    for r_name, rx, ry, rz, rsx, rsz, r_mat in (
+        ("Villa_RugLiving", -18.9, 2.616, 0.65, 4.4, 3.2, m_rug_rose),
+        ("Villa_RugStudy", -7.25, 2.616, -5.65, 4.2, 3.4, m_rug_sage),
+        ("Villa_RugMaster", -16.8, 6.132, -6.8, 4.2, 3.6, m_rug_rose),
+    ):
+        bm_r = bmesh.new()
+        add_beveled_box(bm_r, yup(rx, ry, rz), (rsx, rsz, 0.014), bevel=0.003)
+        bmesh.ops.recalc_face_normals(bm_r, faces=bm_r.faces)
+        obj_r = create_mesh_object(r_name, bm_r, r_mat)
+        ensure_uv_planar_rect(obj_r, rx, rz, rsx, rsz)
+        obj_r.parent = root
 
-    # Carved Limestone Fireplace & Mantel (-18.4, 2.60, -2.74)
-    fx, fy, fz = -18.4, 2.60, -2.74
+    # Carved Limestone Fireplace & Mantel (-18.4, 2.61, -2.74 — hearth slab cleanly clear of 2.606 parquet)
+    fx, fy, fz = -18.4, 2.61, -2.74
     add_beveled_box(bms["coping"], yup(fx, fy + 0.04, fz + 0.18), (2.25, 0.92, 0.08), bevel=0.02)
     for sx in (-0.78, 0.78):
         add_beveled_box(bms["stone"], yup(fx + sx, fy + 0.72, fz + 0.05), (0.34, 0.46, 1.32), bevel=0.02)

@@ -426,8 +426,56 @@ export function makeCanvasTexture(scene, size, drawFn, { repeatU = 1, repeatV = 
   dt.uScale = repeatU;
   dt.vScale = repeatV;
   dt.hasAlpha = hasAlpha;
+  dt.anisotropicFilteringLevel = 8;
   if (!srgb) dt.gammaSpace = false;
   return dt;
+}
+
+export function makeNormalCanvasTexture(
+  scene,
+  size,
+  heightFn,
+  { strength = 2.4, repeatU = 1, repeatV = 1 } = {}
+) {
+  return makeCanvasTexture(
+    scene,
+    size,
+    (ctx, w, h) => {
+      const hGrid = new Float32Array(w * h);
+      for (let y = 0; y < h; y += 1) {
+        const v = 1.0 - y / h;
+        for (let x = 0; x < w; x += 1) {
+          hGrid[y * w + x] = heightFn(x / w, v, x, y);
+        }
+      }
+      const img = ctx.createImageData(w, h);
+      const data = img.data;
+      for (let y = 0; y < h; y += 1) {
+        const ym = (y - 1 + h) % h;
+        const yp = (y + 1) % h;
+        for (let x = 0; x < w; x += 1) {
+          const xm = (x - 1 + w) % w;
+          const xp = (x + 1) % w;
+          const dhx = hGrid[y * w + xp] - hGrid[y * w + xm];
+          const dhy = hGrid[ym * w + x] - hGrid[yp * w + x];
+          let nx = -dhx * strength;
+          let ny = -dhy * strength;
+          let nz = 1.0;
+          const inv = 1.0 / Math.hypot(nx, ny, nz);
+          nx *= inv;
+          ny *= inv;
+          nz *= inv;
+          const idx = (y * w + x) * 4;
+          data[idx + 0] = Math.round((nx * 0.5 + 0.5) * 255);
+          data[idx + 1] = Math.round((ny * 0.5 + 0.5) * 255);
+          data[idx + 2] = Math.round((nz * 0.5 + 0.5) * 255);
+          data[idx + 3] = 255;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+    },
+    { repeatU, repeatV, srgb: false }
+  );
 }
 
 const _texCache = new WeakMap();
@@ -440,6 +488,20 @@ function getCache(scene) {
   return c;
 }
 
+function _graniteHeight(u, v) {
+  const rows = 8;
+  const cols = 6;
+  const rf = v * rows;
+  const ri = Math.floor(rf);
+  const rv = rf - ri;
+  const off = (ri % 2) * 0.5;
+  const cf = u * cols + off;
+  const cfMod = cf - Math.floor(cf);
+  const seam = clamp(Math.min(Math.min(rv, 1 - rv) * 14, Math.min(cfMod, 1 - cfMod) * 12), 0, 1);
+  const micro = 0.5 + 0.3 * Math.sin(u * 38.0 + v * 29.0) + 0.2 * Math.cos(u * 83.0 - v * 61.0);
+  return seam * (0.76 + 0.24 * micro);
+}
+
 export function getGraniteSlabTexture(scene, repeatU = 12, repeatV = 12) {
   const cache = getCache(scene);
   const key = `granite:${repeatU}:${repeatV}`;
@@ -449,7 +511,7 @@ export function getGraniteSlabTexture(scene, repeatU = 12, repeatV = 12) {
     512,
     (ctx, w, h) => {
       const rng = mulberry32(9204);
-      ctx.fillStyle = "#8a847a";
+      ctx.fillStyle = "#7a746a";
       ctx.fillRect(0, 0, w, h);
       const rows = 8;
       const rh = h / rows;
@@ -460,18 +522,36 @@ export function getGraniteSlabTexture(scene, repeatU = 12, repeatV = 12) {
         for (let c = -1; c <= cols; c += 1) {
           const x = c * cw + off;
           const y = r * rh;
-          const b = 186 + Math.floor(rng() * 34);
-          ctx.fillStyle = `rgb(${b},${b - 2},${b - 7})`;
+          const b = 182 + Math.floor(rng() * 38);
+          const warm = Math.floor((rng() - 0.5) * 8);
+          ctx.fillStyle = `rgb(${b + warm},${b - 2},${b - 9})`;
           ctx.fillRect(x + 2, y + 2, cw - 4, rh - 4);
-          for (let s = 0; s < 18; s += 1) {
-            const sp = 148 + Math.floor(rng() * 78);
-            ctx.fillStyle = `rgba(${sp},${sp - 2},${sp - 4},0.25)`;
+          ctx.strokeStyle = "rgba(255,250,240,0.22)";
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(x + 3, y + 3, cw - 6, rh - 6);
+          for (let s = 0; s < 24; s += 1) {
+            const sp = 144 + Math.floor(rng() * 82);
+            ctx.fillStyle = `rgba(${sp},${sp - 2},${sp - 5},0.26)`;
             ctx.fillRect(x + 3 + rng() * (cw - 7), y + 3 + rng() * (rh - 7), 2.5, 2.5);
           }
         }
       }
     },
     { repeatU, repeatV }
+  );
+  cache.set(key, tex);
+  return tex;
+}
+
+export function getGraniteSlabNormalTexture(scene, repeatU = 12, repeatV = 12) {
+  const cache = getCache(scene);
+  const key = `granite_nrm:${repeatU}:${repeatV}`;
+  if (cache.has(key)) return cache.get(key);
+  const tex = makeNormalCanvasTexture(
+    scene,
+    256,
+    (u, v) => _graniteHeight(u, v),
+    { strength: 2.8, repeatU, repeatV }
   );
   cache.set(key, tex);
   return tex;
@@ -486,17 +566,40 @@ export function getTeakDeckTexture(scene, repeatU = 4, repeatV = 8) {
     512,
     (ctx, w, h) => {
       const rng = mulberry32(9305);
-      ctx.fillStyle = "#2b241e";
+      ctx.fillStyle = "#261e18";
       ctx.fillRect(0, 0, w, h);
       const strips = 14;
       const sw = w / strips;
       for (let s = 0; s < strips; s += 1) {
-        const tone = Math.floor((rng() - 0.5) * 24);
-        ctx.fillStyle = `rgb(${194 + tone},${144 + tone},${96 + tone})`;
+        const tone = Math.floor((rng() - 0.5) * 28);
+        ctx.fillStyle = `rgb(${198 + tone},${146 + tone},${96 + tone})`;
         ctx.fillRect(s * sw + 1.5, 0, sw - 3.0, h);
+        for (let g = 0; g < 16; g += 1) {
+          ctx.fillStyle = g % 2 === 0 ? "rgba(110,72,38,0.14)" : "rgba(235,196,145,0.10)";
+          ctx.fillRect(s * sw + 2 + rng() * (sw - 5), 0, 1.4, h);
+        }
       }
     },
     { repeatU, repeatV }
+  );
+  cache.set(key, tex);
+  return tex;
+}
+
+export function getTeakDeckNormalTexture(scene, repeatU = 4, repeatV = 8) {
+  const cache = getCache(scene);
+  const key = `teak_nrm:${repeatU}:${repeatV}`;
+  if (cache.has(key)) return cache.get(key);
+  const tex = makeNormalCanvasTexture(
+    scene,
+    256,
+    (u, v) => {
+      const sf = (u * 14) % 1.0;
+      const seam = clamp(Math.min(sf, 1 - sf) * 18, 0, 1);
+      const grain = 0.5 + 0.5 * Math.sin(u * 210 + Math.sin(v * 14) * 2.2);
+      return seam * (0.78 + 0.22 * grain);
+    },
+    { strength: 2.6, repeatU, repeatV }
   );
   cache.set(key, tex);
   return tex;
@@ -511,13 +614,13 @@ export function getMeadowGroundTexture(scene, repeatU = 48, repeatV = 48) {
     512,
     (ctx, w, h) => {
       const r0 = mulberry32(9100);
-      ctx.fillStyle = "#edf0e8";
+      ctx.fillStyle = "#e8eee2";
       ctx.fillRect(0, 0, w, h);
       for (let i = 0; i < 6500; i += 1) {
         const x = r0() * w;
         const y = r0() * h;
-        const shade = 212 + Math.floor(r0() * 42);
-        ctx.strokeStyle = `rgba(${shade - 10},${shade + 4},${shade - 16},0.40)`;
+        const shade = 208 + Math.floor(r0() * 44);
+        ctx.strokeStyle = `rgba(${shade - 10},${shade + 6},${shade - 16},0.42)`;
         ctx.lineWidth = 1.0 + r0() * 1.4;
         ctx.beginPath();
         ctx.moveTo(x, y);
@@ -533,6 +636,24 @@ export function getMeadowGroundTexture(scene, repeatU = 48, repeatV = 48) {
       }
     },
     { repeatU, repeatV }
+  );
+  cache.set(key, tex);
+  return tex;
+}
+
+export function getMeadowGroundNormalTexture(scene, repeatU = 48, repeatV = 48) {
+  const cache = getCache(scene);
+  const key = `meadow_nrm:${repeatU}:${repeatV}`;
+  if (cache.has(key)) return cache.get(key);
+  const tex = makeNormalCanvasTexture(
+    scene,
+    256,
+    (u, v) => {
+      const a = Math.sin(u * 44.0 + v * 31.0) * Math.cos(u * 27.0 - v * 51.0);
+      const b = Math.sin(u * 107.0 - v * 89.0) * 0.45;
+      return clamp(0.5 + 0.32 * a + 0.18 * b, 0, 1);
+    },
+    { strength: 1.6, repeatU, repeatV }
   );
   cache.set(key, tex);
   return tex;
@@ -560,6 +681,9 @@ export function makePbrMat(nameOrScene, sceneOrName, optsOrColor = {}, maybeOpts
     alpha = 1.0,
     doubleSided = false,
     albedoTexture = null,
+    bumpTexture = null,
+    bumpLevel = 0.75,
+    specularIntensity = 0.45,
     useVertexColors = false,
   } = opts || {};
   const mat = new PBRMaterial(name, scene);
@@ -569,9 +693,15 @@ export function makePbrMat(nameOrScene, sceneOrName, optsOrColor = {}, maybeOpts
   }
   mat.roughness = roughness;
   mat.metallic = metallic;
+  mat.directIntensity = 1.05;
+  if (mat.metallicF0Factor !== undefined) mat.metallicF0Factor = specularIntensity;
   mat.alpha = alpha;
   mat.backFaceCulling = !doubleSided;
   if (albedoTexture) mat.albedoTexture = albedoTexture;
+  if (bumpTexture) {
+    mat.bumpTexture = bumpTexture;
+    mat.bumpTexture.level = bumpLevel;
+  }
   if (alpha < 0.999) {
     mat.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
   }

@@ -16,9 +16,13 @@ import { Constants } from "@babylonjs/core/Engines/constants";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import { GlowLayer } from "@babylonjs/core/Layers/glowLayer";
 import "@babylonjs/core/Layers/effectLayerSceneComponent";
+import { DefaultRenderingPipeline } from "@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline";
+import { SSAO2RenderingPipeline } from "@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/ssao2RenderingPipeline";
+import { ColorCurves } from "@babylonjs/core/Materials/colorCurves";
 import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration";
 import { Scene } from "@babylonjs/core/scene";
 import { clamp, lerp, getTerrainMeshY, mulberry32 } from "./world-spatial.js";
@@ -282,17 +286,19 @@ Effect.ShadersStore["irisOceanFragmentShader"] = /* glsl */ `
   }
 `;
 
-function buildProceduralSkyCubeData(nightMix, size = 16) {
-  const dayTop = [0.22, 0.44, 0.72];
-  const dayHor = [0.95, 0.84, 0.70];
-  const dayBot = [0.16, 0.28, 0.34];
+function buildProceduralSkyCubeData(nightMix, size = 48) {
+  const dayTop = [0.20, 0.44, 0.74];
+  const dayHor = [0.97, 0.85, 0.71];
+  const dayBot = [0.16, 0.34, 0.42];
   const nightTop = [0.05, 0.09, 0.18];
   const nightHor = [0.14, 0.22, 0.34];
-  const nightBot = [0.04, 0.07, 0.12];
+  const nightBot = [0.04, 0.08, 0.13];
 
   const cTop = dayTop.map((v, i) => lerp(v, nightTop[i], nightMix));
   const cHor = dayHor.map((v, i) => lerp(v, nightHor[i], nightMix));
   const cBot = dayBot.map((v, i) => lerp(v, nightBot[i], nightMix));
+  const keyDir = Vector3.Lerp(SUN_DIRECTION, MOON_DIRECTION, nightMix).normalize();
+  const keyCol = [lerp(1.35, 0.65, nightMix), lerp(1.12, 0.82, nightMix), lerp(0.84, 1.05, nightMix)];
 
   const dirVec = (face, u, v) => {
     switch (face) {
@@ -315,24 +321,31 @@ function buildProceduralSkyCubeData(nightMix, size = 16) {
         const u = (x / (size - 1)) * 2 - 1;
         const [dx, dy, dz] = dirVec(f, u, v);
         const len = Math.hypot(dx, dy, dz) || 1;
-        const ny = dy / len;
+        const ndx = dx / len;
+        const ndy = dy / len;
+        const ndz = dz / len;
         let r;
         let g;
         let b;
-        if (ny >= 0) {
-          const t = Math.pow(ny, 0.65);
+        if (ndy >= 0) {
+          const t = Math.pow(ndy, 0.62);
           r = lerp(cHor[0], cTop[0], t);
           g = lerp(cHor[1], cTop[1], t);
           b = lerp(cHor[2], cTop[2], t);
         } else {
-          const t = clamp(-ny * 1.4, 0, 1);
+          const t = clamp(-ndy * 1.45, 0, 1);
           r = lerp(cHor[0], cBot[0], t);
           g = lerp(cHor[1], cBot[1], t);
           b = lerp(cHor[2], cBot[2], t);
         }
-        buf[idx++] = clamp(Math.round(r * 255), 0, 255);
-        buf[idx++] = clamp(Math.round(g * 255), 0, 255);
-        buf[idx++] = clamp(Math.round(b * 255), 0, 255);
+        const keyDot = clamp(ndx * keyDir.x + ndy * keyDir.y + ndz * keyDir.z, 0, 1);
+        const halo = Math.pow(keyDot, 6.0) * 0.28 + Math.pow(keyDot, 48.0) * 0.72;
+        r = clamp(r + keyCol[0] * halo, 0, 1);
+        g = clamp(g + keyCol[1] * halo, 0, 1);
+        b = clamp(b + keyCol[2] * halo, 0, 1);
+        buf[idx++] = Math.round(r * 255);
+        buf[idx++] = Math.round(g * 255);
+        buf[idx++] = Math.round(b * 255);
         buf[idx++] = 255;
       }
     }
@@ -407,21 +420,21 @@ function buildOceanMesh(scene) {
   return mesh;
 }
 
-export function buildOceanAndSky(scene) {
+export function buildOceanAndSky(scene, { isSoftware = false, camera = scene.activeCamera } = {}) {
   scene.imageProcessingConfiguration.toneMappingEnabled = true;
   scene.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
-  scene.imageProcessingConfiguration.exposure = 1.08;
+  scene.imageProcessingConfiguration.exposure = 1.06;
 
   scene.fogMode = Scene.FOGMODE_EXP2;
   scene.fogColor = new Color3(0.84, 0.80, 0.78);
   scene.fogDensity = 0.00145;
   scene.clearColor = new Color4(0.82, 0.76, 0.72, 1.0);
 
-  // Offline procedural Sky CubeMap for crisp PBR reflections without external assets
+  // Offline procedural 48x48 Sky + Sun/Sea-Bounce IBL CubeMap for crisp PBR reflections
   const envTex = new RawCubeTexture(
     scene,
-    buildProceduralSkyCubeData(0.0, 16),
-    16,
+    buildProceduralSkyCubeData(0.0, 48),
+    48,
     Constants.TEXTUREFORMAT_RGBA,
     Constants.TEXTURETYPE_UNSIGNED_BYTE,
     true,
@@ -429,7 +442,7 @@ export function buildOceanAndSky(scene) {
     Texture.TRILINEAR_SAMPLINGMODE
   );
   scene.environmentTexture = envTex;
-  scene.environmentIntensity = 0.85;
+  scene.environmentIntensity = 0.92;
 
   // Sky Dome
   const skyDome = CreateSphere("SkyDome", { diameter: 2900, segments: 24, sideOrientation: Mesh.BACKSIDE }, scene);
@@ -507,14 +520,82 @@ export function buildOceanAndSky(scene) {
   sunLight.orthoTop = 68;
   sunLight.orthoBottom = -68;
 
-  const shadowGen = new ShadowGenerator(2048, sunLight);
+  const shadowGen = new CascadedShadowGenerator(2048, sunLight, false, camera);
+  shadowGen.numCascades = 3;
+  shadowGen.cascadeBlendPercentage = 0.08;
+  shadowGen.stabilizeCascades = true;
+  shadowGen.shadowMaxZ = 185;
+  shadowGen.lambda = 0.78;
+  shadowGen.depthClamp = true;
+  shadowGen.autoCalcDepthBounds = false;
   shadowGen.usePercentageCloserFiltering = true;
   shadowGen.filteringQuality = ShadowGenerator.QUALITY_MEDIUM;
-  shadowGen.bias = 0.00055;
-  shadowGen.normalBias = 0.015;
+  shadowGen.bias = 0.0022;
+  shadowGen.normalBias = 0.022;
 
-  const glowLayer = new GlowLayer("EstateGlow", scene, { mainTextureFixedSize: 256, blurKernelSize: 18 });
-  glowLayer.intensity = 0.28;
+  const glowLayer = new GlowLayer("EstateGlow", scene, { mainTextureFixedSize: 256, blurKernelSize: 24 });
+  glowLayer.intensity = 0.26;
+
+  // Unity URP-grade Screen-Space Ambient Occlusion (GeometryBuffer) + HDR Post-Processing Stack
+  let ssaoPipeline = null;
+  try {
+    if (SSAO2RenderingPipeline.IsSupported && camera) {
+      ssaoPipeline = new SSAO2RenderingPipeline(
+        "IrisBaySSAO",
+        scene,
+        { ssaoRatio: isSoftware ? 0.35 : 0.5, blurRatio: isSoftware ? 0.5 : 0.75 },
+        [camera],
+        true
+      );
+      ssaoPipeline.radius = 1.25;
+      ssaoPipeline.totalStrength = 0.62;
+      ssaoPipeline.expensiveBlur = !isSoftware;
+      ssaoPipeline.samples = isSoftware ? 8 : 16;
+      ssaoPipeline.maxZ = 135;
+      ssaoPipeline.epsilon = 0.02;
+      ssaoPipeline.minZAspect = 0.16;
+    }
+  } catch (err) {
+    console.warn("[ocean-sky] SSAO2 disabled:", err);
+    ssaoPipeline = null;
+  }
+
+  const colorCurves = new ColorCurves();
+  colorCurves.globalSaturation = 10;
+  colorCurves.highlightsHue = 32;
+  colorCurves.highlightsDensity = 12;
+  colorCurves.shadowsHue = 220;
+  colorCurves.shadowsDensity = 6;
+
+  let defaultPipeline = null;
+  try {
+    if (camera) {
+      defaultPipeline = new DefaultRenderingPipeline("IrisBayPostPipeline", true, scene, [camera]);
+      defaultPipeline.samples = isSoftware ? 1 : 4;
+      defaultPipeline.fxaaEnabled = true;
+      defaultPipeline.imageProcessingEnabled = true;
+      defaultPipeline.imageProcessing.toneMappingEnabled = true;
+      defaultPipeline.imageProcessing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
+      defaultPipeline.imageProcessing.exposure = 1.06;
+      defaultPipeline.imageProcessing.contrast = 1.07;
+      defaultPipeline.imageProcessing.colorCurvesEnabled = true;
+      defaultPipeline.imageProcessing.colorCurves = colorCurves;
+      defaultPipeline.imageProcessing.vignetteEnabled = true;
+      defaultPipeline.imageProcessing.vignetteWeight = 0.55;
+      defaultPipeline.imageProcessing.vignetteStretch = 0.18;
+      defaultPipeline.bloomEnabled = true;
+      defaultPipeline.bloomThreshold = 0.88;
+      defaultPipeline.bloomWeight = 0.22;
+      defaultPipeline.bloomKernel = 44;
+      defaultPipeline.bloomScale = 0.5;
+      defaultPipeline.sharpenEnabled = true;
+      defaultPipeline.sharpen.edgeAmount = 0.16;
+      defaultPipeline.sharpen.colorAmount = 1.0;
+    }
+  } catch (err) {
+    console.warn("[ocean-sky] DefaultRenderingPipeline disabled:", err);
+    defaultPipeline = null;
+  }
 
   // Circling Coastal Gulls (sculpted streamlined gull silhouettes orbiting upper bay)
   const gullRng = mulberry32(4109);
@@ -566,19 +647,36 @@ export function buildOceanAndSky(scene) {
     sunLight.position = lightDir.scale(115);
     sunLight.diffuse = Color3.Lerp(new Color3(1.0, 0.90, 0.74), new Color3(0.62, 0.76, 1.0), n);
     sunLight.intensity = lerp(2.35, 0.95, n);
-    scene.imageProcessingConfiguration.exposure = lerp(1.08, 1.18, n);
+    scene.imageProcessingConfiguration.exposure = lerp(1.06, 1.18, n);
+    scene.environmentIntensity = lerp(0.92, 0.62, n);
+    colorCurves.globalSaturation = lerp(10, 6, n);
+    colorCurves.highlightsHue = lerp(32, 215, n);
+    colorCurves.highlightsDensity = lerp(12, 16, n);
     glowLayer.intensity = lerp(0.22, 0.54, n);
 
     const envBucket = Math.round(n * 8);
     if (envBucket !== lastEnvKey) {
       lastEnvKey = envBucket;
-      envTex.update(buildProceduralSkyCubeData(envBucket / 8, 16));
+      envTex.update(
+        buildProceduralSkyCubeData(envBucket / 8, 48),
+        Constants.TEXTUREFORMAT_RGBA,
+        Constants.TEXTURETYPE_UNSIGNED_BYTE,
+        false
+      );
     }
   };
 
   const setQualityDetail = (tier) => {
     oceanMat.setFloat("uDetailScale", tier === "low" ? 0.3 : tier === "medium" ? 0.65 : 1.0);
     shadowGen.filteringQuality = tier === "high" ? ShadowGenerator.QUALITY_MEDIUM : ShadowGenerator.QUALITY_LOW;
+    if (defaultPipeline) {
+      defaultPipeline.bloomEnabled = tier !== "low";
+      defaultPipeline.sharpenEnabled = tier !== "low";
+      defaultPipeline.samples = isSoftware || tier === "low" ? 1 : tier === "medium" ? 2 : 4;
+    }
+    if (ssaoPipeline) {
+      ssaoPipeline.totalStrength = tier === "low" ? 0.0 : tier === "medium" ? 0.50 : 0.62;
+    }
   };
 
   const update = (elapsed, camPos) => {

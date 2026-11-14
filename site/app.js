@@ -121,8 +121,8 @@ async function init() {
   const isPortrait = window.innerWidth < window.innerHeight;
   const camera = new UniversalCamera("MainCamera", new Vector3(11.9, 38.5, 62.2), scene);
   camera.fov = ((isPortrait ? 62 : 52) * Math.PI) / 180;
-  camera.minZ = 0.14;
-  camera.maxZ = 2400;
+  camera.minZ = 0.24;
+  camera.maxZ = 2000;
   camera.inputs.clear();
   scene.activeCamera = camera;
 
@@ -143,8 +143,8 @@ async function init() {
     setLoadingProgress(frac, `正在解析三维模型 (${Math.round(r * 100)}% · ${key || ""})…`);
   });
 
-  setLoadingProgress(0.72, "正在构建海岸大气散射、海浪与半圆形山湾…");
-  const oceanSky = buildOceanAndSky(scene);
+  setLoadingProgress(0.72, "正在构建海岸大气散射、CSM 级联阴影、SSAO2 与 HDR 后处理管线…");
+  const oceanSky = buildOceanAndSky(scene, { isSoftware, camera });
   const horizon = buildTerrainAndDistantHorizon(scene, containers, oceanSky.shadowGen);
 
   setLoadingProgress(0.84, "正在栽植莫奈花园玫瑰、鸢尾、绣球与风格化林木…");
@@ -807,14 +807,20 @@ async function init() {
     startFrozenForQA = false;
   }
 
-  // Initial warmup frame before revealing canvas
+  // Ensure all PBR, SSAO2, CSM, and post-processing shaders finish compiling before revealing canvas
   applyNightMix(0.0);
   stepSimulation(0.016);
   controls.update(0.016);
   couple.update(0.016);
+  try {
+    await scene.whenReadyAsync(true);
+  } catch (err) {
+    console.warn("[app] scene.whenReadyAsync warning:", err);
+  }
   const tWarm0 = performance.now();
   scene.render();
-  const warmMs = Math.max(1, performance.now() - tWarm0);
+  scene.render();
+  const warmMs = Math.max(1, performance.now() - tWarm0) * 0.5;
   if (isSoftware) measuredFps = 1000 / warmMs;
 
   setLoadingProgress(1.0, "庄园已就绪");

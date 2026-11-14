@@ -102,7 +102,14 @@ def fbm2(x: float, y: float, seed: int = 17, octaves: int = 3) -> float:
     return val / max(1e-6, norm)
 
 
-def make_packed_texture(path: Path, w: int, h: int, fn: Callable[[float, float], tuple]) -> bpy.types.Image:
+def make_packed_texture(
+    path: Path,
+    w: int,
+    h: int,
+    fn: Callable[[float, float], tuple],
+    *,
+    non_color: bool = False,
+) -> bpy.types.Image:
     buf = bytearray(w * h * 4)
     for y in range(h):
         v = 1.0 - y / max(1, h - 1)
@@ -111,8 +118,47 @@ def make_packed_texture(path: Path, w: int, h: int, fn: Callable[[float, float],
             set_px(buf, w, h, x, y, fn(u, v))
     write_rgba_png(path, w, h, buf)
     img = bpy.data.images.load(str(path), check_existing=True)
+    if non_color:
+        try:
+            img.colorspace_settings.name = "Non-Color"
+        except Exception:
+            pass
     img.pack()
     return img
+
+
+def make_packed_normal_texture(
+    path: Path,
+    w: int,
+    h: int,
+    height_fn: Callable[[float, float], float],
+    strength: float = 2.4,
+) -> bpy.types.Image:
+    """Bake a seamless tangent-space OpenGL/glTF normal map from height_fn(u, v) in [0..1]."""
+    eps = 1.0 / 256.0
+
+    def _nrm(u: float, v: float) -> tuple:
+        hx = (height_fn((u + eps) % 1.0, v) - height_fn((u - eps) % 1.0, v)) * (strength * 3.8)
+        hy = (height_fn(u, (v + eps) % 1.0) - height_fn(u, (v - eps) % 1.0)) * (strength * 3.8)
+        nx, ny, nz = -hx, -hy, 1.0
+        inv = 1.0 / math.sqrt(nx * nx + ny * ny + nz * nz)
+        return (nx * inv * 0.5 + 0.5, ny * inv * 0.5 + 0.5, nz * inv * 0.5 + 0.5, 1.0)
+
+    return make_packed_texture(path, w, h, _nrm, non_color=True)
+
+
+def make_packed_roughness_texture(
+    path: Path,
+    w: int,
+    h: int,
+    rough_fn: Callable[[float, float], float],
+) -> bpy.types.Image:
+    """Bake a Non-Color grayscale roughness map (R=G=B=roughness)."""
+    def _rgb(u: float, v: float) -> tuple:
+        r = clamp01(rough_fn(u, v))
+        return (r, r, r, 1.0)
+
+    return make_packed_texture(path, w, h, _rgb, non_color=True)
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +189,14 @@ def make_pbr_material(
     emission_strength: float = 0.0,
     alpha: float = 1.0,
     image: bpy.types.Image | None = None,
+    normal_image: bpy.types.Image | None = None,
+    normal_strength: float = 0.85,
+    roughness_image: bpy.types.Image | None = None,
     double_sided: bool = False,
+    specular: float = 0.42,
+    alpha_cutoff: float | None = None,
+    tint_image: bool = False,
+    use_vertex_color: bool = False,
 ) -> bpy.types.Material:
     mat = bpy.data.materials.new(name=name)
     mat.use_nodes = True
@@ -158,9 +211,12 @@ def make_pbr_material(
     bsdf.inputs["Base Color"].default_value = col4
     bsdf.inputs["Roughness"].default_value = roughness
     bsdf.inputs["Metallic"].default_value = metallic
-    _set_bsdf_input(bsdf, ("Specular IOR Level", "Specular"), 0.38)
+    _set_bsdf_input(bsdf, ("Specular IOR Level", "Specular"), specular)
 
-    if alpha < 0.999:
+    if alpha_cutoff is not None:
+        mat.blend_method = "CLIP"
+        mat.alpha_threshold = alpha_cutoff
+    elif alpha < 0.999:
         mat.blend_method = "BLEND"
         bsdf.inputs["Alpha"].default_value = alpha
     if emission is not None and emission_strength > 0.0:
@@ -171,15 +227,58 @@ def make_pbr_material(
     if image is not None:
         tex = nt.nodes.new("ShaderNodeTexImage")
         tex.image = image
-        nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
-        if alpha < 0.999:
+        col_sock = tex.outputs["Color"]
+        if tint_image:
+            mix = nt.nodes.new("ShaderNodeMix")
+            mix.data_type = "RGBA"
+            mix.blend_type = "MULTIPLY"
+            mix.inputs["Factor"].default_value = 1.0
+            mix.inputs[7].default_value = col4
+            nt.links.new(col_sock, mix.inputs[6])
+            col_sock = mix.outputs[2]
+        if use_vertex_color:
+            vcol = nt.nodes.new("ShaderNodeVertexColor")
+            vmix = nt.nodes.new("ShaderNodeMix")
+            vmix.data_type = "RGBA"
+            vmix.blend_type = "MULTIPLY"
+            vmix.inputs["Factor"].default_value = 1.0
+            nt.links.new(col_sock, vmix.inputs[6])
+            nt.links.new(vcol.outputs["Color"], vmix.inputs[7])
+            col_sock = vmix.outputs[2]
+        nt.links.new(col_sock, bsdf.inputs["Base Color"])
+        if alpha < 0.999 or alpha_cutoff is not None:
             nt.links.new(tex.outputs["Alpha"], bsdf.inputs["Alpha"])
+    if roughness_image is not None:
+        tex_r = nt.nodes.new("ShaderNodeTexImage")
+        tex_r.image = roughness_image
+        nt.links.new(tex_r.outputs["Color"], bsdf.inputs["Roughness"])
+    if normal_image is not None:
+        tex_n = nt.nodes.new("ShaderNodeTexImage")
+        tex_n.image = normal_image
+        nmap = nt.nodes.new("ShaderNodeNormalMap")
+        nmap.inputs["Strength"].default_value = normal_strength
+        nt.links.new(tex_n.outputs["Color"], nmap.inputs["Color"])
+        nt.links.new(nmap.outputs["Normal"], bsdf.inputs["Normal"])
     return mat
 
 
-def create_mesh_object(name: str, bm: bmesh.types.BMesh, mat: bpy.types.Material | None = None) -> bpy.types.Object:
-    mesh = bpy.data.meshes.new(name)
+def create_mesh_object(
+    name: str,
+    bm: bmesh.types.BMesh,
+    mat: bpy.types.Material | None = None,
+    sharp_angle_deg: float | None = 38.0,
+) -> bpy.types.Object:
     bm.normal_update()
+    if sharp_angle_deg is not None:
+        thresh = math.radians(sharp_angle_deg)
+        sharp_edges = [
+            e for e in bm.edges
+            if len(e.link_faces) == 2 and e.calc_face_angle(0.0) > thresh
+        ]
+        if sharp_edges:
+            bmesh.ops.split_edges(bm, edges=sharp_edges)
+        bm.normal_update()
+    mesh = bpy.data.meshes.new(name)
     bm.to_mesh(mesh)
     bm.free()
     obj = bpy.data.objects.new(name, mesh)
@@ -215,6 +314,30 @@ def ensure_uv_box(obj: bpy.types.Object, scale: float = 0.5) -> None:
                 loop[uv_layer].uv = (co.y * scale, co.z * scale)
             else:
                 loop[uv_layer].uv = (co.x * scale, co.z * scale)
+    bm.to_mesh(mesh)
+    bm.free()
+
+
+def ensure_uv_planar_rect(
+    obj: bpy.types.Object,
+    center_x: float,
+    center_z: float,
+    size_x: float,
+    size_z: float,
+) -> None:
+    """Map a horizontal Babylon (X, Z) rectangle cleanly onto [0..1]x[0..1] UVs."""
+    mesh = obj.data
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    uv_layer = bm.loops.layers.uv.verify()
+    inv_x = 1.0 / max(1e-4, size_x)
+    inv_z = 1.0 / max(1e-4, size_z)
+    for f in bm.faces:
+        for loop in f.loops:
+            co = loop.vert.co
+            u = clamp01((co.x - center_x) * inv_x + 0.5)
+            v = clamp01(((-co.y) - center_z) * inv_z + 0.5)
+            loop[uv_layer].uv = (u, v)
     bm.to_mesh(mesh)
     bm.free()
 

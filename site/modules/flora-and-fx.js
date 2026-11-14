@@ -1193,15 +1193,15 @@ function sampleOrganicMeadowSpot(rng, speciesIdx) {
 function createGrassTuftGeo() {
   const dst = { positions: [], normals: [], colors: [], indices: [] };
   const blade = { positions: [], normals: [], colors: [], indices: [] };
-  const rootC = [0.16, 0.27, 0.11];
-  const midC = [0.30, 0.49, 0.18];
-  const tipC = [0.58, 0.74, 0.31];
+  const rootC = [0.40, 0.56, 0.29];
+  const midC = [0.56, 0.72, 0.39];
+  const tipC = [0.74, 0.85, 0.48];
   const segsY = 3;
   for (let iy = 0; iy <= segsY; iy += 1) {
     const t = iy / segsY;
-    const y = t * 0.52;
-    const w = 0.044 * (1 - Math.pow(t, 1.35) * 0.94);
-    const z = 0.15 * t * t;
+    const y = t * 0.38;
+    const w = 0.036 * (1 - Math.pow(t, 1.35) * 0.94);
+    const z = 0.12 * t * t;
     const col = t < 0.5 ? [lerp(rootC[0], midC[0], t * 2), lerp(rootC[1], midC[1], t * 2), lerp(rootC[2], midC[2], t * 2)] : [lerp(midC[0], tipC[0], (t - 0.5) * 2), lerp(midC[1], tipC[1], (t - 0.5) * 2), lerp(midC[2], tipC[2], (t - 0.5) * 2)];
     blade.positions.push(-w, y, z, w, y, z);
     blade.normals.push(0, 0.2, 0.98, 0, 0.2, 0.98);
@@ -1289,14 +1289,20 @@ function buildMeadowAndFlowerSea(scene, floraRoot, containers) {
   const rng = mulberry32(68113);
   const scalableMeshes = [];
 
-  // 1. 14,000 Sculpted Multi-Blade Meadow Grass Tufts
+  // 1. 14,000 Sculpted Multi-Blade Meadow Grass Tufts (PBR matched to PeninsulaTerrainMat sky IBL)
   const GRASS_COUNT = 14000;
   const grassGeo = createGrassTuftGeo();
   const grassMesh = buildVertexMesh("MeadowGrassTufts", scene, seaGroup, grassGeo);
-  const grassMat = new StandardMaterial("MeadowGrassMat", scene);
-  grassMat.diffuseColor = new Color3(1, 1, 1);
-  grassMat.specularColor = new Color3(0.05, 0.06, 0.04);
-  grassMat.backFaceCulling = false;
+  const grassMat = makePbrMat("MeadowGrassMat", scene, {
+    color: 0xffffff,
+    roughness: 0.86,
+    metallic: 0.0,
+    specularIntensity: 0.16,
+    emissive: 0x0e1809,
+    emissiveIntensity: 0.28,
+    doubleSided: true,
+    useVertexColors: true,
+  });
   grassMat.twoSidedLighting = true;
   grassMesh.material = grassMat;
   grassMesh.alwaysSelectAsActiveMesh = true;

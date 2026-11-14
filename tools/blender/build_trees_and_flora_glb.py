@@ -35,6 +35,7 @@ from blender_kit import (
     ensure_uv_box,
     export_glb,
     fbm2,
+    make_packed_normal_texture,
     make_packed_texture,
     make_pbr_material,
     mix_rgb,
@@ -62,7 +63,16 @@ def _make_bark_textures():
             ),
         )
 
+    nrm_bark = make_packed_normal_texture(
+        TEX_CACHE / "bark_nrm.png",
+        128,
+        128,
+        lambda u, v: clamp01(0.65 * fbm2(u * 16.0, v * 6.0, seed=77, octaves=3) + 0.35 * (0.5 + 0.5 * math.sin(u * math.tau * 9.0))),
+        strength=2.4,
+    )
+
     return {
+        "nrm": nrm_bark,
         "cherry": _bark(TEX_CACHE / "bark_cherry.png", (0.24, 0.14, 0.12), (0.40, 0.25, 0.21), rings_y=True, seed=11),
         "oak": _bark(TEX_CACHE / "bark_oak.png", (0.24, 0.19, 0.14), (0.39, 0.31, 0.23), seed=22),
         "birch": make_packed_texture(
@@ -91,20 +101,182 @@ def _make_bark_textures():
     }
 
 
+def _make_foliage_textures():
+    """Paint crisp botanical leaf/blossom cluster sprite cards with baked species hues."""
+    # Broadleaf 9-leaf cluster card
+    leaves = [
+        (0.50, 0.72, 0.0, 0.24, 0.13, 0.96),
+        (0.32, 0.63, -0.58, 0.23, 0.13, 0.90),
+        (0.68, 0.63, 0.58, 0.23, 0.13, 0.92),
+        (0.24, 0.43, -1.05, 0.22, 0.13, 0.84),
+        (0.76, 0.43, 1.05, 0.22, 0.13, 0.86),
+        (0.50, 0.48, 0.12, 0.22, 0.13, 0.98),
+        (0.35, 0.26, -0.78, 0.20, 0.12, 0.80),
+        (0.65, 0.26, 0.78, 0.20, 0.12, 0.82),
+        (0.50, 0.24, 0.0, 0.19, 0.11, 0.78),
+    ]
+
+    def _broadleaf_px(u: float, v: float, base_rgb: tuple, tip_rgb: tuple) -> tuple:
+        best_d = 9.0
+        best_shade = 0.8
+        best_tip = 0.5
+        for cx, cy, ang, lw, lh, val in leaves:
+            dx = u - cx
+            dy = v - cy
+            ca, sa = math.cos(ang), math.sin(ang)
+            lx = (dx * ca + dy * sa) / lh
+            ly = (-dx * sa + dy * ca) / lw
+            taper = 1.0 - 0.38 * clamp01(lx * 0.5 + 0.5)
+            d = math.sqrt(lx * lx + (ly / max(0.35, taper)) ** 2)
+            if d < best_d:
+                best_d = d
+                best_tip = clamp01(lx * 0.5 + 0.5)
+                midrib = math.exp(-abs(ly) * 14.0) * 0.12
+                best_shade = val * (0.74 + 0.26 * best_tip) + midrib
+        alpha = 1.0 - clamp01((best_d - 0.92) / 0.12)
+        n = (fbm2(u * 14.0, v * 14.0, seed=108, octaves=2) - 0.5) * 0.10
+        s = clamp01(best_shade + n)
+        c = mix_rgb(base_rgb, tip_rgb, best_tip * 0.65)
+        return (clamp01(c[0] * s), clamp01(c[1] * s), clamp01(c[2] * s), alpha)
+
+    # Blossom 7-cluster sakura sprite card
+    florets = [
+        (0.50, 0.68, 0.20, 0.98),
+        (0.30, 0.55, 0.18, 0.90),
+        (0.70, 0.55, 0.18, 0.92),
+        (0.49, 0.45, 0.19, 1.00),
+        (0.28, 0.32, 0.17, 0.84),
+        (0.71, 0.32, 0.17, 0.86),
+        (0.50, 0.24, 0.16, 0.82),
+    ]
+
+    def _blossom_px(u: float, v: float, outer_rgb: tuple, center_rgb: tuple) -> tuple:
+        best_d = 9.0
+        col = outer_rgb
+        for idx, (cx, cy, rad, lum) in enumerate(florets):
+            dx = u - cx
+            dy = v - cy
+            r = math.hypot(dx, dy) / rad
+            ang = math.atan2(dy, dx) + idx * 0.6
+            petal_r = 0.86 + 0.22 * math.cos(ang * 5.0)
+            d = r / petal_r
+            if d < best_d:
+                best_d = d
+                center_mask = math.exp(-(r * r) * 14.0)
+                pcol = (lum * outer_rgb[0], lum * outer_rgb[1], lum * outer_rgb[2])
+                col = mix_rgb(pcol, center_rgb, clamp01((1.0 - r) * 0.42 + center_mask * 0.68))
+        alpha = 1.0 - clamp01((best_d - 0.92) / 0.12)
+        return (*col, alpha)
+
+    # Cypress feathery plume sprite card
+    def _cypress_px(u: float, v: float, base_rgb: tuple, tip_rgb: tuple) -> tuple:
+        dx = abs(u - 0.5)
+        plume_w = 0.46 * math.sin(clamp01(v) * math.pi) ** 0.58
+        fringe = 0.05 * math.sin(v * 58.0 + dx * 26.0) + 0.03 * math.sin(u * 68.0)
+        d = (dx + fringe) / max(0.08, plume_w)
+        alpha = 1.0 - clamp01((d - 0.92) / 0.14) if (0.04 < v < 0.96) else 0.0
+        n = fbm2(u * 18.0, v * 22.0, seed=211, octaves=2)
+        s = clamp01(0.72 + 0.26 * v + (n - 0.5) * 0.18)
+        c = mix_rgb(base_rgb, tip_rgb, clamp01(v * 0.7 + (0.5 - dx) * 0.3))
+        return (clamp01(c[0] * s), clamp01(c[1] * s), clamp01(c[2] * s), alpha)
+
+    # Dense opaque dappled inner core texture (ensures zero hollow sees-through gaps)
+    def _core_px(u: float, v: float, dark_rgb: tuple, light_rgb: tuple) -> tuple:
+        n1 = fbm2(u * 10.0, v * 10.0, seed=301, octaves=3)
+        n2 = fbm2(u * 24.0, v * 24.0, seed=307, octaves=2)
+        t = clamp01(0.25 + 0.60 * n1 + 0.18 * (n2 - 0.5))
+        c = mix_rgb(dark_rgb, light_rgb, t)
+        return (*c, 1.0)
+
+    imgs = {
+        "cherry_a": make_packed_texture(TEX_CACHE / "foliage_cherry_a.png", 128, 128, lambda u, v: _blossom_px(u, v, (0.98, 0.72, 0.81), (0.90, 0.44, 0.58))),
+        "cherry_b": make_packed_texture(TEX_CACHE / "foliage_cherry_b.png", 128, 128, lambda u, v: _blossom_px(u, v, (1.00, 0.84, 0.89), (0.93, 0.56, 0.66))),
+        "cherry_core": make_packed_texture(TEX_CACHE / "foliage_cherry_core.png", 128, 128, lambda u, v: _core_px(u, v, (0.70, 0.40, 0.50), (0.92, 0.64, 0.73))),
+    }
+
+    species_greens = {
+        "oak": ((0.27, 0.48, 0.20), (0.40, 0.63, 0.27), (0.37, 0.58, 0.24), (0.53, 0.73, 0.34), (0.16, 0.30, 0.12), (0.28, 0.45, 0.19)),
+        "birch": ((0.52, 0.68, 0.26), (0.68, 0.80, 0.35), (0.68, 0.76, 0.30), (0.83, 0.86, 0.40), (0.34, 0.47, 0.17), (0.50, 0.62, 0.25)),
+        "olive": ((0.40, 0.52, 0.35), (0.55, 0.66, 0.48), (0.52, 0.62, 0.46), (0.66, 0.74, 0.58), (0.25, 0.34, 0.22), (0.38, 0.48, 0.33)),
+    }
+    for sp, (a0, a1, b0, b1, c0, c1) in species_greens.items():
+        imgs[f"{sp}_a"] = make_packed_texture(TEX_CACHE / f"foliage_{sp}_a.png", 128, 128, lambda u, v, d0=a0, d1=a1: _broadleaf_px(u, v, d0, d1))
+        imgs[f"{sp}_b"] = make_packed_texture(TEX_CACHE / f"foliage_{sp}_b.png", 128, 128, lambda u, v, d0=b0, d1=b1: _broadleaf_px(u, v, d0, d1))
+        imgs[f"{sp}_core"] = make_packed_texture(TEX_CACHE / f"foliage_{sp}_core.png", 128, 128, lambda u, v, d0=c0, d1=c1: _core_px(u, v, d0, d1))
+
+    imgs["cyp_a"] = make_packed_texture(TEX_CACHE / "foliage_cyp_a.png", 128, 128, lambda u, v: _cypress_px(u, v, (0.17, 0.35, 0.18), (0.27, 0.49, 0.24)))
+    imgs["cyp_b"] = make_packed_texture(TEX_CACHE / "foliage_cyp_b.png", 128, 128, lambda u, v: _cypress_px(u, v, (0.22, 0.42, 0.21), (0.34, 0.56, 0.28)))
+    imgs["cyp_core"] = make_packed_texture(TEX_CACHE / "foliage_cyp_core.png", 128, 128, lambda u, v: _core_px(u, v, (0.10, 0.22, 0.11), (0.18, 0.34, 0.17)))
+    return imgs
+
+
 def _new_empty(name: str) -> bpy.types.Object:
     e = bpy.data.objects.new(name, None)
     bpy.context.scene.collection.objects.link(e)
     return e
 
 
-def _mesh_part(name: str, builder_fn, mat, uv_scale: float, parent: bpy.types.Object) -> bpy.types.Object:
+def _mesh_part(name: str, builder_fn, mat, uv_scale: float | None, parent: bpy.types.Object, sharp_angle_deg: float | None = 38.0) -> bpy.types.Object:
     bm = bmesh.new()
     builder_fn(bm)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    obj = create_mesh_object(name, bm, mat)
-    ensure_uv_box(obj, scale=uv_scale)
+    obj = create_mesh_object(name, bm, mat, sharp_angle_deg=sharp_angle_deg)
+    if uv_scale is not None:
+        ensure_uv_box(obj, scale=uv_scale)
     obj.parent = parent
     return obj
+
+
+def _add_cupped_leaf_card(
+    bm: bmesh.types.BMesh,
+    center: Vector,
+    normal_dir: Vector,
+    size_u: float,
+    size_v: float,
+    cup_depth: float,
+    roll_rad: float,
+    ao_lo: float,
+    ao_hi: float,
+    uv_layer,
+    col_layer,
+) -> None:
+    """Create a sculpted 3x3 cupped botanical foliage card with explicit [0..1] UVs and AO vertex color."""
+    n = normal_dir.normalized()
+    ref = Vector((0.0, 0.0, 1.0)) if abs(n.z) < 0.9 else Vector((1.0, 0.0, 0.0))
+    u0 = n.cross(ref).normalized()
+    v0 = n.cross(u0).normalized()
+    cr, sr = math.cos(roll_rad), math.sin(roll_rad)
+    u_dir = u0 * cr + v0 * sr
+    v_dir = -u0 * sr + v0 * cr
+
+    grid = []
+    for iy in range(3):
+        row = []
+        sv = iy - 1.0
+        for ix in range(3):
+            su = ix - 1.0
+            dome = cup_depth * (1.0 - 0.65 * (su * su + sv * sv))
+            pos = center + u_dir * (su * size_u * 0.5) + v_dir * (sv * size_v * 0.5) + n * dome
+            vert = bm.verts.new(pos)
+            # Subtle warm top lighting gradient across each rosette
+            shade = ao_lo + (ao_hi - ao_lo) * (0.5 + 0.5 * sv)
+            row.append((vert, ix * 0.5, iy * 0.5, shade))
+        grid.append(row)
+
+    for iy in range(2):
+        for ix in range(2):
+            v00, u00, w00, s00 = grid[iy][ix]
+            v10, u10, w10, s10 = grid[iy][ix + 1]
+            v11, u11, w11, s11 = grid[iy + 1][ix + 1]
+            v01, u01, w01, s01 = grid[iy + 1][ix]
+            f = bm.faces.new((v00, v10, v11, v01))
+            f.smooth = True
+            uvs = ((u00, w00), (u10, w10), (u11, w11), (u01, w01))
+            shades = (s00, s10, s11, s01)
+            for idx_l, loop in enumerate(f.loops):
+                loop[uv_layer].uv = uvs[idx_l]
+                s = clamp01(shades[idx_l])
+                loop[col_layer] = (s, s, s, 1.0)
 
 
 def _sample_branch(p0: Vector, p1: Vector, bend: Vector, r0: float, r1: float, steps: int = 6):
@@ -121,7 +293,7 @@ def _sample_branch(p0: Vector, p1: Vector, bend: Vector, r0: float, r1: float, s
     return pts, radii
 
 
-def _build_canopy_tree(name: str, sp: str, seed: int, bark_mat, leaf_mat_a, leaf_mat_b=None):
+def _build_canopy_tree(name: str, sp: str, seed: int, bark_mat, leaf_mat_a, leaf_mat_b=None, core_mat=None):
     rng = random.Random(seed)
     root = _new_empty(name)
 
@@ -187,50 +359,99 @@ def _build_canopy_tree(name: str, sp: str, seed: int, bark_mat, leaf_mat_a, leaf
 
     _mesh_part(f"{name}_Trunk", build_wood, bark_mat, uv_scale=0.8, parent=root)
 
-    def build_foliage(bm, subset: int):
+    def build_foliage_core(bm):
         if sp == "cypress":
-            # Layered dense Italian cypress flame column (from Y = 0.9m up to 6.8m)
-            for tier in range(11):
-                if leaf_mat_b is not None and (tier % 2 != subset):
-                    continue
-                t = tier / 10.0
-                ty = 1.15 + t * 5.65
-                profile = math.sin((0.12 + t * 0.88) * math.pi) ** 0.75
-                rad = 0.78 * profile + 0.14
-                ox = math.sin(tier * 2.3 + seed) * 0.09
-                oz = math.cos(tier * 2.1 + seed) * 0.09
-                add_uv_sphere_part(bm, yup(ox, ty, oz), (rad, rad * 0.96, 0.68), u_segs=14, v_rings=10, noise_amp=0.22, noise_freq=2.8, seed=seed + tier)
+            for tier in range(7):
+                t = tier / 6.0
+                ty = 1.25 + t * 5.2
+                profile = math.sin((0.14 + t * 0.86) * math.pi) ** 0.78
+                rad = 0.44 * profile + 0.08
+                add_uv_sphere_part(bm, yup(0.0, ty, 0.0), (rad, rad, 0.72), u_segs=8, v_rings=6, noise_amp=0.14, noise_freq=2.6, seed=seed + tier)
             return
 
-        # Canopy clusters perched cleanly at outer bough tips + crown apex
+        r_core = 0.50 if sp == "birch" else (0.72 if sp == "oak" else 0.58)
+        tips_core = list(trunk_tips[:6]) + [yup(0.0, h_trunk + 1.85, 0.0)]
+        for idx, tip in enumerate(tips_core):
+            sc = 0.85 + 0.25 * ((idx * 37 + seed) % 5) / 4.0
+            add_uv_sphere_part(bm, tip, (r_core * sc, r_core * sc, r_core * 0.65 * sc), u_segs=8, v_rings=6, noise_amp=0.16, noise_freq=2.4, seed=seed + idx)
+
+    def build_foliage(bm, subset: int):
+        uv_layer = bm.loops.layers.uv.verify()
+        col_layer = bm.loops.layers.color.verify()
+        if sp == "cypress":
+            n_plumes = 38
+            for pi in range(n_plumes):
+                if leaf_mat_b is not None and (pi % 2 != subset):
+                    continue
+                t = pi / max(1, n_plumes - 1)
+                ty = 1.05 + t * 5.65
+                profile = math.sin((0.10 + t * 0.90) * math.pi) ** 0.72
+                rad = 0.44 * profile + 0.08
+                az = pi * 2.39996 + (seed % 7) * 0.4
+                dir_out = Vector((math.cos(az), -math.sin(az), 0.34)).normalized()
+                ctr = yup(math.cos(az) * rad, ty, math.sin(az) * rad)
+                w_c = (0.50 + 0.20 * profile) * (1.0 - 0.15 * t)
+                h_c = 0.76 + 0.22 * profile
+                ao_lo = 0.68 + 0.14 * t
+                ao_hi = 0.88 + 0.12 * t
+                _add_cupped_leaf_card(bm, ctr, dir_out, w_c, h_c, 0.14, (rng.random() - 0.5) * 0.28, ao_lo, ao_hi, uv_layer, col_layer)
+            return
+
         if sp == "cherry":
-            cluster_r = (0.85, 0.78, 0.56)
+            card_sz = 1.28
         elif sp == "oak":
-            cluster_r = (1.12, 1.05, 0.68)
+            card_sz = 1.56
         elif sp == "birch":
-            cluster_r = (0.72, 0.68, 0.60)
+            card_sz = 1.18
         else:
-            cluster_r = (0.95, 0.92, 0.52)
+            card_sz = 1.38
 
-        tips = list(trunk_tips) + [yup(0.0, h_trunk + 2.05, 0.0), yup(0.45, h_trunk + 1.85, -0.35), yup(-0.45, h_trunk + 1.75, 0.42)]
+        tips = list(trunk_tips) + [
+            yup(0.0, h_trunk + 2.10, 0.0),
+            yup(0.55, h_trunk + 1.88, -0.42),
+            yup(-0.55, h_trunk + 1.82, 0.48),
+            yup(0.25, h_trunk + 1.65, 0.62),
+        ]
+        # 5 well-distributed outward normals (umbrella cap + 4 oblique rosette facets) around each bough tip
+        rosette_dirs = [
+            Vector((0.0, 0.0, 1.0)),
+            Vector((0.82, 0.32, 0.48)).normalized(),
+            Vector((-0.82, 0.34, 0.46)).normalized(),
+            Vector((0.28, -0.84, 0.46)).normalized(),
+            Vector((-0.34, 0.82, 0.46)).normalized(),
+        ]
         for idx, tip in enumerate(tips):
-            if leaf_mat_b is not None and (idx % 2 != subset):
-                continue
-            sc = rng.uniform(0.82, 1.18)
-            add_uv_sphere_part(
-                bm,
-                tip,
-                (cluster_r[0] * sc, cluster_r[1] * sc, cluster_r[2] * sc),
-                u_segs=14,
-                v_rings=10,
-                noise_amp=0.24,
-                noise_freq=2.4,
-                seed=seed + idx * 7,
-            )
+            base_yaw = rng.random() * math.tau
+            cy, sy = math.cos(base_yaw), math.sin(base_yaw)
+            tip_h = clamp01((tip.z - h_trunk) / 2.4)
+            ao_base = 0.64 + 0.18 * tip_h
+            for ri, d_loc in enumerate(rosette_dirs):
+                card_id = idx * len(rosette_dirs) + ri
+                if leaf_mat_b is not None and (card_id % 2 != subset):
+                    continue
+                d_rot = Vector((d_loc.x * cy - d_loc.y * sy, d_loc.x * sy + d_loc.y * cy, d_loc.z)).normalized()
+                offset_dist = 0.24 * card_sz if ri == 0 else 0.34 * card_sz
+                ctr = tip + d_rot * offset_dist
+                sz = card_sz * rng.uniform(0.84, 1.16)
+                _add_cupped_leaf_card(
+                    bm,
+                    ctr,
+                    d_rot,
+                    sz,
+                    sz * rng.uniform(0.90, 1.10),
+                    sz * 0.16,
+                    rng.uniform(-0.8, 0.8),
+                    ao_base,
+                    clamp01(ao_base + 0.28),
+                    uv_layer,
+                    col_layer,
+                )
 
-    _mesh_part(f"{name}_CanopyA", lambda bm: build_foliage(bm, 0), leaf_mat_a, uv_scale=0.6, parent=root)
+    if core_mat is not None:
+        _mesh_part(f"{name}_CanopyCore", build_foliage_core, core_mat, uv_scale=0.75, parent=root)
+    _mesh_part(f"{name}_CanopyA", lambda bm: build_foliage(bm, 0), leaf_mat_a, uv_scale=None, parent=root, sharp_angle_deg=None)
     if leaf_mat_b is not None:
-        _mesh_part(f"{name}_CanopyB", lambda bm: build_foliage(bm, 1), leaf_mat_b, uv_scale=0.6, parent=root)
+        _mesh_part(f"{name}_CanopyB", lambda bm: build_foliage(bm, 1), leaf_mat_b, uv_scale=None, parent=root, sharp_angle_deg=None)
     return root
 
 
@@ -314,36 +535,47 @@ def main() -> None:
 
     reset_scene()
     barks = _make_bark_textures()
+    foliage = _make_foliage_textures()
 
-    m_bark_cherry = make_pbr_material("Tree_CherryBark", (0.34, 0.21, 0.18), roughness=0.82, image=barks["cherry"])
-    m_bark_oak = make_pbr_material("Tree_OakBark", (0.33, 0.26, 0.19), roughness=0.88, image=barks["oak"])
-    m_bark_birch = make_pbr_material("Tree_BirchBark", (0.90, 0.88, 0.83), roughness=0.72, image=barks["birch"])
-    m_bark_olive = make_pbr_material("Tree_OliveBark", (0.45, 0.40, 0.33), roughness=0.86, image=barks["olive"])
-    m_bark_palm = make_pbr_material("Tree_PalmBark", (0.48, 0.35, 0.24), roughness=0.86, image=barks["palm"])
+    m_bark_cherry = make_pbr_material("Tree_CherryBark", (0.34, 0.21, 0.18), roughness=0.82, image=barks["cherry"], normal_image=barks["nrm"], normal_strength=0.85)
+    m_bark_oak = make_pbr_material("Tree_OakBark", (0.33, 0.26, 0.19), roughness=0.88, image=barks["oak"], normal_image=barks["nrm"], normal_strength=0.95)
+    m_bark_birch = make_pbr_material("Tree_BirchBark", (0.90, 0.88, 0.83), roughness=0.72, image=barks["birch"], normal_image=barks["nrm"], normal_strength=0.55)
+    m_bark_olive = make_pbr_material("Tree_OliveBark", (0.45, 0.40, 0.33), roughness=0.86, image=barks["olive"], normal_image=barks["nrm"], normal_strength=0.90)
+    m_bark_palm = make_pbr_material("Tree_PalmBark", (0.48, 0.35, 0.24), roughness=0.86, image=barks["palm"], normal_image=barks["nrm"], normal_strength=0.85)
 
-    m_cherry_a = make_pbr_material("Tree_CherryBlossomA", (0.99, 0.78, 0.86), roughness=0.72, emission=(0.98, 0.74, 0.82), emission_strength=0.10)
-    m_cherry_b = make_pbr_material("Tree_CherryBlossomB", (0.99, 0.89, 0.92), roughness=0.72, emission=(1.0, 0.85, 0.88), emission_strength=0.08)
-    m_oak_a = make_pbr_material("Tree_OakLeafA", (0.28, 0.48, 0.22), roughness=0.76)
-    m_oak_b = make_pbr_material("Tree_OakLeafB", (0.39, 0.58, 0.26), roughness=0.74)
-    m_birch_a = make_pbr_material("Tree_BirchLeafA", (0.56, 0.71, 0.30), roughness=0.72)
-    m_birch_b = make_pbr_material("Tree_BirchLeafB", (0.72, 0.76, 0.34), roughness=0.70)
-    m_olive_a = make_pbr_material("Tree_OliveLeafA", (0.42, 0.51, 0.37), roughness=0.74)
-    m_olive_b = make_pbr_material("Tree_OliveLeafB", (0.53, 0.61, 0.47), roughness=0.74)
-    m_cyp_a = make_pbr_material("Tree_CypressLeafA", (0.16, 0.30, 0.17), roughness=0.80)
-    m_cyp_b = make_pbr_material("Tree_CypressLeafB", (0.21, 0.36, 0.20), roughness=0.78)
-    m_palm_frond = make_pbr_material("Tree_PalmFrond", (0.34, 0.56, 0.22), roughness=0.58, double_sided=True)
-    m_coconut = make_pbr_material("Tree_Coconut", (0.34, 0.21, 0.11), roughness=0.78)
+    m_cherry_a = make_pbr_material("Tree_CherryBlossomA", (1.0, 1.0, 1.0), roughness=0.68, emission=(0.98, 0.74, 0.82), emission_strength=0.05, image=foliage["cherry_a"], double_sided=True, alpha_cutoff=0.38, use_vertex_color=True)
+    m_cherry_b = make_pbr_material("Tree_CherryBlossomB", (1.0, 1.0, 1.0), roughness=0.68, emission=(1.0, 0.85, 0.88), emission_strength=0.04, image=foliage["cherry_b"], double_sided=True, alpha_cutoff=0.38, use_vertex_color=True)
+    m_cherry_core = make_pbr_material("Tree_CherryCore", (1.0, 1.0, 1.0), roughness=0.78, image=foliage["cherry_core"])
 
-    _build_canopy_tree("Tree_Cherry_A", "cherry", 101, m_bark_cherry, m_cherry_a, m_cherry_b)
-    _build_canopy_tree("Tree_Cherry_B", "cherry", 102, m_bark_cherry, m_cherry_a, m_cherry_b)
-    _build_canopy_tree("Tree_Oak_A", "oak", 201, m_bark_oak, m_oak_a, m_oak_b)
-    _build_canopy_tree("Tree_Oak_B", "oak", 202, m_bark_oak, m_oak_a, m_oak_b)
-    _build_canopy_tree("Tree_Birch_A", "birch", 301, m_bark_birch, m_birch_a, m_birch_b)
-    _build_canopy_tree("Tree_Birch_B", "birch", 302, m_bark_birch, m_birch_a, m_birch_b)
-    _build_canopy_tree("Tree_Olive_A", "olive", 401, m_bark_olive, m_olive_a, m_olive_b)
-    _build_canopy_tree("Tree_Olive_B", "olive", 402, m_bark_olive, m_olive_a, m_olive_b)
-    _build_canopy_tree("Tree_Cypress_A", "cypress", 501, m_bark_oak, m_cyp_a, m_cyp_b)
-    _build_canopy_tree("Tree_Cypress_B", "cypress", 502, m_bark_oak, m_cyp_a, m_cyp_b)
+    m_oak_a = make_pbr_material("Tree_OakLeafA", (1.0, 1.0, 1.0), roughness=0.70, image=foliage["oak_a"], double_sided=True, alpha_cutoff=0.38, use_vertex_color=True)
+    m_oak_b = make_pbr_material("Tree_OakLeafB", (1.0, 1.0, 1.0), roughness=0.68, image=foliage["oak_b"], double_sided=True, alpha_cutoff=0.38, use_vertex_color=True)
+    m_oak_core = make_pbr_material("Tree_OakCore", (1.0, 1.0, 1.0), roughness=0.82, image=foliage["oak_core"])
+
+    m_birch_a = make_pbr_material("Tree_BirchLeafA", (1.0, 1.0, 1.0), roughness=0.66, image=foliage["birch_a"], double_sided=True, alpha_cutoff=0.38, use_vertex_color=True)
+    m_birch_b = make_pbr_material("Tree_BirchLeafB", (1.0, 1.0, 1.0), roughness=0.64, image=foliage["birch_b"], double_sided=True, alpha_cutoff=0.38, use_vertex_color=True)
+    m_birch_core = make_pbr_material("Tree_BirchCore", (1.0, 1.0, 1.0), roughness=0.76, image=foliage["birch_core"])
+
+    m_olive_a = make_pbr_material("Tree_OliveLeafA", (1.0, 1.0, 1.0), roughness=0.70, image=foliage["olive_a"], double_sided=True, alpha_cutoff=0.38, use_vertex_color=True)
+    m_olive_b = make_pbr_material("Tree_OliveLeafB", (1.0, 1.0, 1.0), roughness=0.68, image=foliage["olive_b"], double_sided=True, alpha_cutoff=0.38, use_vertex_color=True)
+    m_olive_core = make_pbr_material("Tree_OliveCore", (1.0, 1.0, 1.0), roughness=0.80, image=foliage["olive_core"])
+
+    m_cyp_a = make_pbr_material("Tree_CypressLeafA", (1.0, 1.0, 1.0), roughness=0.74, image=foliage["cyp_a"], double_sided=True, alpha_cutoff=0.36, use_vertex_color=True)
+    m_cyp_b = make_pbr_material("Tree_CypressLeafB", (1.0, 1.0, 1.0), roughness=0.72, image=foliage["cyp_b"], double_sided=True, alpha_cutoff=0.36, use_vertex_color=True)
+    m_cyp_core = make_pbr_material("Tree_CypressCore", (1.0, 1.0, 1.0), roughness=0.84, image=foliage["cyp_core"])
+
+    m_palm_frond = make_pbr_material("Tree_PalmFrond", (0.36, 0.58, 0.24), roughness=0.46, specular=0.55, double_sided=True)
+    m_coconut = make_pbr_material("Tree_Coconut", (0.34, 0.21, 0.11), roughness=0.76)
+
+    _build_canopy_tree("Tree_Cherry_A", "cherry", 101, m_bark_cherry, m_cherry_a, m_cherry_b, m_cherry_core)
+    _build_canopy_tree("Tree_Cherry_B", "cherry", 102, m_bark_cherry, m_cherry_a, m_cherry_b, m_cherry_core)
+    _build_canopy_tree("Tree_Oak_A", "oak", 201, m_bark_oak, m_oak_a, m_oak_b, m_oak_core)
+    _build_canopy_tree("Tree_Oak_B", "oak", 202, m_bark_oak, m_oak_a, m_oak_b, m_oak_core)
+    _build_canopy_tree("Tree_Birch_A", "birch", 301, m_bark_birch, m_birch_a, m_birch_b, m_birch_core)
+    _build_canopy_tree("Tree_Birch_B", "birch", 302, m_bark_birch, m_birch_a, m_birch_b, m_birch_core)
+    _build_canopy_tree("Tree_Olive_A", "olive", 401, m_bark_olive, m_olive_a, m_olive_b, m_olive_core)
+    _build_canopy_tree("Tree_Olive_B", "olive", 402, m_bark_olive, m_olive_a, m_olive_b, m_olive_core)
+    _build_canopy_tree("Tree_Cypress_A", "cypress", 501, m_bark_oak, m_cyp_a, m_cyp_b, m_cyp_core)
+    _build_canopy_tree("Tree_Cypress_B", "cypress", 502, m_bark_oak, m_cyp_a, m_cyp_b, m_cyp_core)
     _build_weeping_palm("Tree_Palm_A", 600, m_bark_palm, m_palm_frond, m_coconut)
     _build_weeping_palm("Tree_Palm_B", 601, m_bark_palm, m_palm_frond, m_coconut)
 

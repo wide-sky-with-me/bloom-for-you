@@ -39,6 +39,7 @@ from blender_kit import (
     export_glb,
     fbm2,
     join_objects,
+    make_packed_normal_texture,
     make_packed_texture,
     make_pbr_material,
     mix_rgb,
@@ -150,13 +151,50 @@ def _make_shared_textures():
             )
         )(int(v * 10.0), 1.0 if ((v * 10.0) % 1.0) < 0.12 else 0.0, fbm2(u * 12.0, v * 12.0, seed=99)),
     )
+    def _h_stone(u: float, v: float) -> float:
+        dv = min((v * 6.0) % 1.0, 1.0 - (v * 6.0) % 1.0)
+        off = 0.5 if int(v * 6.0) % 2 else 0.0
+        du = min(((u * 3.0 + off) % 1.0), 1.0 - ((u * 3.0 + off) % 1.0))
+        mortar = clamp01(min(dv, du) * 14.0)
+        return clamp01(mortar * (0.75 + 0.25 * fbm2(u * 8.0, v * 8.0, seed=11, octaves=3)))
+
+    def _h_rock(u: float, v: float) -> float:
+        return clamp01(fbm2(u * 6.0, v * 6.0, seed=23, octaves=4) * 0.7 + fbm2(u * 18.0, v * 18.0, seed=41, octaves=2) * 0.3)
+
+    def _h_terra(u: float, v: float) -> float:
+        wave = 0.5 + 0.5 * math.sin(u * math.tau * 8.0)
+        lip = 1.0 - clamp01((0.12 - (v * 6.0) % 1.0) * 10.0) * 0.45
+        return clamp01((0.35 + 0.55 * wave) * lip + (fbm2(u * 10.0, v * 10.0, seed=53, octaves=2) - 0.5) * 0.16)
+
+    def _h_wood(u: float, v: float) -> float:
+        plank = clamp01(min(((u * 6.0) % 1.0), 1.0 - ((u * 6.0) % 1.0)) * 20.0)
+        grain = 0.5 + 0.5 * math.sin(u * 48.0 + fbm2(u * 6.0, v * 18.0, seed=88) * 3.0)
+        return clamp01(plank * (0.72 + 0.28 * grain))
+
+    def _h_teak(u: float, v: float) -> float:
+        caulk = clamp01(min(((v * 12.0) % 1.0), 1.0 - ((v * 12.0) % 1.0)) * 14.0)
+        return clamp01(caulk * (0.78 + 0.22 * fbm2(u * 20.0, v * 4.0, seed=91, octaves=2)))
+
+    nrm_stone = make_packed_normal_texture(TEX_CACHE / "stone_ashlar_nrm.png", 256, 256, _h_stone, strength=2.4)
+    nrm_rock = make_packed_normal_texture(TEX_CACHE / "limestone_rock_nrm.png", 256, 256, _h_rock, strength=2.8)
+    nrm_plaster = make_packed_normal_texture(TEX_CACHE / "stucco_plaster_nrm.png", 256, 256, lambda u, v: fbm2(u * 9.0, v * 9.0, seed=71, octaves=3), strength=1.2)
+    nrm_terra = make_packed_normal_texture(TEX_CACHE / "terracotta_tiles_nrm.png", 256, 256, _h_terra, strength=2.6)
+    nrm_wood = make_packed_normal_texture(TEX_CACHE / "warm_cedar_nrm.png", 256, 256, _h_wood, strength=1.8)
+    nrm_teak = make_packed_normal_texture(TEX_CACHE / "yacht_teak_nrm.png", 256, 256, _h_teak, strength=2.0)
+
     return {
         "stone": img_stone,
+        "stone_nrm": nrm_stone,
         "rock": img_rock,
+        "rock_nrm": nrm_rock,
         "plaster": img_plaster,
+        "plaster_nrm": nrm_plaster,
         "terracotta": img_terracotta,
+        "terracotta_nrm": nrm_terra,
         "wood": img_wood,
+        "wood_nrm": nrm_wood,
         "teak": img_teak,
+        "teak_nrm": nrm_teak,
         "shingle": img_shingle,
     }
 
@@ -286,11 +324,11 @@ def _add_blossom_cluster(bm: bmesh.types.BMesh, center: Vector, scale: float, se
 def build_monet_pond_glb(out_path: Path) -> None:
     reset_scene()
     tex = _make_shared_textures()
-    m_rock = make_pbr_material("Pond_Limestone", (0.58, 0.59, 0.56), roughness=0.88, image=tex["rock"])
+    m_rock = make_pbr_material("Pond_Limestone", (0.58, 0.59, 0.56), roughness=0.88, image=tex["rock"], normal_image=tex["rock_nrm"], normal_strength=0.95)
     m_moss = make_pbr_material("Pond_Moss", (0.28, 0.48, 0.24), roughness=0.92)
     m_sage = make_pbr_material("Monet_SageWood", (0.48, 0.61, 0.51), roughness=0.58)
-    m_deck = make_pbr_material("Monet_BridgeDeck", (0.56, 0.66, 0.57), roughness=0.64)
-    m_shelf = make_pbr_material("Pond_ShelfStone", (0.76, 0.75, 0.70), roughness=0.74, image=tex["rock"])
+    m_deck = make_pbr_material("Monet_BridgeDeck", (0.56, 0.66, 0.57), roughness=0.64, normal_image=tex["wood_nrm"], normal_strength=0.55)
+    m_shelf = make_pbr_material("Pond_ShelfStone", (0.76, 0.75, 0.70), roughness=0.74, image=tex["rock"], normal_image=tex["rock_nrm"], normal_strength=0.80)
 
     root = _new_empty("MonetPondRoot")
 
@@ -602,12 +640,12 @@ def build_swing_arches_glb(out_path: Path) -> None:
 def build_lighthouse_glb(out_path: Path) -> None:
     reset_scene()
     tex = _make_shared_textures()
-    m_stone = make_pbr_material("LH_Stone", (0.76, 0.73, 0.68), roughness=0.82, image=tex["stone"])
-    m_white = make_pbr_material("LH_White", (0.95, 0.93, 0.89), roughness=0.78, image=tex["plaster"])
-    m_crimson = make_pbr_material("LH_Crimson", (0.68, 0.22, 0.18), roughness=0.76)
+    m_stone = make_pbr_material("LH_Stone", (0.76, 0.73, 0.68), roughness=0.82, image=tex["stone"], normal_image=tex["stone_nrm"], normal_strength=0.85)
+    m_white = make_pbr_material("LH_White", (0.95, 0.93, 0.89), roughness=0.78, image=tex["plaster"], normal_image=tex["plaster_nrm"], normal_strength=0.45)
+    m_crimson = make_pbr_material("LH_Crimson", (0.68, 0.22, 0.18), roughness=0.76, normal_image=tex["plaster_nrm"], normal_strength=0.35)
     m_iron = make_pbr_material("LH_Iron", (0.14, 0.16, 0.18), roughness=0.38, metallic=0.84)
     m_brass = make_pbr_material("LH_Brass", (0.85, 0.69, 0.36), roughness=0.20, metallic=0.90)
-    m_oak = make_pbr_material("LH_Oak", (0.36, 0.23, 0.13), roughness=0.54, image=tex["wood"])
+    m_oak = make_pbr_material("LH_Oak", (0.36, 0.23, 0.13), roughness=0.54, image=tex["wood"], normal_image=tex["wood_nrm"], normal_strength=0.65)
     m_glass = make_pbr_material("LH_Glass", (0.86, 0.96, 0.99), roughness=0.08, alpha=0.32)
     m_fresnel = make_pbr_material("LH_Fresnel", (1.0, 0.93, 0.68), roughness=0.14, emission=(1.0, 0.86, 0.45), emission_strength=0.95)
 
@@ -691,9 +729,9 @@ def build_lighthouse_glb(out_path: Path) -> None:
 def build_windmill_glb(out_path: Path) -> None:
     reset_scene()
     tex = _make_shared_textures()
-    m_stone = make_pbr_material("WM_Stone", (0.82, 0.79, 0.72), roughness=0.84, image=tex["stone"])
-    m_shingle = make_pbr_material("WM_Shingle", (0.38, 0.29, 0.22), roughness=0.76, image=tex["shingle"])
-    m_cedar = make_pbr_material("WM_Cedar", (0.58, 0.38, 0.24), roughness=0.54, image=tex["wood"])
+    m_stone = make_pbr_material("WM_Stone", (0.82, 0.79, 0.72), roughness=0.84, image=tex["stone"], normal_image=tex["stone_nrm"], normal_strength=0.85)
+    m_shingle = make_pbr_material("WM_Shingle", (0.38, 0.29, 0.22), roughness=0.76, image=tex["shingle"], normal_image=tex["wood_nrm"], normal_strength=0.55)
+    m_cedar = make_pbr_material("WM_Cedar", (0.58, 0.38, 0.24), roughness=0.54, image=tex["wood"], normal_image=tex["wood_nrm"], normal_strength=0.65)
     m_sail = make_pbr_material("WM_SailCanvas", (0.96, 0.94, 0.89), roughness=0.86, double_sided=True)
     m_iron = make_pbr_material("WM_Iron", (0.16, 0.18, 0.20), roughness=0.40, metallic=0.82)
 
@@ -785,8 +823,8 @@ def build_windmill_glb(out_path: Path) -> None:
 def build_creek_bridge_glb(out_path: Path) -> None:
     reset_scene()
     tex = _make_shared_textures()
-    m_stone = make_pbr_material("Bridge_Stone", (0.78, 0.75, 0.69), roughness=0.82, image=tex["stone"])
-    m_cedar = make_pbr_material("Bridge_Cedar", (0.60, 0.40, 0.25), roughness=0.50, image=tex["wood"])
+    m_stone = make_pbr_material("Bridge_Stone", (0.78, 0.75, 0.69), roughness=0.82, image=tex["stone"], normal_image=tex["stone_nrm"], normal_strength=0.85)
+    m_cedar = make_pbr_material("Bridge_Cedar", (0.60, 0.40, 0.25), roughness=0.50, image=tex["wood"], normal_image=tex["wood_nrm"], normal_strength=0.65)
     m_brass = make_pbr_material("Bridge_Brass", (0.80, 0.64, 0.34), roughness=0.28, metallic=0.86)
 
     root = _new_empty("CreekBridgeRoot")
@@ -850,11 +888,11 @@ def build_creek_bridge_glb(out_path: Path) -> None:
 def build_gazebo_glb(out_path: Path) -> None:
     reset_scene()
     tex = _make_shared_textures()
-    m_marble = make_pbr_material("Gaz_Carrara", (0.95, 0.94, 0.90), roughness=0.48, image=tex["plaster"])
-    m_trav = make_pbr_material("Gaz_Travertine", (0.91, 0.88, 0.82), roughness=0.58, image=tex["stone"])
+    m_marble = make_pbr_material("Gaz_Carrara", (0.95, 0.94, 0.90), roughness=0.44, image=tex["plaster"], normal_image=tex["plaster_nrm"], normal_strength=0.35)
+    m_trav = make_pbr_material("Gaz_Travertine", (0.91, 0.88, 0.82), roughness=0.56, image=tex["stone"], normal_image=tex["stone_nrm"], normal_strength=0.70)
     m_iron = make_pbr_material("Gaz_Iron", (0.16, 0.18, 0.20), roughness=0.36, metallic=0.84)
     m_brass = make_pbr_material("Gaz_Brass", (0.80, 0.64, 0.34), roughness=0.22, metallic=0.88)
-    m_cedar = make_pbr_material("Gaz_Cedar", (0.61, 0.40, 0.25), roughness=0.46, image=tex["wood"])
+    m_cedar = make_pbr_material("Gaz_Cedar", (0.61, 0.40, 0.25), roughness=0.46, image=tex["wood"], normal_image=tex["wood_nrm"], normal_strength=0.60)
     m_linen = make_pbr_material("Gaz_Linen", (0.96, 0.94, 0.89), roughness=0.82)
     m_blush = make_pbr_material("Gaz_Blush", (0.93, 0.77, 0.80), roughness=0.78)
     m_globe = make_pbr_material("Gaz_LanternGlow", (1.0, 0.94, 0.80), roughness=0.20, emission=(1.0, 0.78, 0.44), emission_strength=0.45)
@@ -972,11 +1010,11 @@ def build_gazebo_glb(out_path: Path) -> None:
 def build_cottage_glb(out_path: Path) -> None:
     reset_scene()
     tex = _make_shared_textures()
-    m_stone = make_pbr_material("Cot_Stone", (0.79, 0.76, 0.70), roughness=0.84, image=tex["stone"])
-    m_plaster = make_pbr_material("Cot_Plaster", (0.95, 0.90, 0.82), roughness=0.82, image=tex["plaster"])
-    m_roof = make_pbr_material("Cot_Terracotta", (0.78, 0.41, 0.28), roughness=0.72, image=tex["terracotta"])
+    m_stone = make_pbr_material("Cot_Stone", (0.79, 0.76, 0.70), roughness=0.84, image=tex["stone"], normal_image=tex["stone_nrm"], normal_strength=0.85)
+    m_plaster = make_pbr_material("Cot_Plaster", (0.95, 0.90, 0.82), roughness=0.82, image=tex["plaster"], normal_image=tex["plaster_nrm"], normal_strength=0.45)
+    m_roof = make_pbr_material("Cot_Terracotta", (0.78, 0.41, 0.28), roughness=0.72, image=tex["terracotta"], normal_image=tex["terracotta_nrm"], normal_strength=0.90)
     m_shutter = make_pbr_material("Cot_SageShutter", (0.42, 0.52, 0.44), roughness=0.60)
-    m_wood = make_pbr_material("Cot_Oak", (0.46, 0.29, 0.17), roughness=0.58, image=tex["wood"])
+    m_wood = make_pbr_material("Cot_Oak", (0.46, 0.29, 0.17), roughness=0.58, image=tex["wood"], normal_image=tex["wood_nrm"], normal_strength=0.65)
     m_win = make_pbr_material("Cot_WarmWindow", (0.98, 0.90, 0.72), roughness=0.24, emission=(1.0, 0.72, 0.36), emission_strength=0.18)
     m_soil = make_pbr_material("Cot_Soil", (0.30, 0.22, 0.15), roughness=0.95)
     m_green = make_pbr_material("Cot_GardenGreen", (0.32, 0.48, 0.28), roughness=0.82)
@@ -1173,7 +1211,7 @@ def build_harbor_fleet_glb(out_path: Path) -> None:
     tex = _make_shared_textures()
     m_white = make_pbr_material("Fleet_WhiteHull", (0.97, 0.96, 0.94), roughness=0.16, metallic=0.04, double_sided=True)
     m_navy = make_pbr_material("Fleet_NavyHull", (0.10, 0.20, 0.33), roughness=0.28, double_sided=True)
-    m_teak = make_pbr_material("Fleet_TeakDeck", (0.76, 0.56, 0.35), roughness=0.44, image=tex["teak"], double_sided=True)
+    m_teak = make_pbr_material("Fleet_TeakDeck", (0.76, 0.56, 0.35), roughness=0.42, image=tex["teak"], normal_image=tex["teak_nrm"], normal_strength=0.70, double_sided=True)
     m_mahog = make_pbr_material("Fleet_Mahogany", (0.43, 0.20, 0.10), roughness=0.24, double_sided=True)
     m_steel = make_pbr_material("Fleet_Stainless", (0.90, 0.92, 0.94), roughness=0.15, metallic=0.92)
     m_brass = make_pbr_material("Fleet_Brass", (0.82, 0.65, 0.35), roughness=0.22, metallic=0.88)

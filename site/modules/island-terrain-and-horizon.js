@@ -33,7 +33,9 @@ import {
   COTTAGE_SPUR_TRAILS,
   makePbrMat,
   getGraniteSlabTexture,
+  getGraniteSlabNormalTexture,
   getMeadowGroundTexture,
+  getMeadowGroundNormalTexture,
 } from "./world-spatial.js";
 import { instantiateGLB } from "./assets-loader.js";
 
@@ -187,13 +189,15 @@ function buildPeninsulaTerrain(scene, root, shadowGen) {
 
   terrain.material = makePbrMat("PeninsulaTerrainMat", scene, {
     color: 0xffffff,
-    roughness: 0.88,
-    metallic: 0.02,
+    roughness: 0.86,
+    metallic: 0.01,
     albedoTexture: getMeadowGroundTexture(scene, 48, 48),
+    bumpTexture: getMeadowGroundNormalTexture(scene, 48, 48),
+    bumpLevel: 0.42,
     useVertexColors: true,
   });
   terrain.receiveShadows = true;
-  if (shadowGen) shadowGen.addShadowCaster(terrain, false);
+  void shadowGen;
 
   // North Mountain Creek Water Ribbon (Z in [-110, -24.5])
   const cSteps = 68;
@@ -240,10 +244,18 @@ function buildCourtyardAndTrails(scene, root) {
 
   const flagstoneMat = makePbrMat("FlagstoneMat", scene, {
     color: 0xdcd3c1,
-    roughness: 0.78,
+    roughness: 0.56,
     albedoTexture: getGraniteSlabTexture(scene, 8, 4),
+    bumpTexture: getGraniteSlabNormalTexture(scene, 8, 4),
+    bumpLevel: 0.72,
+    specularIntensity: 0.52,
   });
-  const limestoneMat = makePbrMat("CourtyardLimestoneMat", scene, { color: 0xe5dfd2, roughness: 0.74 });
+  const limestoneMat = makePbrMat("CourtyardLimestoneMat", scene, {
+    color: 0xe5dfd2,
+    roughness: 0.64,
+    bumpTexture: getGraniteSlabNormalTexture(scene, 4, 4),
+    bumpLevel: 0.32,
+  });
   const ironMat = makePbrMat("CourtyardIronMat", scene, { color: 0x222629, roughness: 0.42, metallic: 0.82 });
   const brassMat = makePbrMat("CourtyardBrassMat", scene, { color: 0xcba358, roughness: 0.25, metallic: 0.88 });
   const bulbMat = makePbrMat("PathBollardGlowMat", scene, {
@@ -255,41 +267,42 @@ function buildCourtyardAndTrails(scene, root) {
 
   // Walk Zones for Courtyard + East Steps down to Harbor Quay
   registerWalkZone((x, z) => {
-    if (x >= -20.0 && x <= 4.0 && z >= 6.8 && z <= 12.2) return 2.22;
-    if (x >= -16.0 && x <= 2.0 && z >= 1.8 && z <= 7.0) return 2.21;
-    if (x >= 2.0 && x <= 10.2 && z >= 1.8 && z <= 7.0) {
-      return lerp(2.22, 1.38, smoothstep(2.0, 10.2, x));
+    if (x >= -20.0 && x <= 4.0 && z >= 6.8 && z <= 12.2) return 2.235;
+    if (x >= -16.0 && x <= 1.95 && z >= 1.8 && z <= 7.0) return 2.235;
+    if (x >= 1.95 && x <= 10.2 && z >= 1.8 && z <= 7.0) {
+      return lerp(2.235, 1.38, smoothstep(1.95, 10.2, x));
     }
     return null;
   });
 
-  const courtSlab = CreateBox("CourtyardFlagstoneSlab", { width: 21.5, height: 0.16, depth: 5.4 }, scene);
-  courtSlab.position.set(-9.25, 2.14, 9.5);
+  // Non-overlapping courtyard flagstones (+3.5cm clear of y=2.20 terrain and clear of QuayStep_0 at x>=1.96)
+  const courtSlab = CreateBox("CourtyardFlagstoneSlab", { width: 21.5, height: 0.18, depth: 5.2 }, scene);
+  courtSlab.position.set(-9.25, 2.145, 9.6);
   courtSlab.material = flagstoneMat;
   courtSlab.parent = sec;
   courtSlab.receiveShadows = true;
 
-  const apron = CreateBox("CourtyardFountainApron", { width: 18.0, height: 0.15, depth: 5.2 }, scene);
-  apron.position.set(-7.0, 2.135, 4.4);
+  const apron = CreateBox("CourtyardFountainApron", { width: 17.92, height: 0.18, depth: 5.2 }, scene);
+  apron.position.set(-7.04, 2.145, 4.4);
   apron.material = flagstoneMat;
   apron.parent = sec;
   apron.receiveShadows = true;
 
   for (const [bx, bz, bw, bd] of [
-    [-9.25, 12.26, 21.7, 0.18],
-    [1.56, 9.5, 0.18, 5.56],
+    [-9.25, 12.29, 21.7, 0.18],
+    [1.59, 9.6, 0.18, 5.56],
   ]) {
-    const curb = CreateBox("CourtCurb", { width: bw, height: 0.2, depth: bd }, scene);
-    curb.position.set(bx, 2.16, bz);
+    const curb = CreateBox("CourtCurb", { width: bw, height: 0.21, depth: bd }, scene);
+    curb.position.set(bx, 2.15, bz);
     curb.material = limestoneMat;
     curb.parent = sec;
   }
 
   for (let i = 0; i < 11; i += 1) {
-    const u = (i + 0.5) / 11;
-    const xm = lerp(2.0, 10.9, u);
-    const stepY = i === 10 ? 1.4 : Math.max(lerp(2.22, 1.4, smoothstep(0, 1, u)), getWorldTerrainY(xm, 4.4) + 0.08);
-    const st = CreateBox(`QuayStep_${i}`, { width: 0.92, height: 0.34, depth: 5.2 }, scene);
+    const u = i / 10;
+    const xm = lerp(2.40, 10.85, u);
+    const stepY = i === 10 ? 1.4 : Math.max(lerp(2.235, 1.4, smoothstep(0, 1, u)), getWorldTerrainY(xm, 4.4) + 0.08);
+    const st = CreateBox(`QuayStep_${i}`, { width: 0.86, height: 0.34, depth: 5.2 }, scene);
     st.position.set(xm, stepY - 0.16, 4.4);
     st.material = limestoneMat;
     st.parent = sec;
@@ -342,11 +355,11 @@ function buildCourtyardAndTrails(scene, root) {
     stoneProto.setEnabled(false);
   }
 
-  // Tiered Limestone Courtyard Fountain (-4.8, 2.22, 9.5)
+  // Tiered Limestone Courtyard Fountain (-4.8, 2.235, 9.5)
   const ftnRoot = new TransformNode("CourtyardFountain", scene);
-  ftnRoot.position.set(-4.8, 2.22, 9.5);
+  ftnRoot.position.set(-4.8, 2.235, 9.5);
   ftnRoot.parent = sec;
-  registerCircleCollider(-4.8, 9.5, 2.22, 1.5, 5.0);
+  registerCircleCollider(-4.8, 9.5, 2.235, 1.5, 5.0);
   const fPool = CreateTorus("FountainBasinRim", { diameter: 3.9, thickness: 0.34, tessellation: 28 }, scene);
   fPool.position.y = 0.28;
   fPool.material = limestoneMat;
@@ -364,31 +377,57 @@ function buildCourtyardAndTrails(scene, root) {
   fBowl.material = limestoneMat;
   fBowl.parent = ftnRoot;
 
-  // Cast-Iron French Mailbox (-10.8, 2.22, 9.4)
+  // Sculpted Cast-Iron French Villa Mailbox (-10.8, 2.235, 9.4)
   const mailbox = new TransformNode("CourtyardMailbox", scene);
-  mailbox.position.set(-10.8, 2.22, 9.4);
+  mailbox.position.set(-10.8, 2.235, 9.4);
   mailbox.rotation.y = 0.18;
   mailbox.parent = sec;
   registerCircleCollider(-10.8, 9.4, 0.42);
-  const mbPost = CreateCylinder("MailboxPost", { diameter: 0.11, height: 1.15, tessellation: 10 }, scene);
-  mbPost.position.y = 0.575;
+  const mbBase = CreateCylinder("MailboxPlinth", { diameterTop: 0.16, diameterBottom: 0.32, height: 0.14, tessellation: 14 }, scene);
+  mbBase.position.y = 0.07;
+  mbBase.material = ironMat;
+  mbBase.parent = mailbox;
+  const mbPost = CreateCylinder("MailboxPost", { diameter: 0.10, height: 1.06, tessellation: 14 }, scene);
+  mbPost.position.y = 0.59;
   mbPost.material = ironMat;
   mbPost.parent = mailbox;
-  const mbBody = CreateBox("MailboxBody", { width: 0.28, height: 0.26, depth: 0.44 }, scene);
-  mbBody.position.y = 1.24;
-  mbBody.material = makePbrMat("MailboxRedMat", scene, { color: 0xc2384c, roughness: 0.36, metallic: 0.45 });
+  const mbCollar = CreateTorus("MailboxPostRing", { diameter: 0.14, thickness: 0.03, tessellation: 16 }, scene);
+  mbCollar.position.y = 0.62;
+  mbCollar.material = brassMat;
+  mbCollar.parent = mailbox;
+  const mbCorbel = CreateBox("MailboxCorbel", { width: 0.24, height: 0.04, depth: 0.36 }, scene);
+  mbCorbel.position.y = 1.12;
+  mbCorbel.material = ironMat;
+  mbCorbel.parent = mailbox;
+  const mbRedMat = makePbrMat("MailboxRedMat", scene, { color: 0x9e2b3e, roughness: 0.30, metallic: 0.38 });
+  const mbBody = CreateBox("MailboxBody", { width: 0.26, height: 0.18, depth: 0.42 }, scene);
+  mbBody.position.y = 1.23;
+  mbBody.material = mbRedMat;
   mbBody.parent = mailbox;
+  const mbArch = CreateCylinder("MailboxVault", { diameter: 0.26, height: 0.42, tessellation: 18 }, scene);
+  mbArch.rotation.x = Math.PI * 0.5;
+  mbArch.position.y = 1.32;
+  mbArch.material = mbRedMat;
+  mbArch.parent = mailbox;
+  const mbDoor = CreateBox("MailboxDoorRim", { width: 0.23, height: 0.16, depth: 0.03 }, scene);
+  mbDoor.position.set(0, 1.24, 0.215);
+  mbDoor.material = ironMat;
+  mbDoor.parent = mailbox;
+  const mbSlot = CreateBox("MailboxBrassSlot", { width: 0.16, height: 0.032, depth: 0.015 }, scene);
+  mbSlot.position.set(0, 1.28, 0.232);
+  mbSlot.material = brassMat;
+  mbSlot.parent = mailbox;
   const flagPivot = new TransformNode("MailboxFlagPivot", scene);
-  flagPivot.position.set(0.155, 1.24, 0.1);
+  flagPivot.position.set(0.145, 1.26, 0.08);
   flagPivot.parent = mailbox;
-  const mbFlag = CreateBox("MailboxFlag", { width: 0.02, height: 0.22, depth: 0.08 }, scene);
+  const mbFlag = CreateBox("MailboxFlag", { width: 0.02, height: 0.22, depth: 0.075 }, scene);
   mbFlag.position.set(0, 0.09, 0);
   mbFlag.material = brassMat;
   mbFlag.parent = flagPivot;
 
-  // Vintage Cream Bicycle (-18.6, 2.22, 9.6)
+  // Vintage Cream Bicycle (-18.6, 2.235, 9.6)
   const bike = new TransformNode("CourtyardBicycle", scene);
-  bike.position.set(-18.6, 2.22, 9.6);
+  bike.position.set(-18.6, 2.235, 9.6);
   bike.rotation.y = 0.48;
   bike.parent = sec;
   registerCircleCollider(-18.6, 9.6, 0.65);
