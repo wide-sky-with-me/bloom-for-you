@@ -173,9 +173,19 @@ export function createRiggedCharacter(scene, opts = {}) {
         }
         node.receiveShadows = true;
 
-        // Disable coarse stencil outline extrusion: VRM meshes have tight layered clothing & double-sided hair
-        // where stencil extrusion causes inner skin/backface outlines to bleed through pants and hair.
-        node.renderOutline = false;
+        // Selective crisp Genshin ink outline strictly on outer closed solid parts
+        // (double-sided hair, ribbons, and delicate facial features stay outline-free so zero flicker/bleed occurs).
+        const isOutlineClean =
+          !isDetailFaceOrTrim &&
+          !/Hair|Ribbon|Sash|Crown|CoatLining/i.test(`${mName}_${matName}`) &&
+          node.material?.backFaceCulling !== false;
+        if (isOutlineClean) {
+          node.renderOutline = true;
+          node.outlineWidth = 0.0018;
+          node.outlineColor = new Color3(0.20, 0.11, 0.16);
+        } else {
+          node.renderOutline = false;
+        }
 
         // Genshin-style luminous anime character fill & bright eyes
         if (node.material instanceof PBRMaterial) {

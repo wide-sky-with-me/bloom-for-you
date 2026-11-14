@@ -511,7 +511,7 @@ export function getGraniteSlabTexture(scene, repeatU = 12, repeatV = 12) {
     512,
     (ctx, w, h) => {
       const rng = mulberry32(9204);
-      ctx.fillStyle = "#7a746a";
+      ctx.fillStyle = "#8a8173";
       ctx.fillRect(0, 0, w, h);
       const rows = 8;
       const rh = h / rows;
@@ -522,16 +522,16 @@ export function getGraniteSlabTexture(scene, repeatU = 12, repeatV = 12) {
         for (let c = -1; c <= cols; c += 1) {
           const x = c * cw + off;
           const y = r * rh;
-          const b = 182 + Math.floor(rng() * 38);
-          const warm = Math.floor((rng() - 0.5) * 8);
-          ctx.fillStyle = `rgb(${b + warm},${b - 2},${b - 9})`;
+          const b = 204 + Math.floor(rng() * 34);
+          const warm = Math.floor((rng() - 0.35) * 10);
+          ctx.fillStyle = `rgb(${Math.min(255, b + warm + 10)},${Math.min(255, b + 2)},${b - 14})`;
           ctx.fillRect(x + 2, y + 2, cw - 4, rh - 4);
-          ctx.strokeStyle = "rgba(255,250,240,0.22)";
+          ctx.strokeStyle = "rgba(255,250,238,0.28)";
           ctx.lineWidth = 1.5;
           ctx.strokeRect(x + 3, y + 3, cw - 6, rh - 6);
           for (let s = 0; s < 24; s += 1) {
-            const sp = 144 + Math.floor(rng() * 82);
-            ctx.fillStyle = `rgba(${sp},${sp - 2},${sp - 5},0.26)`;
+            const sp = 162 + Math.floor(rng() * 78);
+            ctx.fillStyle = `rgba(${sp + 6},${sp + 1},${sp - 8},0.22)`;
             ctx.fillRect(x + 3 + rng() * (cw - 7), y + 3 + rng() * (rh - 7), 2.5, 2.5);
           }
         }
@@ -614,24 +614,54 @@ export function getMeadowGroundTexture(scene, repeatU = 48, repeatV = 48) {
     512,
     (ctx, w, h) => {
       const r0 = mulberry32(9100);
-      ctx.fillStyle = "#e8eee2";
+      ctx.fillStyle = "#e1ebd2";
       ctx.fillRect(0, 0, w, h);
-      for (let i = 0; i < 6500; i += 1) {
+
+      // Soft painterly Mondstadt grass blotches (creates hand-painted Teyvat turf variation)
+      for (let i = 0; i < 420; i += 1) {
+        const bx = r0() * w;
+        const by = r0() * h;
+        const br = 8 + r0() * 22;
+        const warm = r0() > 0.48;
+        const grad = ctx.createRadialGradient(bx, by, br * 0.12, bx, by, br);
+        grad.addColorStop(0, warm ? "rgba(244,250,214,0.28)" : "rgba(186,214,174,0.26)");
+        grad.addColorStop(1, "rgba(225,235,210,0)");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(bx, by, br, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Crisp short directional grass brushstrokes (dark root -> sunny tip)
+      for (let i = 0; i < 9500; i += 1) {
         const x = r0() * w;
         const y = r0() * h;
-        const shade = 208 + Math.floor(r0() * 44);
-        ctx.strokeStyle = `rgba(${shade - 10},${shade + 6},${shade - 16},0.42)`;
-        ctx.lineWidth = 1.0 + r0() * 1.4;
+        const len = 3.2 + r0() * 5.8;
+        const tilt = (r0() - 0.5) * 4.2;
+        const tipX = x + tilt;
+        const tipY = y - len;
+        const isSun = r0() > 0.42;
+        ctx.strokeStyle = isSun
+          ? `rgba(${232 + Math.floor(r0() * 22)},${246 + Math.floor(r0() * 9)},${192 + Math.floor(r0() * 26)},0.52)`
+          : `rgba(${162 + Math.floor(r0() * 28)},${196 + Math.floor(r0() * 26)},${146 + Math.floor(r0() * 26)},0.46)`;
+        ctx.lineWidth = 0.9 + r0() * 1.4;
         ctx.beginPath();
         ctx.moveTo(x, y);
-        ctx.lineTo(x + (r0() - 0.5) * 4.5, y - 3.0 - r0() * 5.2);
+        ctx.quadraticCurveTo(x + tilt * 0.35, y - len * 0.55, tipX, tipY);
         ctx.stroke();
       }
-      for (let i = 0; i < 800; i += 1) {
+
+      // Stylized clover rosettes & micro wildflower speckles
+      for (let i = 0; i < 920; i += 1) {
         const tone = r0();
-        ctx.fillStyle = tone < 0.35 ? "rgba(250,236,242,0.22)" : tone < 0.68 ? "rgba(232,226,248,0.2)" : "rgba(252,248,225,0.22)";
+        ctx.fillStyle =
+          tone < 0.38
+            ? "rgba(255,248,224,0.34)"
+            : tone < 0.72
+              ? "rgba(255,234,242,0.30)"
+              : "rgba(210,236,204,0.32)";
         ctx.beginPath();
-        ctx.arc(r0() * w, r0() * h, 1.4 + r0() * 2.2, 0, Math.PI * 2);
+        ctx.arc(r0() * w, r0() * h, 1.3 + r0() * 2.1, 0, Math.PI * 2);
         ctx.fill();
       }
     },

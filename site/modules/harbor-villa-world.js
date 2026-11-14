@@ -2241,24 +2241,30 @@ function buildEstateAndHarborSection(scene, root, models, shadowGen, fx, courtRe
   const eRoot = new TransformNode("HarborAndEstateGroup", scene);
   eRoot.parent = root;
 
-  const quayDeckMat = makePbrMat(scene, "HarborQuayGranite", 0xc8c1b5, {
-    roughness: 0.62,
+  const quayDeckMat = makePbrMat(scene, "HarborQuayGranite", 0xf2e7d2, {
+    roughness: 0.58,
     bumpTexture: getGraniteSlabNormalTexture(scene, 18, 22),
-    bumpLevel: 0.72,
-    specularIntensity: 0.5,
+    bumpLevel: 0.48,
+    specularIntensity: 0.42,
   });
   quayDeckMat.albedoTexture = getGraniteSlabTexture(scene, 18, 22);
-  const quayWallMat = makePbrMat(scene, "HarborWallStone", 0xb6afa2, {
-    roughness: 0.76,
+  const quayWallMat = makePbrMat(scene, "HarborWallStone", 0xc8bfae, {
+    roughness: 0.74,
     bumpTexture: getGraniteSlabNormalTexture(scene, 16, 4),
     bumpLevel: 0.68,
   });
   quayWallMat.albedoTexture = getGraniteSlabTexture(scene, 16, 4);
-  const copingMat = makePbrMat(scene, "HarborCoping", 0xd4cdc0, {
-    roughness: 0.66,
+  const copingMat = makePbrMat(scene, "HarborCoping", 0xeee5d5, {
+    roughness: 0.58,
     bumpTexture: getGraniteSlabNormalTexture(scene, 6, 6),
     bumpLevel: 0.32,
   });
+  const compassBlueMat = makePbrMat(scene, "HarborCompassBlue", 0x265e9e, {
+    roughness: 0.40,
+    specularIntensity: 0.55,
+  });
+  const flowerRoseMat = makePbrMat(scene, "HarborPlazaRose", 0xf27ca2, { roughness: 0.68 });
+  const foliageGreenMat = makePbrMat(scene, "HarborPlazaLeaf", 0x3b8f42, { roughness: 0.72 });
   const teakMat = makePbrMat(scene, "HarborTeakMat", 0xb88656, {
     roughness: 0.42,
     bumpTexture: getTeakDeckNormalTexture(scene, 4, 8),
@@ -2327,6 +2333,76 @@ function buildEstateAndHarborSection(scene, root, models, shadowGen, fx, courtRe
   addBox("PromenadeE", 44.2, 1.372, -2.0, 2.3, 0.032, 46.2, teakMat);
   addBox("PromenadeS1", 17.4, 1.372, 20.5, 15.2, 0.032, 2.1, teakMat);
   addBox("PromenadeS2", 39.1, 1.372, 20.5, 12.2, 0.032, 2.1, teakMat);
+
+  // Fontaine Star-Compass Plaza Medallion @ (35.5, 1.36, 1.5) — strictly stacked in Y (zero overlap/Z-fighting)
+  const plazaX = 35.5;
+  const plazaZ = 1.5;
+  addCyl("QuayCompassOuterBase", plazaX, 1.370, plazaZ, 11.6, 11.8, 0.012, copingMat, eRoot, 36);
+  addCyl("QuayCompassBlueInlay", plazaX, 1.381, plazaZ, 9.4, 9.4, 0.010, compassBlueMat, eRoot, 36);
+  addCyl("QuayCompassInnerCream", plazaX, 1.391, plazaZ, 6.8, 6.8, 0.010, copingMat, eRoot, 32);
+  for (let ri = 0; ri < 8; ri += 1) {
+    const ang = (ri / 8) * Math.PI * 2;
+    const isMajor = ri % 2 === 0;
+    const len = isMajor ? 8.6 : 6.4;
+    const wid = isMajor ? 0.24 : 0.14;
+    addBox(`QuayCompassRay_${ri}`, plazaX, 1.400, plazaZ, wid, 0.008, len, brassMat, eRoot, ang);
+  }
+  addCyl("QuayCompassCenterBlue", plazaX, 1.408, plazaZ, 2.6, 2.6, 0.008, compassBlueMat, eRoot, 24);
+  addCyl("QuayCompassCenterBrass", plazaX, 1.415, plazaZ, 1.15, 1.25, 0.006, brassMat, eRoot, 16);
+  for (let ui = 0; ui < 4; ui += 1) {
+    const uAng = (ui / 4) * Math.PI * 2 + Math.PI * 0.25;
+    const ux = plazaX + Math.cos(uAng) * 6.5;
+    const uz = plazaZ + Math.sin(uAng) * 6.5;
+    registerCircleCollider(ux, uz, 0.56);
+    addBox(`QuayUrnBase_${ui}`, ux, 1.42, uz, 0.96, 0.10, 0.96, copingMat);
+    addBox(`QuayUrnPed_${ui}`, ux, 1.68, uz, 0.78, 0.44, 0.78, quayWallMat);
+    addBox(`QuayUrnCap_${ui}`, ux, 1.92, uz, 0.94, 0.08, 0.94, copingMat);
+    addCyl(`QuayUrnBowl_${ui}`, ux, 2.12, uz, 0.96, 0.56, 0.36, quayWallMat);
+    addCyl(`QuayUrnRim_${ui}`, ux, 2.31, uz, 1.02, 0.98, 0.05, brassMat, eRoot, 16);
+    for (let li = 0; li < 6; li += 1) {
+      const la = (li / 6) * Math.PI * 2 + ui * 0.5;
+      const leafLobe = MeshBuilder.CreateSphere(`QuayUrnFoliage_${ui}_${li}`, { diameter: 0.48, segments: 8 }, scene);
+      leafLobe.parent = eRoot;
+      leafLobe.position.set(ux + Math.cos(la) * 0.24, 2.48 + (li % 2) * 0.06, uz + Math.sin(la) * 0.24);
+      leafLobe.scaling.set(1.15, 0.72, 1.15);
+      leafLobe.material = foliageGreenMat;
+      leafLobe.isPickable = false;
+    }
+    const crownLeaf = MeshBuilder.CreateSphere(`QuayUrnFoliageTop_${ui}`, { diameter: 0.56, segments: 8 }, scene);
+    crownLeaf.parent = eRoot;
+    crownLeaf.position.set(ux, 2.58, uz);
+    crownLeaf.scaling.set(1.05, 0.76, 1.05);
+    crownLeaf.material = foliageGreenMat;
+    crownLeaf.isPickable = false;
+    // Layered stylized multi-petal blossom clusters nestled directly into the foliage dome
+    const bouquetOffsets = [[0, 0, 2.78, 0]];
+    for (let bi = 0; bi < 6; bi += 1) {
+      const ba = (bi / 6) * Math.PI * 2 + ui * 0.4;
+      bouquetOffsets.push([Math.cos(ba) * 0.22, Math.sin(ba) * 0.22, 2.64 + (bi % 2) * 0.05, bi + 1]);
+    }
+    for (const [dx, dz, fy, bi] of bouquetOffsets) {
+      const fx = ux + dx;
+      const fz = uz + dz;
+      const petalMat = bi % 2 === 0 ? flowerRoseMat : creamCanvas;
+      for (let pi = 0; pi < 5; pi += 1) {
+        const pa = (pi / 5) * Math.PI * 2 + bi * 0.5;
+        const pet = MeshBuilder.CreateSphere(`QuayUrnPetal_${ui}_${bi}_${pi}`, { diameter: 0.135, segments: 6 }, scene);
+        pet.parent = eRoot;
+        pet.position.set(fx + Math.cos(pa) * 0.068, fy, fz + Math.sin(pa) * 0.068);
+        pet.scaling.set(1.1, 0.52, 0.88);
+        pet.rotation.y = -pa;
+        pet.rotation.z = 0.24;
+        pet.material = petalMat;
+        pet.isPickable = false;
+      }
+      const center = MeshBuilder.CreateSphere(`QuayUrnDisc_${ui}_${bi}`, { diameter: 0.085, segments: 6 }, scene);
+      center.parent = eRoot;
+      center.position.set(fx, fy + 0.025, fz);
+      center.scaling.set(1.0, 0.65, 1.0);
+      center.material = brassMat;
+      center.isPickable = false;
+    }
+  }
 
   // Seawalls & Rubber Fenders
   for (const [cx, cz, sx, sz] of [
@@ -2455,6 +2531,10 @@ function buildEstateAndHarborSection(scene, root, models, shadowGen, fx, courtRe
   addBox("CafeRidge", cafeX, 5.2, cafeZ, 10.6, 0.18, 0.18, teakMat);
   for (let rx = -4.5; rx <= 4.5; rx += 1.5) {
     addBox(`CafeRafter_${rx}`, cafeX + rx, 4.78, cafeZ, 0.12, 0.14, 9.6, teakMat);
+  }
+  for (let si = 0; si < 6; si += 1) {
+    const sx = cafeX - 3.75 + si * 1.5;
+    addBox(`CafeAwning_${si}`, sx, 4.92, cafeZ, 1.48, 0.025, 9.1, si % 2 === 0 ? creamCanvas : stripeBlueMat);
   }
   addBox("CafeBackWall", cafeX, 2.6, -15.6, 11.2, 2.48, 0.28, quayWallMat);
   addBox("CafeCounter", 19.2, 1.88, -14.1, 4.4, 1.04, 1.1, teakMat);
@@ -2589,9 +2669,12 @@ function buildEstateAndHarborSection(scene, root, models, shadowGen, fx, courtRe
   beamMat.diffuseColor = hexToColor3(0xfff4cf);
   beamMat.emissiveColor = hexToColor3(0xffe19c);
   beamMat.disableLighting = true;
-  beamMat.alpha = 0.06;
+  beamMat.fogEnabled = false;
+  beamMat.disableDepthWrite = true;
+  beamMat.alpha = 0.0;
   beamMat.alphaMode = Engine.ALPHA_ADD;
   beamMat.backFaceCulling = false;
+  const lhBeams = [];
   if (lhRotor) {
     for (const s of [-1, 1]) {
       const cone = MeshBuilder.CreateCylinder(`LHBeam_${s}`, { diameterTop: 0.18, diameterBottom: 3.8, height: 42, tessellation: 14 }, scene);
@@ -2600,6 +2683,8 @@ function buildEstateAndHarborSection(scene, root, models, shadowGen, fx, courtRe
       cone.rotation.z = s * Math.PI * 0.5;
       cone.material = beamMat;
       cone.isPickable = false;
+      cone.isVisible = false;
+      lhBeams.push(cone);
     }
   }
 
@@ -3343,7 +3428,10 @@ function buildEstateAndHarborSection(scene, root, models, shadowGen, fx, courtRe
     if (lhRotor) {
       const yaw = (elapsed * (0.65 + hooks.lhFlash * 2.2)) % (Math.PI * 2);
       lhRotor.rotationQuaternion = lhBaseQuat.multiply(Quaternion.RotationAxis(_V_UP, yaw));
-      beamMat.alpha = lerp(0.035, 0.12, nightMix) + hooks.lhFlash * 0.14;
+      const beamAlpha = Math.max(0, (nightMix - 0.06) / 0.94) * 0.12 + hooks.lhFlash * 0.14;
+      beamMat.alpha = beamAlpha;
+      const showBeam = beamAlpha > 0.008;
+      for (const cone of lhBeams) cone.isVisible = showBeam;
     }
     if (wmRotor) {
       const spin = (elapsed * (0.55 + hooks.wmBoost * 2.4)) % (Math.PI * 2);

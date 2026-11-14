@@ -79,18 +79,22 @@ def _make_shared_textures():
         256,
         256,
         lambda u, v: (
-            lambda n1, n2: (
-                *mix_rgb((0.46, 0.52, 0.66), (0.76, 0.80, 0.90), clamp01(n1 * 0.7 + n2 * 0.3)),
+            lambda n1, n2, moss: (
+                *mix_rgb(
+                    mix_rgb((0.26, 0.32, 0.42), (0.54, 0.60, 0.68), clamp01(n1 * 0.72 + n2 * 0.28)),
+                    (0.24, 0.52, 0.30),
+                    clamp01((moss - 0.56) * 3.2),
+                ),
                 1.0,
             )
-        )(fbm2(u * 6.0, v * 6.0, seed=23, octaves=4), fbm2(u * 18.0, v * 18.0, seed=41, octaves=2)),
+        )(fbm2(u * 6.0, v * 6.0, seed=23, octaves=4), fbm2(u * 18.0, v * 18.0, seed=41, octaves=2), fbm2(u * 4.5, v * 4.5, seed=79, octaves=3)),
     )
     img_plaster = make_packed_texture(
         TEX_CACHE / "stucco_plaster.png",
         256,
         256,
         lambda u, v: (
-            lambda n: (*mix_rgb((0.96, 0.93, 0.88), (1.00, 0.98, 0.95), n), 1.0)
+            lambda n: (*mix_rgb((0.97, 0.94, 0.87), (1.00, 0.99, 0.94), n), 1.0)
         )(fbm2(u * 9.0, v * 9.0, seed=71, octaves=3)),
     )
     img_terracotta = make_packed_texture(
@@ -98,15 +102,17 @@ def _make_shared_textures():
         256,
         256,
         lambda u, v: (
-            lambda wave, n: (
-                *mix_rgb(
-                    (0.20, 0.39, 0.68),
-                    (0.36, 0.59, 0.89),
-                    clamp01(0.45 + 0.35 * math.sin(u * math.tau * 8.0) + (n - 0.5) * 0.35 - 0.16 * (1.0 - ((v * 6.0) % 1.0))),
-                ),
-                1.0,
-            )
-        )(math.sin(u * math.tau * 8.0), fbm2(u * 10.0, v * 10.0, seed=53, octaves=3)),
+            lambda u_sc, v_row, n: (
+                lambda lip, tile_var: (
+                    *mix_rgb(
+                        mix_rgb((0.14, 0.38, 0.64), (0.30, 0.62, 0.90), clamp01(0.45 + 0.28 * tile_var + (n - 0.5) * 0.25)),
+                        (0.08, 0.22, 0.40),
+                        (1.0 - lip) * 0.65,
+                    ),
+                    1.0,
+                )
+            )(clamp01((v_row - 0.06) * 8.0), math.sin(int(u * 10.0) * 2.1 + int(v * 8.0) * 3.1))
+        )((u * 10.0 + (0.5 if int(v * 8.0) % 2 else 0.0)) % 1.0, (v * 8.0) % 1.0, fbm2(u * 10.0, v * 10.0, seed=53, octaves=3)),
     )
     img_wood = make_packed_texture(
         TEX_CACHE / "warm_cedar.png",
@@ -145,11 +151,11 @@ def _make_shared_textures():
         256,
         256,
         lambda u, v: (
-            lambda row, edge, n: (
-                *mix_rgb((0.20, 0.38, 0.66), (0.36, 0.58, 0.88), clamp01(0.5 + (n - 0.5) * 0.5 - edge * 0.35)),
+            lambda row, edge, n, tile_var: (
+                *mix_rgb((0.14, 0.38, 0.64), (0.32, 0.64, 0.90), clamp01(0.45 + 0.28 * tile_var + (n - 0.5) * 0.32 - edge * 0.42)),
                 1.0,
             )
-        )(int(v * 10.0), 1.0 if ((v * 10.0) % 1.0) < 0.12 else 0.0, fbm2(u * 12.0, v * 12.0, seed=99)),
+        )(int(v * 9.0), 1.0 if ((v * 9.0) % 1.0) < 0.10 else 0.0, fbm2(u * 12.0, v * 12.0, seed=99), math.sin(int(u * 9.0) * 2.3 + int(v * 9.0) * 1.7)),
     )
     def _h_stone(u: float, v: float) -> float:
         dv = min((v * 6.0) % 1.0, 1.0 - (v * 6.0) % 1.0)
@@ -207,12 +213,13 @@ def _new_empty(name: str, parent: bpy.types.Object | None = None) -> bpy.types.O
     return empty
 
 
-def _build_bmesh_part(name: str, builder_fn, mat, uv_scale: float = 0.5, parent: bpy.types.Object | None = None):
+def _build_bmesh_part(name: str, builder_fn, mat, uv_scale: float | None = 0.5, parent: bpy.types.Object | None = None):
     bm = bmesh.new()
     builder_fn(bm)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     obj = create_mesh_object(name, bm, mat)
-    ensure_uv_box(obj, scale=uv_scale)
+    if uv_scale is not None:
+        ensure_uv_box(obj, scale=uv_scale)
     if parent is not None:
         obj.parent = parent
     return obj
@@ -891,7 +898,8 @@ def build_gazebo_glb(out_path: Path) -> None:
     m_marble = make_pbr_material("Gaz_Carrara", (0.95, 0.94, 0.90), roughness=0.44, image=tex["plaster"], normal_image=tex["plaster_nrm"], normal_strength=0.35)
     m_trav = make_pbr_material("Gaz_Travertine", (0.91, 0.88, 0.82), roughness=0.56, image=tex["stone"], normal_image=tex["stone_nrm"], normal_strength=0.70)
     m_iron = make_pbr_material("Gaz_Iron", (0.16, 0.18, 0.20), roughness=0.36, metallic=0.84)
-    m_brass = make_pbr_material("Gaz_Brass", (0.80, 0.64, 0.34), roughness=0.22, metallic=0.88)
+    m_brass = make_pbr_material("Gaz_Brass", (0.86, 0.68, 0.34), roughness=0.22, metallic=0.88)
+    m_dome = make_pbr_material("Gaz_DomeShingle", (0.94, 0.98, 1.00), roughness=0.56, image=tex["shingle"], normal_image=tex["wood_nrm"], normal_strength=0.42, double_sided=True)
     m_cedar = make_pbr_material("Gaz_Cedar", (0.61, 0.40, 0.25), roughness=0.46, image=tex["wood"], normal_image=tex["wood_nrm"], normal_strength=0.60)
     m_linen = make_pbr_material("Gaz_Linen", (0.96, 0.94, 0.89), roughness=0.82)
     m_blush = make_pbr_material("Gaz_Blush", (0.93, 0.77, 0.80), roughness=0.78)
@@ -955,9 +963,50 @@ def build_gazebo_glb(out_path: Path) -> None:
 
     _build_bmesh_part("Gaz_WroughtDome", build_iron_dome, m_iron, uv_scale=1.0, parent=crown)
 
+    def build_dome_roof(bm):
+        # 8-panel Fontaine scalloped teal-azure bell dome roof + eaves cornice
+        uv_layer = bm.loops.layers.uv.verify()
+        rings = 10
+        segs = 24
+        ring_verts = []
+        for s in range(rings + 1):
+            t = s / rings
+            rad = 4.26 * (1.0 - t * 0.87) + 0.16 * math.sin(t * math.pi)
+            py = 3.88 + (t ** 0.78) * 2.08
+            v_ring = []
+            for k in range(segs):
+                a = (k / segs) * math.tau + math.pi / segs
+                scallop = 1.0 + 0.025 * math.cos(k * (8.0 / segs) * math.tau)
+                v_ring.append(bm.verts.new(yup(math.cos(a) * rad * scallop, py, math.sin(a) * rad * scallop)))
+            ring_verts.append((t, v_ring))
+        bm.verts.ensure_lookup_table()
+        for s in range(rings):
+            t0, r0 = ring_verts[s]
+            t1, r1 = ring_verts[s + 1]
+            for k in range(segs):
+                kn = (k + 1) % segs
+                f = bm.faces.new((r0[k], r0[kn], r1[kn], r1[k]))
+                f.smooth = True
+                for loop, (uu, vv) in zip(f.loops, [(k / segs * 6.0, t0 * 3.0), ((k + 1) / segs * 6.0, t0 * 3.0), ((k + 1) / segs * 6.0, t1 * 3.0), (k / segs * 6.0, t1 * 3.0)]):
+                    loop[uv_layer].uv = (uu, vv)
+        # Cupola lantern cap cone
+        add_cylinder_part(bm, yup(0.0, 6.18, 0.0), 0.72, 0.12, 0.56, segs=16)
+
+    _build_bmesh_part("Gaz_DomeRoof", build_dome_roof, m_dome, uv_scale=None, parent=crown)
+
     def build_brass_parts(bm):
-        add_cylinder_part(bm, yup(0, 6.32, 0), 0.18, 0.02, 0.55, segs=12)
-        add_cylinder_part(bm, yup(0, 5.38, 0), 0.016, 0.016, 1.15, segs=8)
+        add_cylinder_part(bm, yup(0, 6.58, 0), 0.18, 0.02, 0.58, segs=12)
+        add_uv_sphere_part(bm, yup(0, 6.50, 0), (0.14, 0.14, 0.14), 10, 8)
+        add_cylinder_part(bm, yup(0, 5.42, 0), 0.016, 0.016, 1.15, segs=8)
+        for c in range(8):
+            a = (c / 8) * math.tau + math.pi / 8
+            pts = []
+            for s in range(11):
+                t = s / 10
+                rad = 4.28 * (1.0 - t * 0.87) + 0.16 * math.sin(t * math.pi)
+                py = 3.90 + (t ** 0.78) * 2.08
+                pts.append(yup(math.cos(a) * rad, py, math.sin(a) * rad))
+            add_tube_along_curve(bm, pts, [0.042] * len(pts), 6)
 
     _build_bmesh_part("Gaz_BrassFinial", build_brass_parts, m_brass, uv_scale=1.0, parent=crown)
 
@@ -1049,6 +1098,25 @@ def build_cottage_glb(out_path: Path) -> None:
         add_beveled_box(bm, yup(0, 1.85, 0), (cw, cd, 3.55), bevel=0.03)
 
     _build_bmesh_part("Cot_PlasterWalls", build_walls, m_plaster, uv_scale=0.4, parent=root)
+
+    def build_half_timber(bm):
+        # Mondstadt exposed dark-oak half-timbering strictly outside plaster box (cw x cd)
+        for sx_t in (-3.96, -3.52, -1.24, 1.24, 3.52, 3.96):
+            add_beveled_box(bm, yup(sx_t, 1.85, cd * 0.5 + 0.035), (0.14, 0.05, 3.40), bevel=0.008)
+            add_beveled_box(bm, yup(sx_t, 1.85, -cd * 0.5 - 0.035), (0.14, 0.05, 3.40), bevel=0.008)
+        for ty in (0.94, 3.42):
+            add_beveled_box(bm, yup(0.0, ty, -cd * 0.5 - 0.035), (cw + 0.04, 0.05, 0.14), bevel=0.008)
+        add_beveled_box(bm, yup(0.0, 3.42, cd * 0.5 + 0.035), (cw + 0.04, 0.05, 0.14), bevel=0.008)
+        for sx_p in (-2.62, 2.62):
+            add_beveled_box(bm, yup(sx_p, 0.94, cd * 0.5 + 0.035), (2.78, 0.05, 0.14), bevel=0.008)
+        for sz_t in (-2.72, -1.36, 1.36, 2.72):
+            add_beveled_box(bm, yup(-cw * 0.5 - 0.035, 1.85, sz_t), (0.05, 0.14, 3.40), bevel=0.008)
+            add_beveled_box(bm, yup(cw * 0.5 + 0.035, 1.85, sz_t), (0.05, 0.14, 3.40), bevel=0.008)
+        for ty in (0.94, 3.42):
+            add_beveled_box(bm, yup(-cw * 0.5 - 0.035, ty, 0.0), (0.05, cd + 0.04, 0.14), bevel=0.008)
+            add_beveled_box(bm, yup(cw * 0.5 + 0.035, ty, 0.0), (0.05, cd + 0.04, 0.14), bevel=0.008)
+
+    _build_bmesh_part("Cot_HalfTimber", build_half_timber, m_wood, uv_scale=0.6, parent=root)
 
     def build_roof(bm):
         # Pitched terracotta gable roof + eaves overhang

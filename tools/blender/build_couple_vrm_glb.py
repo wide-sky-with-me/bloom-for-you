@@ -146,6 +146,37 @@ def restyle_ran_image(tex_name: str, rgba: np.ndarray) -> np.ndarray:
     return np.clip(np.concatenate([rgb, alpha], axis=2) * 255.0, 0, 255).astype(np.uint8)
 
 
+def restyle_xian_image(tex_name: str, rgba: np.ndarray) -> np.ndarray:
+    """Enhance Victoria_Rubin's anime textures for luminous Genshin tonal contrast:
+    crisper plum-rose trim separation on dress/ribbons, warmer blush on face, richer hair gradient."""
+    arr = rgba.astype(np.float32) / 255.0
+    rgb = arr[:, :, :3]
+    alpha = arr[:, :, 3:4]
+    h, w = rgb.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w]
+    u = xx / max(1, w - 1)
+    v = yy / max(1, h - 1)
+
+    if "Face_00" in tex_name:
+        for cx in (0.31, 0.69):
+            d = np.hypot((u - cx) / 0.088, (v - 0.625) / 0.044)
+            mask = np.clip(1.0 - d, 0.0, 1.0)[:, :, None] ** 1.65
+            blush = np.array([1.00, 0.56, 0.64], dtype=np.float32)
+            rgb = rgb * (1.0 - mask * 0.30) + blush * (mask * 0.30)
+    elif any(k in tex_name for k in ("Onepiece", "Tops", "Bottoms", "Cloth", "Dress", "Ribbon")):
+        mean_c = rgb.mean(axis=2, keepdims=True)
+        # Boost chromatic richness without blowing highlights
+        rgb = np.clip(mean_c + (rgb - mean_c) * 1.32, 0.0, 1.0)
+        # Deepen dark fold/trim hues slightly toward Genshin plum-gold warmth
+        dark = np.clip((0.55 - mean_c[:, :, 0]) / 0.35, 0.0, 1.0)[:, :, None]
+        rgb = rgb * (1.0 - dark * 0.16) + np.array([0.42, 0.18, 0.34], dtype=np.float32) * (dark * 0.16)
+    elif "Hair" in tex_name:
+        mean_c = rgb.mean(axis=2, keepdims=True)
+        rgb = np.clip(mean_c * 0.98 + (rgb - mean_c) * 1.24, 0.0, 1.0)
+
+    return np.clip(np.concatenate([rgb, alpha], axis=2) * 255.0, 0, 255).astype(np.uint8)
+
+
 def bake_and_rebuild_vrm_materials(char_id: str, vrm_json: dict) -> set[str]:
     """Multiply MToon _Color into textures, downscale <= 512px, and convert materials
     from KHR_materials_unlit to standard Principled BSDF for clean glTF + GenshinToon shading."""
@@ -188,6 +219,8 @@ def bake_and_rebuild_vrm_materials(char_id: str, vrm_json: dict) -> set[str]:
 
             if char_id == "ran":
                 rgba_u8 = restyle_ran_image(src_img.name, rgba_u8)
+            else:
+                rgba_u8 = restyle_xian_image(src_img.name, rgba_u8)
 
             # Downscale proportionally to max 512px (keep crisp anime eyes/hair small & fast)
             max_side = 512
@@ -431,6 +464,35 @@ def consolidate_face_morphs_and_split(arm, char_id: str, vrm_json: dict):
     return [o for o in bpy.data.objects if o.type == "MESH"]
 
 
+def strip_occluded_skin_faces(char_id: str) -> None:
+    """Remove inner Body_00_SKIN faces completely hidden under trousers/bodice so thin anime
+    outlines never bleed through close-fitting clothing during poses."""
+    for obj in bpy.data.objects:
+        if obj.type != "MESH" or "Body" not in obj.name:
+            continue
+        skin_idxs = {i for i, m in enumerate(obj.data.materials) if m and "SKIN" in m.name}
+        if not skin_idxs:
+            continue
+        bpy.ops.object.select_all(action="DESELECT")
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        bpy.ops.object.mode_set(mode="EDIT")
+        bm = bmesh.from_edit_mesh(obj.data)
+        z_min = 0.14 if char_id == "ran" else 0.86
+        z_max = 1.38
+        x_lim = 0.162 if char_id == "ran" else 0.155
+        to_del = [
+            f
+            for f in bm.faces
+            if f.material_index in skin_idxs
+            and all(z_min < v.co.z < z_max and abs(v.co.x) < x_lim for v in f.verts)
+        ]
+        if to_del:
+            bmesh.ops.delete(bm, geom=to_del, context="FACES")
+            bmesh.update_edit_mesh(obj.data)
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+
 # ---------------------------------------------------------------------------
 # Genshin Outerwear Craft for Small Ran (Caplet, Coattails, Cuffs, Vision) & Xian Vision
 # ---------------------------------------------------------------------------
@@ -456,42 +518,98 @@ def skin_mesh_by_nearest_z(obj, arm, weights_fn):
     obj.matrix_parent_inverse.identity()
 
 
+def _make_ran_coat_texture() -> bpy.types.Image:
+    """Paint a 256x256 Genshin Fontaine Aristocrat sapphire filigree + champagne-gold trim texture."""
+    TEX_BAKED.mkdir(parents=True, exist_ok=True)
+    w, h = 256, 256
+    yy, xx = np.mgrid[0:h, 0:w]
+    u = xx / (w - 1.0)  # 0 = front lapel edge, 1 = center back
+    v = yy / (h - 1.0)  # 0 = top collar, 1 = lower coattail hem (flipud-matched PIL y)
+
+    base_top = np.array([0.21, 0.43, 0.82], dtype=np.float32)
+    base_bot = np.array([0.09, 0.18, 0.44], dtype=np.float32)
+    t_vert = v[:, :, None] ** 0.85
+    col = base_top * (1.0 - t_vert) + base_bot * t_vert
+
+    # Diagonal tailored herringbone + subtle Fontaine fleur diamond damask along lower tail
+    weave = (np.sin(u * 140.0 + v * 90.0) * 0.025 + np.cos(u * 90.0 - v * 140.0) * 0.02)[:, :, None]
+    damask = (np.sin(u * math.tau * 8.0) * np.sin(v * math.tau * 10.0)) > 0.55
+    lower_panel = v > 0.58
+    col = col + weave + (damask & lower_panel)[:, :, None] * np.array([0.07, 0.13, 0.24], dtype=np.float32)
+
+    # Fine cyan-teal accent border + thick champagne-gold filigree stripe near coattail & lapel
+    gold = np.array([0.95, 0.78, 0.34], dtype=np.float32)
+    aqua = np.array([0.36, 0.84, 0.96], dtype=np.float32)
+    border_hem = (v > 0.88) & (v < 0.94)
+    border_lapel = (u > 0.035) & (u < 0.085)
+    inner_line = ((v >= 0.845) & (v <= 0.865)) | ((u >= 0.105) & (u <= 0.120))
+    col[border_hem | border_lapel] = gold
+    col[inner_line] = aqua
+
+    rgb_u8 = np.clip(col * 255.0, 0, 255).astype(np.uint8)
+    out_png = TEX_BAKED / "ran_genshin_coat_albedo.png"
+    Image.fromarray(rgb_u8, "RGB").save(out_png, optimize=True)
+    img = bpy.data.images.load(str(out_png))
+    img.colorspace_settings.name = "sRGB"
+    return img
+
+
+def make_textured_pbr_mat(name: str, image: bpy.types.Image, roughness: float = 0.58, metallic: float = 0.05, double_sided: bool = False):
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.inputs["Roughness"].default_value = roughness
+    bsdf.inputs["Metallic"].default_value = metallic
+    if "Specular IOR Level" in bsdf.inputs:
+        bsdf.inputs["Specular IOR Level"].default_value = 0.28
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = image
+    nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+    nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    mat.use_backface_culling = not double_sided
+    return mat
+
+
 def add_ran_genshin_costume(arm):
-    """Add flowing Fontaine sapphire shoulder mantle + gold-trimmed swallowtail coattails,
-    ivory/azure wrist bracers, and a glowing Azure Hydro Vision pendant on chest."""
-    mat_coat = make_simple_pbr_mat("ran_GenshinCoat", (0.12, 0.24, 0.52, 1.0), roughness=0.68, double_sided=False)
-    mat_lining = make_simple_pbr_mat("ran_CoatLining", (0.95, 0.86, 0.90, 1.0), roughness=0.72, double_sided=True)
-    mat_gold = make_simple_pbr_mat("ran_GenshinGold", (0.86, 0.65, 0.24, 1.0), roughness=0.26, metallic=0.88, double_sided=True)
+    """Add textured Fontaine sapphire swallowtail coat + asymmetric shoulder capelet,
+    gold-buckled waist sash with ribbon tails, forearm hero bracers, and starburst Hydro Vision."""
+    coat_img = _make_ran_coat_texture()
+    mat_coat = make_textured_pbr_mat("ran_GenshinCoat", coat_img, roughness=0.58, metallic=0.06, double_sided=False)
+    mat_lining = make_simple_pbr_mat("ran_CoatLining", (0.86, 0.18, 0.34, 1.0), roughness=0.70, double_sided=True)
+    mat_sash = make_simple_pbr_mat("ran_GenshinSash", (0.96, 0.94, 0.90, 1.0), roughness=0.55, double_sided=True)
+    mat_gold = make_simple_pbr_mat("ran_GenshinGold", (0.92, 0.72, 0.28, 1.0), roughness=0.22, metallic=0.90, double_sided=True)
     mat_vision = make_simple_pbr_mat(
         "ran_GenshinVision",
-        (0.28, 0.86, 1.0, 1.0),
-        roughness=0.14,
+        (0.28, 0.90, 1.0, 1.0),
+        roughness=0.10,
         metallic=0.1,
-        emission=(0.24, 0.82, 1.0),
-        emission_strength=1.55,
+        emission=(0.24, 0.86, 1.0),
+        emission_strength=1.75,
     )
 
-    # 1. Flowing Shoulder Capelet + Split Swallowtail Back Coattails
+    # 1. Flowing Swallowtail Coat with explicit UV mapping for painted filigree & borders
     bm = bmesh.new()
+    uv_layer = bm.loops.layers.uv.verify()
     rings = [
-        # (z, rx, ry_back, ry_front, split_gap, flare)
-        (1.410, 0.120, 0.082, 0.105, 0.0, 0.0),    # 0: standing collar hugging neck
-        (1.345, 0.188, 0.104, 0.120, 0.0, 0.006),  # 1: tailored shoulder mantle
-        (1.225, 0.156, 0.102, 0.118, 0.0, 0.010),  # 2: fitted ribcage wrap
-        (1.090, 0.140, 0.105, 0.112, 0.0, 0.012),  # 3: tapered waist
-        (0.960, 0.158, 0.124, 0.116, 0.018, 0.024),# 4: hip flare
-        (0.815, 0.186, 0.150, 0.125, 0.055, 0.044),# 5: swallowtail mid
-        (0.715, 0.205, 0.172, 0.132, 0.088, 0.062),# 6: gold border band
-        (0.675, 0.214, 0.180, 0.135, 0.098, 0.068),# 7: swallowtail tips
+        (1.410, 0.120, 0.082, 0.105, 0.0, 0.0),
+        (1.345, 0.188, 0.104, 0.120, 0.0, 0.006),
+        (1.225, 0.156, 0.102, 0.118, 0.0, 0.010),
+        (1.090, 0.140, 0.105, 0.112, 0.0, 0.012),
+        (0.960, 0.158, 0.124, 0.116, 0.018, 0.024),
+        (0.815, 0.186, 0.150, 0.125, 0.055, 0.044),
+        (0.715, 0.205, 0.172, 0.132, 0.088, 0.062),
+        (0.675, 0.214, 0.180, 0.135, 0.098, 0.068),
     ]
-    left_grid = []
-    right_grid = []
+    left_grid, right_grid = [], []
     half_steps = 14
     for r_idx, (z, rx, ry_b, ry_f, split_gap, flare) in enumerate(rings):
         for side_sign, grid in ((1.0, left_grid), (-1.0, right_grid)):
             row = []
             for j in range(half_steps + 1):
-                t = j / half_steps  # 0 at front lapel -> 1 at center back
+                t = j / half_steps
                 if side_sign > 0:
                     ang = -0.82 + t * (math.pi * 0.5 + 0.82)
                 else:
@@ -508,25 +626,60 @@ def add_ran_genshin_costume(arm):
                 zv = z
                 if r_idx >= len(rings) - 2:
                     zv -= (0.042 if r_idx == len(rings) - 1 else 0.036) * math.sin(t * math.pi)
-                row.append(bm.verts.new((cx, cy, zv)))
+                row.append((bm.verts.new((cx, cy, zv)), t, r_idx / (len(rings) - 1)))
             grid.append(row)
 
     for grid, flip in ((left_grid, False), (right_grid, True)):
         for r in range(len(rings) - 1):
             for c in range(len(grid[0]) - 1):
-                v0, v1 = grid[r][c], grid[r][c + 1]
-                v2, v3 = grid[r + 1][c + 1], grid[r + 1][c]
+                a, u0, v0 = grid[r][c]
+                b, u1, v1 = grid[r][c + 1]
+                c_v, u2, v2 = grid[r + 1][c + 1]
+                d, u3, v3 = grid[r + 1][c]
                 mat_i = 1 if (r == len(rings) - 2 or c == 0) else 0
-                f = bm.faces.new((v0, v3, v2, v1) if flip else (v0, v1, v2, v3))
+                pts = ((a, u0, 1 - v0), (d, u3, 1 - v3), (c_v, u2, 1 - v2), (b, u1, 1 - v1)) if flip else ((a, u0, 1 - v0), (b, u1, 1 - v1), (c_v, u2, 1 - v2), (d, u3, 1 - v3))
+                f = bm.faces.new([p[0] for p in pts])
                 f.material_index = mat_i
+                for loop, (_, uu, vv) in zip(f.loops, pts):
+                    loop[uv_layer].uv = (uu, vv)
 
-    # Join center-back seam above waist (rings 0..3, last column)
     for r in range(3):
-        v0l, v1l = left_grid[r][-1], left_grid[r + 1][-1]
-        v0r, v1r = right_grid[r][-1], right_grid[r + 1][-1]
-        if (v0l.co - v0r.co).length > 1e-4:
-            f = bm.faces.new((v0l, v1l, v1r, v0r))
+        al, u0, v0 = left_grid[r][-1]
+        bl, u1, v1 = left_grid[r + 1][-1]
+        ar, u2, v2 = right_grid[r][-1]
+        br, u3, v3 = right_grid[r + 1][-1]
+        if (al.co - ar.co).length > 1e-4:
+            f = bm.faces.new((al, bl, br, ar))
             f.material_index = 0
+            for loop, uu, vv in zip(f.loops, (1, 1, 1, 1), (1 - v0, 1 - v1, 1 - v3, 1 - v2)):
+                loop[uv_layer].uv = (uu, vv)
+
+    # Asymmetric Knightly Left-Shoulder Mantle + Draped Back Tail + Waist Sash
+    cape_rings = [
+        (1.395, 0.08, 0.21, -0.02, 0.015),
+        (1.335, 0.05, 0.30, -0.04, 0.055),
+        (1.235, 0.03, 0.33, -0.01, 0.115),
+        (1.120, 0.06, 0.29, 0.06, 0.155),
+    ]
+    c_rows = []
+    for ri, (z_c, x0, x1, y_f, y_b) in enumerate(cape_rings):
+        row = []
+        v_uv = 1.0 - ri / (len(cape_rings) - 1)
+        for j in range(11):
+            t = j / 10.0
+            th = -math.pi * 0.42 + t * math.pi * 1.12
+            px = x0 + (x1 - x0) * (0.45 + 0.55 * math.sin(th * 0.8 + 0.4))
+            py = (y_f * (1.0 - math.sin(t * math.pi * 0.5)) + y_b * math.sin(t * math.pi * 0.5)) - 0.015
+            pz = z_c - math.sin(t * math.pi) * 0.028 * (ri / 3.0)
+            row.append((bm.verts.new((px, py, pz)), t, v_uv))
+        c_rows.append(row)
+    for r in range(len(c_rows) - 1):
+        for c in range(10):
+            pts = (c_rows[r][c], c_rows[r][c + 1], c_rows[r + 1][c + 1], c_rows[r + 1][c])
+            f = bm.faces.new([p[0] for p in pts])
+            f.material_index = 1 if r == len(c_rows) - 2 else 0
+            for loop, (_, uu, vv) in zip(f.loops, pts):
+                loop[uv_layer].uv = (uu, vv)
 
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     coat_mesh = bpy.data.meshes.new("ran_GenshinCoat")
@@ -550,7 +703,11 @@ def add_ran_genshin_costume(arm):
     def coat_weights(co: Vector):
         z = co.z
         w = {}
-        if z >= 1.27:
+        if co.x > 0.21 and z >= 1.24:
+            w["J_Bip_L_UpperArm"] = 0.55
+            w["J_Bip_L_Shoulder"] = 0.30
+            w["J_Bip_C_UpperChest"] = 0.15
+        elif z >= 1.27:
             w["J_Bip_C_UpperChest"] = 0.85
             w["J_Bip_C_Chest"] = 0.15
         elif z >= 1.18:
@@ -571,6 +728,32 @@ def add_ran_genshin_costume(arm):
         return w
 
     skin_mesh_by_nearest_z(coat_obj, arm, coat_weights)
+
+    # Flowing Waist Sash Ribbons + Left Shoulder Epaulet Cord
+    bm_s = bmesh.new()
+    for sx, side_bias in ((-0.125, -0.03), (-0.100, -0.02)):
+        pts_r = [
+            (sx, -0.02 + side_bias, 1.055),
+            (sx - 0.020, 0.015 + side_bias, 0.92),
+            (sx - 0.035, 0.050 + side_bias, 0.78),
+            (sx - 0.042, 0.072 + side_bias, 0.66),
+        ]
+        rows = []
+        for pz_i, (px, py, pz) in enumerate(pts_r):
+            w_r = 0.022 + pz_i * 0.008
+            rows.append((bm_s.verts.new((px - w_r, py, pz)), bm_s.verts.new((px + w_r, py, pz))))
+        for ri in range(len(rows) - 1):
+            f = bm_s.faces.new((rows[ri][0], rows[ri][1], rows[ri + 1][1], rows[ri + 1][0]))
+            f.material_index = 1 if ri == len(rows) - 2 else 0
+    bmesh.ops.recalc_face_normals(bm_s, faces=bm_s.faces)
+    sash_mesh = bpy.data.meshes.new("ran_GenshinSash")
+    bm_s.to_mesh(sash_mesh)
+    bm_s.free()
+    sash_obj = bpy.data.objects.new("ran_GenshinSash", sash_mesh)
+    bpy.context.collection.objects.link(sash_obj)
+    sash_obj.data.materials.append(mat_sash)
+    sash_obj.data.materials.append(mat_gold)
+    skin_mesh_by_nearest_z(sash_obj, arm, lambda co: {"J_Bip_C_Hips": 0.72, "J_Bip_C_Spine": 0.28})
 
     # 2. Forearm Hero Cuffs / Bracers snugly fitted around L/R forearms in T-pose
     bm_c = bmesh.new()
@@ -641,35 +824,55 @@ def add_ran_genshin_costume(arm):
 
 
 def add_xian_vision_charm(arm):
-    """Add a small glowing Sakura-Rose Hydro/Starlight Vision charm at Victoria's waist ribbon."""
-    mat_gold = make_simple_pbr_mat("xian_VisionGold", (0.95, 0.78, 0.36, 1.0), roughness=0.24, metallic=0.88)
+    """Add a glowing Sakura-Rose Vision charm, back silk trailing waist ribbons,
+    and a delicate gold & rose-crystal Genshin hairline brooch."""
+    mat_gold = make_simple_pbr_mat("xian_VisionGold", (0.96, 0.80, 0.38, 1.0), roughness=0.22, metallic=0.90)
     mat_gem = make_simple_pbr_mat(
         "xian_VisionGem",
-        (1.0, 0.48, 0.76, 1.0),
-        roughness=0.12,
+        (1.0, 0.46, 0.78, 1.0),
+        roughness=0.10,
         metallic=0.05,
-        emission=(1.0, 0.42, 0.74),
-        emission_strength=1.50,
+        emission=(1.0, 0.40, 0.76),
+        emission_strength=1.70,
     )
+    mat_ribbon = make_simple_pbr_mat("xian_SilkRibbon", (0.98, 0.68, 0.84, 1.0), roughness=0.52, double_sided=True)
+
     bm = bmesh.new()
     vx, vy, vz = -0.105, -0.075, 0.995
-    top = bm.verts.new((vx, vy - 0.008, vz + 0.024))
-    bot = bm.verts.new((vx, vy - 0.008, vz - 0.024))
-    lft = bm.verts.new((vx + 0.020, vy - 0.004, vz))
-    rgt = bm.verts.new((vx - 0.020, vy - 0.004, vz))
-    frt = bm.verts.new((vx, vy - 0.019, vz))
+    top = bm.verts.new((vx, vy - 0.008, vz + 0.026))
+    bot = bm.verts.new((vx, vy - 0.008, vz - 0.026))
+    lft = bm.verts.new((vx + 0.022, vy - 0.004, vz))
+    rgt = bm.verts.new((vx - 0.022, vy - 0.004, vz))
+    frt = bm.verts.new((vx, vy - 0.021, vz))
     back = bm.verts.new((vx, vy + 0.008, vz))
     for tri in ((top, lft, frt), (lft, bot, frt), (bot, rgt, frt), (rgt, top, frt), (top, back, lft), (lft, back, bot), (bot, back, rgt), (rgt, back, top)):
         bm.faces.new(tri).material_index = 0
     g_pts = [
-        bm.verts.new((vx, vy - 0.010, vz + 0.015)),
-        bm.verts.new((vx + 0.013, vy - 0.007, vz)),
-        bm.verts.new((vx, vy - 0.010, vz - 0.015)),
-        bm.verts.new((vx - 0.013, vy - 0.007, vz)),
-        bm.verts.new((vx, vy - 0.023, vz)),
+        bm.verts.new((vx, vy - 0.010, vz + 0.017)),
+        bm.verts.new((vx + 0.015, vy - 0.007, vz)),
+        bm.verts.new((vx, vy - 0.010, vz - 0.017)),
+        bm.verts.new((vx - 0.015, vy - 0.007, vz)),
+        bm.verts.new((vx, vy - 0.026, vz)),
     ]
     for a, b in ((0, 1), (1, 2), (2, 3), (3, 0)):
         bm.faces.new((g_pts[a], g_pts[b], g_pts[4])).material_index = 1
+
+    # Twin trailing sakura silk ribbons from lower back waist bow
+    for side in (-1.0, 1.0):
+        pts_rib = [
+            (side * 0.024, 0.095, 1.005),
+            (side * 0.055, 0.125, 0.880),
+            (side * 0.088, 0.155, 0.745),
+            (side * 0.112, 0.175, 0.625),
+        ]
+        r_pairs = []
+        for idx_r, (px, py, pz) in enumerate(pts_rib):
+            hw = 0.016 + idx_r * 0.006
+            r_pairs.append((bm.verts.new((px - hw, py, pz)), bm.verts.new((px + hw, py, pz))))
+        for ri in range(len(r_pairs) - 1):
+            f = bm.faces.new((r_pairs[ri][0], r_pairs[ri][1], r_pairs[ri + 1][1], r_pairs[ri + 1][0]))
+            f.material_index = 0 if ri == len(r_pairs) - 2 else 2
+
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     vm = bpy.data.meshes.new("xian_VisionCharm")
     bm.to_mesh(vm)
@@ -678,7 +881,34 @@ def add_xian_vision_charm(arm):
     bpy.context.collection.objects.link(vobj)
     vobj.data.materials.append(mat_gold)
     vobj.data.materials.append(mat_gem)
+    vobj.data.materials.append(mat_ribbon)
     skin_mesh_by_nearest_z(vobj, arm, lambda _co: {"J_Bip_C_Hips": 0.65, "J_Bip_C_Spine": 0.35})
+
+    # Delicate Gold + Rose Starlight Hairline Ornament mounted to Head bone
+    bm_h = bmesh.new()
+    hx, hy, hz = 0.072, -0.064, 1.505
+    ct_f = bm_h.verts.new((hx + 0.008, hy - 0.016, hz))
+    ct_b = bm_h.verts.new((hx - 0.005, hy + 0.005, hz))
+    for k in range(5):
+        a0 = (k / 5.0) * math.tau
+        a1 = ((k + 0.5) / 5.0) * math.tau
+        v_o = bm_h.verts.new((hx + math.cos(a0) * 0.022, hy - 0.004, hz + math.sin(a0) * 0.022))
+        v_n = bm_h.verts.new((hx + math.cos(a1) * 0.010, hy - 0.006, hz + math.sin(a1) * 0.010))
+        a_prev = ((k - 0.5) / 5.0) * math.tau
+        v_p = bm_h.verts.new((hx + math.cos(a_prev) * 0.010, hy - 0.006, hz + math.sin(a_prev) * 0.010))
+        bm_h.faces.new((ct_f, v_p, v_o)).material_index = 1 if k % 2 == 0 else 0
+        bm_h.faces.new((ct_f, v_o, v_n)).material_index = 1 if k % 2 == 0 else 0
+        bm_h.faces.new((ct_b, v_o, v_p)).material_index = 0
+        bm_h.faces.new((ct_b, v_n, v_o)).material_index = 0
+    bmesh.ops.recalc_face_normals(bm_h, faces=bm_h.faces)
+    hm = bpy.data.meshes.new("xian_HairCrown")
+    bm_h.to_mesh(hm)
+    bm_h.free()
+    hobj = bpy.data.objects.new("xian_HairCrown", hm)
+    bpy.context.collection.objects.link(hobj)
+    hobj.data.materials.append(mat_gold)
+    hobj.data.materials.append(mat_gem)
+    skin_mesh_by_nearest_z(hobj, arm, lambda _co: {"J_Bip_C_Head": 1.0})
 
 
 # ---------------------------------------------------------------------------
@@ -1376,6 +1606,7 @@ def build_character(char_id: str, out_glb: Path) -> None:
     bake_and_rebuild_vrm_materials(char_id, vrm_json)
     arm = normalize_vrm_scene(cfg["target_height"])
     consolidate_face_morphs_and_split(arm, char_id, vrm_json)
+    strip_occluded_skin_faces(char_id)
 
     if char_id == "ran":
         add_ran_genshin_costume(arm)

@@ -86,9 +86,9 @@ Effect.ShadersStore["irisSkyFragmentShader"] = /* glsl */ `
     float up = max(y, 0.0);
     float dayMix = 1.0 - uNightMix;
 
-    vec3 dayZenith  = vec3(0.110, 0.435, 0.895);
-    vec3 dayMid     = vec3(0.320, 0.720, 0.965);
-    vec3 dayHorizon = vec3(0.785, 0.945, 0.995);
+    vec3 dayZenith  = vec3(0.085, 0.395, 0.890);
+    vec3 dayMid     = vec3(0.265, 0.695, 0.975);
+    vec3 dayHorizon = vec3(0.720, 0.935, 1.000);
 
     vec3 nightZenith  = vec3(0.032, 0.068, 0.165);
     vec3 nightMid     = vec3(0.072, 0.145, 0.285);
@@ -125,28 +125,28 @@ Effect.ShadersStore["irisSkyFragmentShader"] = /* glsl */ `
     sky += vec3(0.82, 0.90, 1.00) * pow(moonMu, 160.0) * 0.48 * uNightMix;
     sky += vec3(0.94, 0.97, 1.00) * smoothstep(0.99945, 0.99986, moonMu) * 1.35 * uNightMix;
 
-    if (dir.y > 0.008 && dir.y < 0.26) {
+    if (dir.y > 0.008 && dir.y < 0.28) {
       float az = atan(dir.z, dir.x);
-      vec2 bankUV = vec2(az * 2.8 + uTime * 0.0014, (dir.y - 0.01) * 11.5);
+      vec2 bankUV = vec2(az * 2.6 + uTime * 0.0014, (dir.y - 0.01) * 10.5);
       float bankShape = fbmCloud(bankUV * vec2(1.15, 0.85)) * 0.72 + fbmCloud(bankUV * 2.7 + 4.1) * 0.28;
-      float verticalEnv = smoothstep(0.008, 0.042, dir.y) * (1.0 - smoothstep(0.11, 0.24, dir.y));
-      float bankMask = smoothstep(0.45, 0.66, bankShape) * verticalEnv * mix(0.88, 0.50, uNightMix);
-      float rim = smoothstep(0.32, 0.76, (fbmCloud(bankUV + vec2(0.0, 0.16)) - bankShape) * -2.8 + 0.68);
-      vec3 bankShadow = mix(mix(vec3(0.64, 0.78, 0.96), vec3(0.76, 0.82, 0.96), pow(mu, 1.6)), vec3(0.09, 0.14, 0.26), uNightMix);
-      vec3 bankLit = mix(mix(vec3(1.00, 0.99, 0.97), vec3(1.00, 0.94, 0.82), 0.35 + 0.55 * pow(mu, 2.0)), vec3(0.24, 0.34, 0.52), uNightMix);
+      float verticalEnv = smoothstep(0.008, 0.042, dir.y) * (1.0 - smoothstep(0.13, 0.26, dir.y));
+      float bankMask = smoothstep(0.42, 0.54, bankShape) * verticalEnv * mix(0.94, 0.52, uNightMix);
+      float rim = smoothstep(0.28, 0.70, (fbmCloud(bankUV + vec2(0.0, 0.16)) - bankShape) * -3.0 + 0.66);
+      vec3 bankShadow = mix(mix(vec3(0.56, 0.76, 0.97), vec3(0.70, 0.82, 0.98), pow(mu, 1.6)), vec3(0.09, 0.14, 0.26), uNightMix);
+      vec3 bankLit = mix(mix(vec3(1.00, 0.99, 0.97), vec3(1.00, 0.94, 0.82), 0.30 + 0.55 * pow(mu, 2.0)), vec3(0.24, 0.34, 0.52), uNightMix);
       sky = mix(sky, mix(bankShadow, bankLit, rim), bankMask);
     }
 
     if (dir.y > 0.025) {
-      vec2 cloudUV = dir.xz / (dir.y + 0.16) * 1.18 + vec2(uTime * 0.0042, uTime * 0.0020);
+      vec2 cloudUV = dir.xz / (dir.y + 0.16) * 1.15 + vec2(uTime * 0.0042, uTime * 0.0020);
       float cBase = fbmCloud(cloudUV);
       float cDetail = fbmCloud(cloudUV * 2.6 - vec2(uTime * 0.0028, 0.0));
-      float density = smoothstep(0.50, 0.69, cBase * 0.78 + cDetail * 0.28) * smoothstep(0.025, 0.20, dir.y) * mix(0.86, 0.40, uNightMix);
+      float density = smoothstep(0.47, 0.57, cBase * 0.78 + cDetail * 0.28) * smoothstep(0.025, 0.18, dir.y) * mix(0.92, 0.42, uNightMix);
       vec2 lightDir2D = normalize(mix(uSunDir.xz, uMoonDir.xz, uNightMix));
       float lightSample = fbmCloud(cloudUV + lightDir2D * 0.06);
-      float selfShadow = smoothstep(0.28, 0.78, (cBase - lightSample) * 2.8 + 0.62);
-      vec3 cShadow = mix(vec3(0.62, 0.77, 0.95), vec3(0.08, 0.13, 0.24), uNightMix);
-      vec3 cLit = mix(mix(vec3(1.00, 0.99, 0.97), vec3(1.00, 0.94, 0.84), 0.30 + 0.55 * pow(mu, 2.2)), vec3(0.22, 0.32, 0.50), uNightMix);
+      float selfShadow = smoothstep(0.26, 0.72, (cBase - lightSample) * 3.1 + 0.62);
+      vec3 cShadow = mix(vec3(0.54, 0.74, 0.96), vec3(0.08, 0.13, 0.24), uNightMix);
+      vec3 cLit = mix(mix(vec3(1.00, 0.99, 0.97), vec3(1.00, 0.94, 0.84), 0.26 + 0.54 * pow(mu, 2.2)), vec3(0.22, 0.32, 0.50), uNightMix);
       sky = mix(sky, mix(cShadow, cLit, selfShadow), density);
     }
 
@@ -234,9 +234,9 @@ Effect.ShadersStore["irisOceanFragmentShader"] = /* glsl */ `
     float hZ = waveHeightField(vWorldPos.xz + vec2(0.0, eps), uTime, uDetailScale);
     vec3 N = normalize(vec3((hC - hX) * 0.34 * normalFade, 1.0, (hC - hZ) * 0.34 * normalFade));
 
-    vec3 shallowTurquoise = mix(vec3(0.13, 0.82, 0.85), vec3(0.06, 0.26, 0.38), uNightMix);
-    vec3 midEmerald       = mix(vec3(0.06, 0.56, 0.80), vec3(0.030, 0.155, 0.290), uNightMix);
-    vec3 deepSapphire     = mix(vec3(0.038, 0.275, 0.610), vec3(0.018, 0.080, 0.190), uNightMix);
+    vec3 shallowTurquoise = mix(vec3(0.14, 0.88, 0.88), vec3(0.06, 0.26, 0.38), uNightMix);
+    vec3 midEmerald       = mix(vec3(0.05, 0.62, 0.86), vec3(0.030, 0.155, 0.290), uNightMix);
+    vec3 deepSapphire     = mix(vec3(0.032, 0.310, 0.720), vec3(0.018, 0.080, 0.190), uNightMix);
 
     float tMid  = 1.0 - exp(-max(vDepth, 0.0) * 0.58);
     float tDeep = 1.0 - exp(-max(vDepth - 1.4, 0.0) * 0.28);
@@ -259,8 +259,9 @@ Effect.ShadersStore["irisOceanFragmentShader"] = /* glsl */ `
 
     vec3 H = normalize(L + V);
     float NdotH = max(dot(N, H), 0.0);
-    float spec = pow(NdotH, 320.0) * mix(3.4, 1.85, uNightMix) + pow(NdotH, 26.0) * mix(0.18, 0.09, uNightMix);
-    col += mix(vec3(1.00, 0.88, 0.66), vec3(0.76, 0.86, 1.00), uNightMix) * spec;
+    float sparklePatch = smoothstep(0.56, 0.80, vnoise(vWorldPos.xz * 0.75 + vec2(uTime * 0.45, -uTime * 0.32)));
+    float spec = pow(NdotH, 320.0) * mix(3.8, 1.9, uNightMix) + pow(NdotH, 28.0) * mix(0.20, 0.10, uNightMix) + pow(NdotH, 10.0) * sparklePatch * mix(0.28, 0.12, uNightMix);
+    col += mix(vec3(1.00, 0.90, 0.70), vec3(0.76, 0.86, 1.00), uNightMix) * spec;
 
     if (vDepth < 1.65) {
       float waveA = sin(vDepth * 10.5 - uTime * 2.15 + vWorldPos.x * 0.16) * 0.5 + 0.5;
@@ -423,12 +424,12 @@ function buildOceanMesh(scene) {
 export function buildOceanAndSky(scene, { isSoftware = false, camera = scene.activeCamera } = {}) {
   scene.imageProcessingConfiguration.toneMappingEnabled = true;
   scene.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
-  scene.imageProcessingConfiguration.exposure = 1.06;
+  scene.imageProcessingConfiguration.exposure = 1.08;
 
   scene.fogMode = Scene.FOGMODE_EXP2;
-  scene.fogColor = new Color3(0.84, 0.80, 0.78);
-  scene.fogDensity = 0.00145;
-  scene.clearColor = new Color4(0.82, 0.76, 0.72, 1.0);
+  scene.fogColor = new Color3(0.64, 0.87, 0.99);
+  scene.fogDensity = 0.00086;
+  scene.clearColor = new Color4(0.64, 0.87, 0.99, 1.0);
 
   // Offline procedural 48x48 Sky + Sun/Sea-Bounce IBL CubeMap for crisp PBR reflections
   const envTex = new RawCubeTexture(
@@ -442,7 +443,7 @@ export function buildOceanAndSky(scene, { isSoftware = false, camera = scene.act
     Texture.TRILINEAR_SAMPLINGMODE
   );
   scene.environmentTexture = envTex;
-  scene.environmentIntensity = 0.92;
+  scene.environmentIntensity = 0.44;
 
   // Sky Dome
   const skyDome = CreateSphere("SkyDome", { diameter: 2900, segments: 24, sideOrientation: Mesh.BACKSIDE }, scene);
@@ -502,17 +503,17 @@ export function buildOceanAndSky(scene, { isSoftware = false, camera = scene.act
   oceanMat.setFloat("uFogDensity", scene.fogDensity);
   oceanMesh.material = oceanMat;
 
-  // Lights & Shadows (Teyvat vibrant daylight + crisp cel shadow fill)
+  // Lights & Shadows (Teyvat vibrant daylight + crisp high-contrast cel shadow fill)
   const hemiLight = new HemisphericLight("SkyHemiLight", new Vector3(0, 1, 0), scene);
-  hemiLight.diffuse = new Color3(0.94, 0.98, 1.00);
-  hemiLight.groundColor = new Color3(0.42, 0.56, 0.68);
-  hemiLight.intensity = 0.88;
+  hemiLight.diffuse = new Color3(0.86, 0.94, 1.00);
+  hemiLight.groundColor = new Color3(0.32, 0.50, 0.70);
+  hemiLight.intensity = 0.56;
 
   const sunLight = new DirectionalLight("SunDirLight", SUN_DIRECTION.scale(-1), scene);
   sunLight.position = SUN_DIRECTION.scale(115);
-  sunLight.diffuse = new Color3(1.0, 0.96, 0.88);
+  sunLight.diffuse = new Color3(1.0, 0.96, 0.86);
   sunLight.specular = new Color3(1.0, 0.97, 0.90);
-  sunLight.intensity = 2.48;
+  sunLight.intensity = 2.68;
   sunLight.shadowMinZ = 18;
   sunLight.shadowMaxZ = 280;
   sunLight.orthoLeft = -68;
@@ -561,11 +562,11 @@ export function buildOceanAndSky(scene, { isSoftware = false, camera = scene.act
   }
 
   const colorCurves = new ColorCurves();
-  colorCurves.globalSaturation = 18;
-  colorCurves.highlightsHue = 42;
-  colorCurves.highlightsDensity = 10;
-  colorCurves.shadowsHue = 222;
-  colorCurves.shadowsDensity = 12;
+  colorCurves.globalSaturation = 22;
+  colorCurves.highlightsHue = 44;
+  colorCurves.highlightsDensity = 12;
+  colorCurves.shadowsHue = 220;
+  colorCurves.shadowsDensity = 16;
 
   let defaultPipeline = null;
   try {
@@ -576,20 +577,20 @@ export function buildOceanAndSky(scene, { isSoftware = false, camera = scene.act
       defaultPipeline.imageProcessingEnabled = true;
       defaultPipeline.imageProcessing.toneMappingEnabled = true;
       defaultPipeline.imageProcessing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
-      defaultPipeline.imageProcessing.exposure = 1.10;
-      defaultPipeline.imageProcessing.contrast = 1.08;
+      defaultPipeline.imageProcessing.exposure = 1.08;
+      defaultPipeline.imageProcessing.contrast = 1.12;
       defaultPipeline.imageProcessing.colorCurvesEnabled = true;
       defaultPipeline.imageProcessing.colorCurves = colorCurves;
       defaultPipeline.imageProcessing.vignetteEnabled = true;
-      defaultPipeline.imageProcessing.vignetteWeight = 0.42;
-      defaultPipeline.imageProcessing.vignetteStretch = 0.16;
+      defaultPipeline.imageProcessing.vignetteWeight = 0.36;
+      defaultPipeline.imageProcessing.vignetteStretch = 0.14;
       defaultPipeline.bloomEnabled = true;
-      defaultPipeline.bloomThreshold = 0.84;
-      defaultPipeline.bloomWeight = 0.28;
+      defaultPipeline.bloomThreshold = 0.86;
+      defaultPipeline.bloomWeight = 0.24;
       defaultPipeline.bloomKernel = 48;
       defaultPipeline.bloomScale = 0.5;
       defaultPipeline.sharpenEnabled = true;
-      defaultPipeline.sharpen.edgeAmount = 0.16;
+      defaultPipeline.sharpen.edgeAmount = 0.18;
       defaultPipeline.sharpen.colorAmount = 1.0;
     }
   } catch (err) {
@@ -630,29 +631,34 @@ export function buildOceanAndSky(scene, { isSoftware = false, camera = scene.act
     skyMat.setFloat("uNightMix", n);
     oceanMat.setFloat("uNightMix", n);
 
-    const fogDay = new Color3(0.75, 0.90, 0.99);
+    const fogDay = new Color3(0.64, 0.87, 0.99);
     const fogNight = new Color3(0.08, 0.15, 0.28);
     const fc = Color3.Lerp(fogDay, fogNight, n);
     scene.fogColor.copyFrom(fc);
+    scene.clearColor.set(fc.r, fc.g, fc.b, 1.0);
     oceanMat.setColor3("uFogColor", fc);
-    scene.fogDensity = lerp(0.00095, 0.00148, n);
+    scene.fogDensity = lerp(0.00086, 0.00148, n);
     oceanMat.setFloat("uFogDensity", scene.fogDensity);
 
-    hemiLight.diffuse = Color3.Lerp(new Color3(0.94, 0.98, 1.00), new Color3(0.36, 0.50, 0.78), n);
-    hemiLight.groundColor = Color3.Lerp(new Color3(0.42, 0.56, 0.68), new Color3(0.12, 0.18, 0.30), n);
-    hemiLight.intensity = lerp(0.88, 0.52, n);
+    hemiLight.diffuse = Color3.Lerp(new Color3(0.86, 0.94, 1.00), new Color3(0.36, 0.50, 0.78), n);
+    hemiLight.groundColor = Color3.Lerp(new Color3(0.32, 0.50, 0.70), new Color3(0.12, 0.18, 0.30), n);
+    hemiLight.intensity = lerp(0.56, 0.44, n);
 
     const lightDir = Vector3.Lerp(SUN_DIRECTION, MOON_DIRECTION, n).normalize();
     sunLight.direction = lightDir.scale(-1);
     sunLight.position = lightDir.scale(115);
-    sunLight.diffuse = Color3.Lerp(new Color3(1.0, 0.96, 0.88), new Color3(0.64, 0.80, 1.0), n);
-    sunLight.intensity = lerp(2.48, 1.05, n);
-    scene.imageProcessingConfiguration.exposure = lerp(1.10, 1.18, n);
-    scene.environmentIntensity = lerp(0.96, 0.68, n);
-    colorCurves.globalSaturation = lerp(18, 12, n);
-    colorCurves.highlightsHue = lerp(42, 215, n);
-    colorCurves.highlightsDensity = lerp(10, 16, n);
-    glowLayer.intensity = lerp(0.28, 0.62, n);
+    sunLight.diffuse = Color3.Lerp(new Color3(1.0, 0.96, 0.86), new Color3(0.64, 0.80, 1.0), n);
+    sunLight.intensity = lerp(2.68, 1.12, n);
+    const targetExposure = lerp(1.08, 1.18, n);
+    scene.imageProcessingConfiguration.exposure = targetExposure;
+    if (defaultPipeline?.imageProcessing) {
+      defaultPipeline.imageProcessing.exposure = targetExposure;
+    }
+    scene.environmentIntensity = lerp(0.44, 0.52, n);
+    colorCurves.globalSaturation = lerp(22, 12, n);
+    colorCurves.highlightsHue = lerp(44, 215, n);
+    colorCurves.highlightsDensity = lerp(12, 16, n);
+    glowLayer.intensity = lerp(0.24, 0.62, n);
 
     const envBucket = Math.round(n * 8);
     if (envBucket !== lastEnvKey) {

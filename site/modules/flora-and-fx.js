@@ -228,7 +228,7 @@ export function createInteractionFX(
   sparkMat.disableLighting = true;
   sparkMat.useAlphaFromDiffuseTexture = true;
   sparkMat.backFaceCulling = false;
-  sparkMat.alphaMode = Engine.ALPHA_COMBINE;
+  sparkMat.alphaMode = Engine.ALPHA_ADD;
   sparkMat.disableDepthWrite = true;
   sparkMesh.material = sparkMat;
   scene.getGlowLayerByName?.("EstateGlow")?.addExcludedMesh?.(sparkMesh);
@@ -1193,18 +1193,21 @@ function sampleOrganicMeadowSpot(rng, speciesIdx) {
 function createGrassTuftGeo() {
   const dst = { positions: [], normals: [], colors: [], indices: [] };
   const blade = { positions: [], normals: [], colors: [], indices: [] };
-  const rootC = [0.40, 0.56, 0.29];
-  const midC = [0.56, 0.72, 0.39];
-  const tipC = [0.74, 0.85, 0.48];
-  const segsY = 3;
+  const rootC = [0.24, 0.56, 0.22];
+  const midC = [0.46, 0.78, 0.30];
+  const tipC = [0.76, 0.92, 0.42];
+  const segsY = 4;
   for (let iy = 0; iy <= segsY; iy += 1) {
     const t = iy / segsY;
-    const y = t * 0.38;
-    const w = 0.036 * (1 - Math.pow(t, 1.35) * 0.94);
-    const z = 0.12 * t * t;
-    const col = t < 0.5 ? [lerp(rootC[0], midC[0], t * 2), lerp(rootC[1], midC[1], t * 2), lerp(rootC[2], midC[2], t * 2)] : [lerp(midC[0], tipC[0], (t - 0.5) * 2), lerp(midC[1], tipC[1], (t - 0.5) * 2), lerp(midC[2], tipC[2], (t - 0.5) * 2)];
+    const y = t * 0.42;
+    const w = 0.038 * (1 - Math.pow(t, 1.32) * 0.94);
+    const z = 0.14 * t * t;
+    const col =
+      t < 0.5
+        ? [lerp(rootC[0], midC[0], t * 2), lerp(rootC[1], midC[1], t * 2), lerp(rootC[2], midC[2], t * 2)]
+        : [lerp(midC[0], tipC[0], (t - 0.5) * 2), lerp(midC[1], tipC[1], (t - 0.5) * 2), lerp(midC[2], tipC[2], (t - 0.5) * 2)];
     blade.positions.push(-w, y, z, w, y, z);
-    blade.normals.push(0, 0.2, 0.98, 0, 0.2, 0.98);
+    blade.normals.push(0, 0.28, 0.96, 0, 0.28, 0.96);
     blade.colors.push(col[0], col[1], col[2], 1, col[0], col[1], col[2], 1);
     if (iy < segsY) {
       const b = iy * 2;
@@ -1212,19 +1215,19 @@ function createGrassTuftGeo() {
     }
   }
   const tuftRng = mulberry32(4109);
-  for (let k = 0; k < 4; k += 1) {
+  for (let k = 0; k < 6; k += 1) {
     appendTransformedPart(
       dst,
       blade,
-      (tuftRng() - 0.5) * 0.12,
+      (tuftRng() - 0.5) * 0.14,
       0,
+      (tuftRng() - 0.5) * 0.14,
+      0.08 + tuftRng() * 0.14,
+      k * 1.047 + tuftRng() * 0.45,
       (tuftRng() - 0.5) * 0.12,
-      0.08 + tuftRng() * 0.12,
-      k * 1.57 + tuftRng() * 0.5,
-      (tuftRng() - 0.5) * 0.1,
-      0.95 + tuftRng() * 0.25,
-      0.88 + tuftRng() * 0.32,
-      0.95 + tuftRng() * 0.25
+      0.95 + tuftRng() * 0.28,
+      0.86 + tuftRng() * 0.36,
+      0.95 + tuftRng() * 0.28
     );
   }
   return dst;
@@ -1290,16 +1293,16 @@ function buildMeadowAndFlowerSea(scene, floraRoot, containers) {
   const scalableMeshes = [];
 
   // 1. 14,000 Sculpted Multi-Blade Meadow Grass Tufts (PBR matched to PeninsulaTerrainMat sky IBL)
-  const GRASS_COUNT = 14000;
+  const GRASS_COUNT = 24000;
   const grassGeo = createGrassTuftGeo();
   const grassMesh = buildVertexMesh("MeadowGrassTufts", scene, seaGroup, grassGeo);
   const grassMat = makePbrMat("MeadowGrassMat", scene, {
     color: 0xffffff,
-    roughness: 0.78,
+    roughness: 0.76,
     metallic: 0.0,
     specularIntensity: 0.14,
-    emissive: 0x1a3812,
-    emissiveIntensity: 0.34,
+    emissive: 0x204415,
+    emissiveIntensity: 0.38,
     doubleSided: true,
     useVertexColors: true,
   });
@@ -1521,13 +1524,13 @@ function buildHydrangeaShrubs(scene, floraRoot) {
     [-0.08, 0.16, 0.24, 0.28, 0.20, 0.26, 0.15, 7.3],
   ];
   for (const [lx, ly, lz, sx, sy, sz, na, sd] of foliageLobes) {
-    const lobe = makeBumpSphereGeo(sx, sy, sz, 5, 7, na, sd, [0.18, 0.34, 0.14], [0.36, 0.56, 0.24]);
+    const lobe = makeBumpSphereGeo(sx, sy, sz, 5, 7, na, sd, [0.34, 0.62, 0.24], [0.58, 0.88, 0.38]);
     appendTransformedPart(moundData, lobe, lx, ly, lz, 0, 0, 0, 1, 1, 1);
   }
   const broadLeaf = {
     positions: [-0.07, 0, 0, 0.07, 0, 0, 0.11, 0.08, 0.16, 0, 0.11, 0.30, -0.11, 0.08, 0.16],
     normals: [0, 0.9, 0.4, 0, 0.9, 0.4, 0, 0.94, 0.34, 0, 0.98, 0.2, 0, 0.94, 0.34],
-    colors: [0.22, 0.40, 0.17, 1, 0.22, 0.40, 0.17, 1, 0.34, 0.56, 0.24, 1, 0.42, 0.64, 0.28, 1, 0.34, 0.56, 0.24, 1],
+    colors: [0.38, 0.68, 0.26, 1, 0.38, 0.68, 0.26, 1, 0.56, 0.86, 0.36, 1, 0.66, 0.94, 0.44, 1, 0.56, 0.86, 0.36, 1],
     indices: [0, 1, 2, 0, 2, 3, 0, 3, 4],
   };
   for (let li = 0; li < 8; li += 1) {
@@ -1537,6 +1540,7 @@ function buildHydrangeaShrubs(scene, floraRoot) {
   const moundMesh = buildVertexMesh("HydrangeaMounds", scene, hydGroup, moundData);
   const mMat = new StandardMaterial("HydMoundMat", scene);
   mMat.diffuseColor = new Color3(1, 1, 1);
+  mMat.emissiveColor = new Color3(0.08, 0.16, 0.06);
   mMat.specularColor = new Color3(0.06, 0.08, 0.05);
   mMat.backFaceCulling = false;
   mMat.twoSidedLighting = true;

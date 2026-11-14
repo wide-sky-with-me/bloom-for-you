@@ -99,8 +99,21 @@ def _make_villa_textures():
         256,
         256,
         lambda u, v: (
-            lambda wave, n: (*mix_rgb((0.18, 0.36, 0.66), (0.34, 0.58, 0.88), clamp01(0.45 + 0.32 * wave + (n - 0.5) * 0.32)), 1.0)
-        )(math.sin(u * math.tau * 8.0), fbm2(u * 10, v * 10, seed=104, octaves=3)),
+            lambda u_sc, v_row, n: (
+                lambda arch, lip, tile_var: (
+                    *mix_rgb(
+                        mix_rgb((0.12, 0.34, 0.58), (0.28, 0.58, 0.86), clamp01(0.45 + 0.30 * tile_var + (n - 0.5) * 0.24 - (1.0 - lip) * 0.42)),
+                        (0.08, 0.20, 0.38),
+                        (1.0 - arch) * 0.55 + (1.0 - lip) * 0.45,
+                    ),
+                    1.0,
+                )
+            )(
+                clamp01((1.0 - ((math.hypot(u_sc - 0.5, max(0.0, v_row - 0.15) * 0.75)) * 1.45)) * 4.5 + 0.35),
+                clamp01((v_row - 0.06) * 8.0),
+                math.sin(int(u * 10.0) * 1.9 + int(v * 8.0) * 2.7),
+            )
+        )((u * 10.0 + (0.5 if int(v * 8.0) % 2 else 0.0)) % 1.0, (v * 8.0) % 1.0, fbm2(u * 12, v * 12, seed=104, octaves=3)),
     )
     img_zellige = make_packed_texture(
         TEX_CACHE / "villa_zellige.png",
@@ -744,6 +757,24 @@ def build_villa_estate_glb(out_path: Path) -> None:
     add_beveled_box(bms["coping"], yup(-23.50, 6.06, -2.90), (0.18, 14.18, 0.15), bevel=0.01)
     add_beveled_box(bms["coping"], yup(-11.10, 6.06, 1.32), (0.18, 5.56, 0.15), bevel=0.01)
 
+    # Mondstadt exterior half-timbered walnut beams (strictly proud on outside facades; zero interior clipping)
+    for tx in (-22.9, -19.5, -14.8, -11.6):
+        add_beveled_box(bms["walnut"], yup(tx, m2, 4.145), (0.14, 0.05, h2 - 0.18), bevel=0.008)
+        add_beveled_box(bms["walnut"], yup(tx, m2, -9.945), (0.14, 0.05, h2 - 0.18), bevel=0.008)
+    for tz in (-9.3, -6.2, -3.0, 0.2, 3.4):
+        add_beveled_box(bms["walnut"], yup(-23.545, m2, tz), (0.05, 0.14, h2 - 0.18), bevel=0.008)
+    for bz_h in (6.24, 9.28):
+        add_beveled_box(bms["walnut"], yup(-17.3, bz_h, 4.145), (12.2, 0.05, 0.14), bevel=0.008)
+        add_beveled_box(bms["walnut"], yup(-17.3, bz_h, -9.945), (12.2, 0.05, 0.14), bevel=0.008)
+        add_beveled_box(bms["walnut"], yup(-23.545, bz_h, -2.9), (0.05, 13.8, 0.14), bevel=0.008)
+    # Study Wing exterior timber studs (East & South facades outside plaster)
+    for sz in (-9.2, -5.6, -2.0):
+        add_beveled_box(bms["walnut"], yup(-3.855, m1, sz), (0.05, 0.14, h1 - 0.24), bevel=0.008)
+    for sx in (-9.8, -4.6):
+        add_beveled_box(bms["walnut"], yup(sx, m1, -1.255), (0.14, 0.05, h1 - 0.24), bevel=0.008)
+    add_beveled_box(bms["walnut"], yup(-7.2, 5.92, -1.255), (6.5, 0.05, 0.15), bevel=0.008)
+    add_beveled_box(bms["walnut"], yup(-3.855, 5.92, -5.6), (0.05, 8.5, 0.15), bevel=0.008)
+
     # =========================================================================
     # 3. CROSS-GABLE TERRACOTTA ROOFS + OCULUS DORMER + CHIMNEY
     # =========================================================================
@@ -756,15 +787,20 @@ def build_villa_estate_glb(out_path: Path) -> None:
     _add_roof_tri(bms["roof"], pSW, pSE, rS)
     _add_roof_tri(bms["roof"], pNE, pNW, rN)
     for a, b in ((rS, rN), (pSW, rS), (pSE, rS), (pNW, rN), (pNE, rN)):
-        add_tube_along_curve(bms["terracotta"], [yup(*a), yup(*b)], [0.095, 0.095], 8)
+        add_tube_along_curve(bms["brass"], [yup(*a), yup(*b)], [0.092, 0.092], 8)
+    # Gilded Teyvat rooftop finials along main ridge
+    for fx, fz in ((rS[0], rS[2]), (rN[0], rN[2])):
+        add_cylinder_part(bms["brass"], yup(fx, 11.98, fz), 0.14, 0.025, 0.72, segs=10)
+        add_uv_sphere_part(bms["brass"], yup(fx, 12.02, fz), (0.14, 0.14, 0.14), 10, 8)
 
     # Front Dormer Gable Pediment + Oculus Rose Window
     gBL, gBR, gApex, gBack = (-16.6, 9.42, 4.82), (-11.4, 9.42, 4.82), (-14.0, 11.18, 4.82), (-14.0, 11.18, 1.2)
     _add_roof_tri(bms["plaster"], gBL, gBR, gApex)
     _add_roof_quad(bms["roof"], (-16.8, 9.38, 4.95), gApex, gBack, (-16.8, 9.38, 1.2))
     _add_roof_quad(bms["roof"], gApex, (-11.2, 9.38, 4.95), (-11.2, 9.38, 1.2), gBack)
-    add_tube_along_curve(bms["coping"], [yup(-16.8, 9.38, 4.95), yup(*gApex), yup(-11.2, 9.38, 4.95)], [0.085, 0.085, 0.085], 8)
-    add_tube_along_curve(bms["terracotta"], [yup(*gApex), yup(*gBack)], [0.09, 0.09], 8)
+    add_tube_along_curve(bms["walnut"], [yup(-16.8, 9.38, 4.96), yup(gApex[0], gApex[1], 4.96), yup(-11.2, 9.38, 4.96)], [0.095, 0.095, 0.095], 8)
+    add_tube_along_curve(bms["brass"], [yup(*gApex), yup(*gBack)], [0.095, 0.095], 8)
+    add_cylinder_part(bms["brass"], yup(gApex[0], gApex[1] + 0.34, gApex[2]), 0.11, 0.02, 0.56, segs=10)
 
     oc_pts = [yup(-14.0 + math.cos((i / 24) * math.tau) * 0.46, 10.12 + math.sin((i / 24) * math.tau) * 0.46, 4.85) for i in range(25)]
     add_tube_along_curve(bms["coping"], oc_pts, [0.075] * 25, 8)

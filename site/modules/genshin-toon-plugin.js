@@ -10,15 +10,20 @@ const SKIP_MATERIAL_RE = /water|creekwater|pondwater|glass|windowglass|sheer|foa
 const CHARACTER_MATERIAL_RE =
   /couple_|skin|body|face|hair|top|bottom|shoe|accessory|coat|cuff|vision|vrm|victoria|sakurada|mouth|brow|lash|eyeline|iris|highlight|eyewhite|cloth|ran_|xian_/i;
 const SOFT_FEATURE_RE = /face_features|eye|lash|brow|eyeline|iris|highlight|mouth/i;
+const HAIR_MATERIAL_RE = /hair/i;
+const FACE_SKIN_RE = /face_00_skin|f00_000_00_face|head_skin|^face$/i;
 
+// Shader mode IDs encoded cleanly into uToonParams.w:
+// 0 = World, 1 = Character Cloth/Body, 2 = Character Hair, 3 = Face Skin, 4 = Eye/Face Features
 export class GenshinToonPlugin extends MaterialPluginBase {
   constructor(material, sharedState, options = {}) {
     super(material, "GenshinToon", 200, { GENSHIN_TOON: false }, true, false);
     this._state = sharedState;
     this._boundVersion = -1;
-    this._isCharacter = Boolean(options.isCharacter);
-    this._strength = options.strength ?? (this._isCharacter ? 0.86 : 0.72);
-    this._rimStrength = options.rimStrength ?? (this._isCharacter ? 0.25 : 0.16);
+    this._mode = options.mode ?? (options.isCharacter ? 1 : 0);
+    this._isCharacter = this._mode > 0;
+    this._strength = options.strength ?? (this._isCharacter ? 0.90 : 0.80);
+    this._rimStrength = options.rimStrength ?? (this._isCharacter ? 0.28 : 0.18);
     this._isEnabled = true;
     this.registerForExtraEvents = true;
     this.doNotSerialize = true;
@@ -59,7 +64,7 @@ export class GenshinToonPlugin extends MaterialPluginBase {
       s.nightMix,
       this._strength,
       this._rimStrength,
-      this._isCharacter ? 1.0 : 0.0
+      this._mode
     );
     uniformBuffer.updateFloat4("uToonSunDir", d.x, d.y, d.z, 0.0);
     this._boundVersion = s.version;
@@ -88,43 +93,70 @@ export class GenshinToonPlugin extends MaterialPluginBase {
     float toonNight = clamp(uToonParams.x, 0.0, 1.0);
     float toonStrength = clamp(uToonParams.y, 0.0, 1.0);
     float toonRimScale = uToonParams.z;
-    float toonChar = uToonParams.w;
+    float toonMode = uToonParams.w;
+
+    float isChar = step(0.5, toonMode);
+    float isHair = step(1.5, toonMode) * (1.0 - step(2.5, toonMode));
+    float isFaceSkin = step(2.5, toonMode) * (1.0 - step(3.5, toonMode));
+    float isEyeFeat = step(3.5, toonMode);
 
     float toonNdl = dot(toonN, toonL);
     float toonShadow = numLights > 0.5 ? clamp(aggShadow, 0.0, 1.0) : 1.0;
 
-    float bandEdge = mix(0.18, 0.07, toonChar);
-    float diffuseBand = smoothstep(-0.08, bandEdge, toonNdl);
-    float shadowBand = smoothstep(0.26, 0.72, toonShadow);
-    float litBand = diffuseBand * mix(0.36, 1.0, shadowBand);
+    // 2-band HoyoToon ramp: sharp for cloth/world, ultra-soft SDF emulation for anime face skin
+    float edgeLo = mix(mix(-0.10, -0.07, isChar), -0.34, isFaceSkin);
+    float edgeHi = mix(mix(0.14, 0.05, isChar), 0.26, isFaceSkin);
+    float diffuseBand = smoothstep(edgeLo, edgeHi, toonNdl);
+    float shadowBand = smoothstep(0.24, 0.68, toonShadow);
+    float shadowDepth = mix(mix(0.26, 0.42, isChar), 0.84, max(isFaceSkin, isEyeFeat));
+    float litBand = mix(diffuseBand * mix(shadowDepth, 1.0, shadowBand), 0.94, isEyeFeat * 0.65);
 
-    vec3 dayShadowTint = mix(vec3(0.60, 0.74, 1.00), vec3(0.74, 0.79, 0.98), toonChar);
-    vec3 nightShadowTint = vec3(0.38, 0.48, 0.80);
+    vec3 worldShadowBase = vec3(0.58, 0.71, 0.94);
+    // Protect downward interior ceilings from turning cyan-blue under sky shadow tint
+    float ceilingBounce = smoothstep(-0.12, -0.72, toonN.y);
+    vec3 worldShadow = mix(worldShadowBase, vec3(0.92, 0.89, 0.84), ceilingBounce);
+    vec3 clothShadow = vec3(0.67, 0.72, 0.96);
+    vec3 faceShadow  = vec3(0.92, 0.78, 0.80);
+    vec3 dayShadowTint = mix(mix(worldShadow, clothShadow, isChar), faceShadow, max(isFaceSkin, isEyeFeat));
+    vec3 nightShadowTint = mix(vec3(0.32, 0.44, 0.78), vec3(0.54, 0.58, 0.82), max(isFaceSkin, isEyeFeat));
     vec3 shadowTint = mix(dayShadowTint, nightShadowTint, toonNight);
 
-    vec3 dayLitTint = mix(vec3(1.07, 1.04, 0.96), vec3(1.05, 1.03, 0.99), toonChar);
-    vec3 nightLitTint = vec3(0.84, 0.93, 1.10);
+    vec3 dayLitTint = mix(vec3(1.08, 1.04, 0.94), vec3(1.04, 1.02, 0.99), isChar);
+    vec3 nightLitTint = vec3(0.84, 0.94, 1.12);
     vec3 litTint = mix(dayLitTint, nightLitTint, toonNight);
 
-    vec3 celTint = mix(shadowTint, litTint, litBand);
+    float worldBandLift = mix(litBand, max(litBand, ceilingBounce * 0.46), 1.0 - isChar);
+    vec3 celTint = mix(shadowTint, litTint, worldBandLift);
     vec3 toonAlbedo = surfaceAlbedo * (vLightingIntensity.x * vLightingIntensity.w);
-    float bandLum = mix(0.74, 1.12, litBand);
-    vec3 celDiffuseTarget = toonAlbedo * celTint * (bandLum * 0.68);
-    vec3 celAmbientTarget = toonAlbedo * shadowTint * mix(0.34, 0.42, toonChar);
+    float bandLum = mix(mix(0.62, 1.18, worldBandLift), mix(0.84, 1.08, litBand), max(isFaceSkin, isEyeFeat));
+    vec3 celDiffuseTarget = toonAlbedo * celTint * (bandLum * 0.70);
+    vec3 celAmbientTarget = toonAlbedo * shadowTint * mix(0.34, 0.44, max(isChar, isFaceSkin));
 
-    float flattenMix = toonStrength * mix(0.50, 0.76, toonChar);
+    float flattenMix = toonStrength * mix(0.78, mix(0.88, 0.72, isFaceSkin), isChar);
     finalDiffuse = mix(finalDiffuse, celDiffuseTarget, flattenMix);
-    finalAmbient = mix(finalAmbient, celAmbientTarget, flattenMix * 0.82);
+    finalAmbient = mix(finalAmbient, celAmbientTarget, flattenMix * 0.88);
 
 #ifdef REFLECTION
-    finalIrradiance = mix(finalIrradiance, finalIrradiance * celTint * 1.08, toonStrength * 0.55);
+    finalIrradiance = mix(finalIrradiance, finalIrradiance * celTint * 0.92, toonStrength * 0.65);
 #endif
 
+    // Stepped anime silhouette rim light
     float toonNdotV = max(dot(toonN, toonV), 0.0);
-    float rimPow = mix(3.6, 2.8, toonChar);
-    float rimMask = pow(1.0 - toonNdotV, rimPow) * smoothstep(-0.24, 0.46, toonNdl);
-    vec3 rimColor = mix(vec3(1.00, 0.97, 0.84), vec3(0.54, 0.80, 1.00), toonNight);
+    float fresnelRaw = 1.0 - toonNdotV;
+    float steppedRim = smoothstep(0.58, 0.80, fresnelRaw) * smoothstep(-0.20, 0.42, toonNdl);
+    float softRim = pow(fresnelRaw, 3.2) * smoothstep(-0.22, 0.46, toonNdl);
+    float rimMask = mix(softRim, steppedRim, isChar * (1.0 - isFaceSkin));
+    vec3 rimColor = mix(vec3(1.00, 0.97, 0.84), vec3(0.54, 0.82, 1.00), toonNight);
     finalDiffuse += toonAlbedo * rimColor * (rimMask * toonRimScale * toonStrength);
+
+    // Signature Genshin hair "Angel Ring" anisotropic crown gleam
+    if (isHair > 0.5) {
+      float ringDelta = toonN.y - (0.14 + toonV.y * 0.24);
+      float ringBand = exp(-ringDelta * ringDelta * 26.0);
+      float hairRing = ringBand * smoothstep(0.18, 0.65, toonNdotV) * smoothstep(-0.22, 0.36, toonNdl);
+      vec3 ringCol = mix(vec3(1.00, 0.96, 0.88), vec3(0.72, 0.86, 1.00), toonNight);
+      finalDiffuse += (toonAlbedo * 0.55 + vec3(0.32)) * ringCol * (hairRing * 0.26);
+    }
   }
 #endif
 `,
@@ -141,12 +173,34 @@ function classifyMaterial(mat) {
     return null;
   }
   const isCharacter = CHARACTER_MATERIAL_RE.test(name);
+  if (!isCharacter) {
+    return {
+      isCharacter: false,
+      mode: 0,
+      strength: 0.80,
+      rimStrength: 0.18,
+    };
+  }
   const isSoftFaceFeature = SOFT_FEATURE_RE.test(name);
-  return {
-    isCharacter,
-    strength: isSoftFaceFeature ? 0.45 : isCharacter ? 0.86 : 0.72,
-    rimStrength: isSoftFaceFeature ? 0.06 : isCharacter ? 0.25 : 0.16,
-  };
+  const isHair = HAIR_MATERIAL_RE.test(name);
+  const isFaceSkin = !isSoftFaceFeature && (FACE_SKIN_RE.test(name) || (/face/i.test(name) && /skin/i.test(name)));
+  let mode = 1;
+  let strength = 0.90;
+  let rimStrength = 0.30;
+  if (isSoftFaceFeature) {
+    mode = 4;
+    strength = 0.45;
+    rimStrength = 0.05;
+  } else if (isHair) {
+    mode = 2;
+    strength = 0.90;
+    rimStrength = 0.24;
+  } else if (isFaceSkin) {
+    mode = 3;
+    strength = 0.84;
+    rimStrength = 0.10;
+  }
+  return { isCharacter: true, mode, strength, rimStrength };
 }
 
 /**

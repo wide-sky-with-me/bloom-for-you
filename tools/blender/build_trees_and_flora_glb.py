@@ -102,23 +102,28 @@ def _make_bark_textures():
 
 
 def _make_foliage_textures():
-    """Paint crisp botanical leaf/blossom cluster sprite cards with baked species hues."""
-    # Broadleaf 9-leaf cluster card
+    """Paint lush multi-layered Genshin Teyvat leaf/blossom cluster cards."""
+    # Broadleaf 14-leaf overlapping painterly cluster card (dense, zero sparse triangles)
     leaves = [
-        (0.50, 0.72, 0.0, 0.24, 0.13, 0.96),
-        (0.32, 0.63, -0.58, 0.23, 0.13, 0.90),
-        (0.68, 0.63, 0.58, 0.23, 0.13, 0.92),
-        (0.24, 0.43, -1.05, 0.22, 0.13, 0.84),
-        (0.76, 0.43, 1.05, 0.22, 0.13, 0.86),
-        (0.50, 0.48, 0.12, 0.22, 0.13, 0.98),
-        (0.35, 0.26, -0.78, 0.20, 0.12, 0.80),
-        (0.65, 0.26, 0.78, 0.20, 0.12, 0.82),
-        (0.50, 0.24, 0.0, 0.19, 0.11, 0.78),
+        (0.50, 0.78, 0.0, 0.25, 0.14, 0.98),
+        (0.32, 0.70, -0.52, 0.24, 0.14, 0.92),
+        (0.68, 0.70, 0.52, 0.24, 0.14, 0.94),
+        (0.20, 0.54, -0.95, 0.24, 0.14, 0.88),
+        (0.80, 0.54, 0.95, 0.24, 0.14, 0.90),
+        (0.42, 0.58, -0.24, 0.24, 0.15, 0.99),
+        (0.59, 0.56, 0.26, 0.24, 0.15, 0.99),
+        (0.30, 0.39, -0.78, 0.23, 0.14, 0.84),
+        (0.70, 0.39, 0.78, 0.23, 0.14, 0.86),
+        (0.50, 0.43, 0.05, 0.25, 0.15, 0.96),
+        (0.22, 0.28, -1.18, 0.21, 0.13, 0.78),
+        (0.78, 0.28, 1.18, 0.21, 0.13, 0.80),
+        (0.41, 0.23, -0.45, 0.22, 0.13, 0.80),
+        (0.60, 0.23, 0.45, 0.22, 0.13, 0.82),
     ]
 
     def _broadleaf_px(u: float, v: float, base_rgb: tuple, tip_rgb: tuple) -> tuple:
         best_d = 9.0
-        best_shade = 0.8
+        best_shade = 0.82
         best_tip = 0.5
         for cx, cy, ang, lw, lh, val in leaves:
             dx = u - cx
@@ -126,28 +131,35 @@ def _make_foliage_textures():
             ca, sa = math.cos(ang), math.sin(ang)
             lx = (dx * ca + dy * sa) / lh
             ly = (-dx * sa + dy * ca) / lw
-            taper = 1.0 - 0.38 * clamp01(lx * 0.5 + 0.5)
-            d = math.sqrt(lx * lx + (ly / max(0.35, taper)) ** 2)
+            taper = 1.0 - 0.34 * clamp01(lx * 0.5 + 0.5)
+            d = math.sqrt(lx * lx + (ly / max(0.36, taper)) ** 2)
             if d < best_d:
                 best_d = d
                 best_tip = clamp01(lx * 0.5 + 0.5)
-                midrib = math.exp(-abs(ly) * 14.0) * 0.12
-                best_shade = val * (0.74 + 0.26 * best_tip) + midrib
-        alpha = 1.0 - clamp01((best_d - 0.92) / 0.12)
-        n = (fbm2(u * 14.0, v * 14.0, seed=108, octaves=2) - 0.5) * 0.10
+                midrib = math.exp(-abs(ly) * 14.0) * 0.10
+                edge_rim = clamp01((d - 0.65) * 1.4) * 0.14
+                best_shade = val * (0.76 + 0.24 * best_tip) + midrib + edge_rim
+        alpha = 1.0 - clamp01((best_d - 0.95) / 0.10)
+        n = (fbm2(u * 12.0, v * 12.0, seed=108, octaves=2) - 0.5) * 0.08
         s = clamp01(best_shade + n)
-        c = mix_rgb(base_rgb, tip_rgb, best_tip * 0.65)
+        c = mix_rgb(base_rgb, tip_rgb, best_tip * 0.72)
         return (clamp01(c[0] * s), clamp01(c[1] * s), clamp01(c[2] * s), alpha)
 
-    # Blossom 7-cluster sakura sprite card
+    # Blossom 13-cluster fluffy Teyvat sakura cloud sprite card
     florets = [
-        (0.50, 0.68, 0.20, 0.98),
-        (0.30, 0.55, 0.18, 0.90),
-        (0.70, 0.55, 0.18, 0.92),
-        (0.49, 0.45, 0.19, 1.00),
-        (0.28, 0.32, 0.17, 0.84),
-        (0.71, 0.32, 0.17, 0.86),
-        (0.50, 0.24, 0.16, 0.82),
+        (0.50, 0.76, 0.21, 0.98),
+        (0.31, 0.68, 0.20, 0.94),
+        (0.69, 0.68, 0.20, 0.95),
+        (0.21, 0.51, 0.19, 0.90),
+        (0.79, 0.51, 0.19, 0.91),
+        (0.42, 0.56, 0.22, 1.00),
+        (0.58, 0.55, 0.22, 1.00),
+        (0.32, 0.38, 0.20, 0.88),
+        (0.68, 0.38, 0.20, 0.90),
+        (0.50, 0.41, 0.21, 0.97),
+        (0.23, 0.25, 0.18, 0.82),
+        (0.77, 0.25, 0.18, 0.84),
+        (0.50, 0.22, 0.19, 0.86),
     ]
 
     def _blossom_px(u: float, v: float, outer_rgb: tuple, center_rgb: tuple) -> tuple:
@@ -157,15 +169,20 @@ def _make_foliage_textures():
             dx = u - cx
             dy = v - cy
             r = math.hypot(dx, dy) / rad
-            ang = math.atan2(dy, dx) + idx * 0.6
-            petal_r = 0.86 + 0.22 * math.cos(ang * 5.0)
+            ang = math.atan2(dy, dx) + idx * 0.65
+            petal_r = 0.88 + 0.20 * math.cos(ang * 5.0)
             d = r / petal_r
             if d < best_d:
                 best_d = d
-                center_mask = math.exp(-(r * r) * 14.0)
-                pcol = (lum * outer_rgb[0], lum * outer_rgb[1], lum * outer_rgb[2])
-                col = mix_rgb(pcol, center_rgb, clamp01((1.0 - r) * 0.42 + center_mask * 0.68))
-        alpha = 1.0 - clamp01((best_d - 0.92) / 0.12)
+                center_mask = math.exp(-(r * r) * 12.0)
+                rim_bright = 1.0 + 0.08 * clamp01(r - 0.55)
+                pcol = (
+                    clamp01(lum * rim_bright * outer_rgb[0]),
+                    clamp01(lum * rim_bright * outer_rgb[1]),
+                    clamp01(lum * rim_bright * outer_rgb[2]),
+                )
+                col = mix_rgb(pcol, center_rgb, clamp01((1.0 - r) * 0.44 + center_mask * 0.72))
+        alpha = 1.0 - clamp01((best_d - 0.95) / 0.10)
         return (*col, alpha)
 
     # Cypress feathery plume sprite card
@@ -189,15 +206,15 @@ def _make_foliage_textures():
         return (*c, 1.0)
 
     imgs = {
-        "cherry_a": make_packed_texture(TEX_CACHE / "foliage_cherry_a.png", 128, 128, lambda u, v: _blossom_px(u, v, (1.00, 0.78, 0.90), (0.96, 0.48, 0.72))),
-        "cherry_b": make_packed_texture(TEX_CACHE / "foliage_cherry_b.png", 128, 128, lambda u, v: _blossom_px(u, v, (1.00, 0.88, 0.94), (0.98, 0.60, 0.78))),
-        "cherry_core": make_packed_texture(TEX_CACHE / "foliage_cherry_core.png", 128, 128, lambda u, v: _core_px(u, v, (0.78, 0.42, 0.60), (0.96, 0.68, 0.82))),
+        "cherry_a": make_packed_texture(TEX_CACHE / "foliage_cherry_a.png", 128, 128, lambda u, v: _blossom_px(u, v, (1.00, 0.80, 0.91), (0.95, 0.38, 0.66))),
+        "cherry_b": make_packed_texture(TEX_CACHE / "foliage_cherry_b.png", 128, 128, lambda u, v: _blossom_px(u, v, (1.00, 0.90, 0.96), (0.97, 0.52, 0.76))),
+        "cherry_core": make_packed_texture(TEX_CACHE / "foliage_cherry_core.png", 128, 128, lambda u, v: _core_px(u, v, (0.74, 0.34, 0.56), (0.98, 0.62, 0.80))),
     }
 
     species_greens = {
-        "oak": ((0.26, 0.66, 0.28), (0.42, 0.84, 0.36), (0.36, 0.76, 0.32), (0.56, 0.92, 0.42), (0.15, 0.44, 0.20), (0.28, 0.64, 0.28)),
-        "birch": ((0.84, 0.62, 0.18), (0.98, 0.80, 0.28), (0.90, 0.70, 0.22), (1.00, 0.88, 0.38), (0.56, 0.38, 0.12), (0.78, 0.56, 0.18)),
-        "olive": ((0.30, 0.66, 0.48), (0.48, 0.84, 0.62), (0.38, 0.74, 0.56), (0.58, 0.89, 0.68), (0.18, 0.44, 0.34), (0.30, 0.62, 0.46)),
+        "oak": ((0.20, 0.58, 0.24), (0.48, 0.90, 0.34), (0.30, 0.72, 0.28), (0.62, 0.96, 0.40), (0.12, 0.36, 0.18), (0.24, 0.58, 0.26)),
+        "birch": ((0.86, 0.58, 0.14), (1.00, 0.84, 0.28), (0.92, 0.68, 0.18), (1.00, 0.91, 0.38), (0.54, 0.34, 0.10), (0.78, 0.54, 0.16)),
+        "olive": ((0.22, 0.62, 0.44), (0.46, 0.86, 0.62), (0.32, 0.72, 0.52), (0.56, 0.92, 0.68), (0.14, 0.38, 0.30), (0.26, 0.56, 0.42)),
     }
     for sp, (a0, a1, b0, b1, c0, c1) in species_greens.items():
         imgs[f"{sp}_a"] = make_packed_texture(TEX_CACHE / f"foliage_{sp}_a.png", 128, 128, lambda u, v, d0=a0, d1=a1: _broadleaf_px(u, v, d0, d1))
@@ -369,17 +386,17 @@ def _build_canopy_tree(name: str, sp: str, seed: int, bark_mat, leaf_mat_a, leaf
                 add_uv_sphere_part(bm, yup(0.0, ty, 0.0), (rad, rad, 0.72), u_segs=8, v_rings=6, noise_amp=0.14, noise_freq=2.6, seed=seed + tier)
             return
 
-        r_core = 0.50 if sp == "birch" else (0.72 if sp == "oak" else 0.58)
+        r_core = 0.34 if sp == "birch" else (0.48 if sp == "oak" else 0.40)
         tips_core = list(trunk_tips[:6]) + [yup(0.0, h_trunk + 1.85, 0.0)]
         for idx, tip in enumerate(tips_core):
-            sc = 0.85 + 0.25 * ((idx * 37 + seed) % 5) / 4.0
-            add_uv_sphere_part(bm, tip, (r_core * sc, r_core * sc, r_core * 0.65 * sc), u_segs=8, v_rings=6, noise_amp=0.16, noise_freq=2.4, seed=seed + idx)
+            sc = 0.82 + 0.22 * ((idx * 37 + seed) % 5) / 4.0
+            add_uv_sphere_part(bm, tip, (r_core * sc, r_core * sc, r_core * 0.62 * sc), u_segs=8, v_rings=6, noise_amp=0.14, noise_freq=2.4, seed=seed + idx)
 
     def build_foliage(bm, subset: int):
         uv_layer = bm.loops.layers.uv.verify()
         col_layer = bm.loops.layers.color.verify()
         if sp == "cypress":
-            n_plumes = 38
+            n_plumes = 44
             for pi in range(n_plumes):
                 if leaf_mat_b is not None and (pi % 2 != subset):
                     continue
@@ -390,59 +407,62 @@ def _build_canopy_tree(name: str, sp: str, seed: int, bark_mat, leaf_mat_a, leaf
                 az = pi * 2.39996 + (seed % 7) * 0.4
                 dir_out = Vector((math.cos(az), -math.sin(az), 0.34)).normalized()
                 ctr = yup(math.cos(az) * rad, ty, math.sin(az) * rad)
-                w_c = (0.50 + 0.20 * profile) * (1.0 - 0.15 * t)
-                h_c = 0.76 + 0.22 * profile
-                ao_lo = 0.68 + 0.14 * t
+                w_c = (0.58 + 0.22 * profile) * (1.0 - 0.14 * t)
+                h_c = 0.84 + 0.24 * profile
+                ao_lo = 0.62 + 0.16 * t
                 ao_hi = 0.88 + 0.12 * t
-                _add_cupped_leaf_card(bm, ctr, dir_out, w_c, h_c, 0.14, (rng.random() - 0.5) * 0.28, ao_lo, ao_hi, uv_layer, col_layer)
+                _add_cupped_leaf_card(bm, ctr, dir_out, w_c, h_c, 0.16, (rng.random() - 0.5) * 0.28, ao_lo, ao_hi, uv_layer, col_layer)
             return
 
         if sp == "cherry":
-            card_sz = 1.28
+            card_sz = 1.68
         elif sp == "oak":
-            card_sz = 1.56
+            card_sz = 1.94
         elif sp == "birch":
-            card_sz = 1.18
+            card_sz = 1.54
         else:
-            card_sz = 1.38
+            card_sz = 1.74
 
         tips = list(trunk_tips) + [
-            yup(0.0, h_trunk + 2.10, 0.0),
-            yup(0.55, h_trunk + 1.88, -0.42),
-            yup(-0.55, h_trunk + 1.82, 0.48),
-            yup(0.25, h_trunk + 1.65, 0.62),
+            yup(0.0, h_trunk + 2.15, 0.0),
+            yup(0.62, h_trunk + 1.88, -0.46),
+            yup(-0.62, h_trunk + 1.82, 0.52),
+            yup(0.28, h_trunk + 1.65, 0.66),
+            yup(-0.34, h_trunk + 1.55, -0.58),
         ]
-        # 5 well-distributed outward normals (umbrella cap + 4 oblique rosette facets) around each bough tip
+        # 7 layered cloud normals per tip (crown cap + 4 upper billows + 2 lower skirt billows)
         rosette_dirs = [
             Vector((0.0, 0.0, 1.0)),
-            Vector((0.82, 0.32, 0.48)).normalized(),
-            Vector((-0.82, 0.34, 0.46)).normalized(),
-            Vector((0.28, -0.84, 0.46)).normalized(),
-            Vector((-0.34, 0.82, 0.46)).normalized(),
+            Vector((0.78, 0.28, 0.56)).normalized(),
+            Vector((-0.78, 0.30, 0.55)).normalized(),
+            Vector((0.26, -0.80, 0.54)).normalized(),
+            Vector((-0.30, 0.78, 0.55)).normalized(),
+            Vector((0.68, -0.62, 0.39)).normalized(),
+            Vector((-0.64, -0.66, 0.39)).normalized(),
         ]
         for idx, tip in enumerate(tips):
             base_yaw = rng.random() * math.tau
             cy, sy = math.cos(base_yaw), math.sin(base_yaw)
             tip_h = clamp01((tip.z - h_trunk) / 2.4)
-            ao_base = 0.64 + 0.18 * tip_h
+            ao_base = 0.58 + 0.20 * tip_h
             for ri, d_loc in enumerate(rosette_dirs):
                 card_id = idx * len(rosette_dirs) + ri
                 if leaf_mat_b is not None and (card_id % 2 != subset):
                     continue
                 d_rot = Vector((d_loc.x * cy - d_loc.y * sy, d_loc.x * sy + d_loc.y * cy, d_loc.z)).normalized()
-                offset_dist = 0.24 * card_sz if ri == 0 else 0.34 * card_sz
+                offset_dist = 0.20 * card_sz if ri == 0 else (0.30 * card_sz if ri < 5 else 0.27 * card_sz)
                 ctr = tip + d_rot * offset_dist
-                sz = card_sz * rng.uniform(0.84, 1.16)
+                sz = card_sz * rng.uniform(0.86, 1.18)
                 _add_cupped_leaf_card(
                     bm,
                     ctr,
                     d_rot,
                     sz,
-                    sz * rng.uniform(0.90, 1.10),
-                    sz * 0.16,
+                    sz * rng.uniform(0.92, 1.12),
+                    sz * 0.18,
                     rng.uniform(-0.8, 0.8),
                     ao_base,
-                    clamp01(ao_base + 0.28),
+                    clamp01(ao_base + 0.34),
                     uv_layer,
                     col_layer,
                 )

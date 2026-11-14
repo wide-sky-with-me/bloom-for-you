@@ -24,6 +24,7 @@ import {
   getTerrainNormal,
   getCreekCenterX,
   getPondNormalizedRadius,
+  distToPolyline2D,
   registerWalkZone,
   registerBoxCollider,
   registerCircleCollider,
@@ -112,18 +113,21 @@ function buildPeninsulaTerrain(scene, root, shadowGen) {
   VertexData.ComputeNormals(positions, indices, normals, { useRightHandedSystem: true });
 
   // Genshin Impact Teyvat Coastal Peninsula Palette (Mondstadt emerald meadow + warm cream sand + cel slate cliffs)
-  const cDeepBed = hexToColor3(0x3a8490);
+  const cDeepBed = hexToColor3(0x2d7b8c);
   const cShallowBed = hexToColor3(0x88cfc4);
   const cWetSand = hexToColor3(0xdcc292);
   const cDrySand = hexToColor3(0xf6e6be);
-  const cCliffLight = hexToColor3(0x737994);
-  const cCliffDark = hexToColor3(0x4c536e);
-  const cGrassMid = hexToColor3(0x52b846);
-  const cGrassSun = hexToColor3(0x82dc52);
-  const cGrassDeep = hexToColor3(0x3a944a);
+  const cCliffLight = hexToColor3(0x989ca8);
+  const cCliffDark = hexToColor3(0x4b556e);
+  const cGrassMid = hexToColor3(0x56b93c);
+  const cGrassSun = hexToColor3(0x92e04e);
+  const cGrassDeep = hexToColor3(0x2d7b40);
+  const cTrailCenter = hexToColor3(0xf4ce8c);
+  const cTrailEdge = hexToColor3(0x9cb458);
   const cCreekCobble = hexToColor3(0x6d9e8e);
-  const cQuayUnder = hexToColor3(0xaab4c2);
+  const cQuayUnder = hexToColor3(0xb6bcc6);
   const cPondBed = hexToColor3(0xb8eee6);
+  const allTrails = [WEST_GAZEBO_TRAIL, NORTH_WINDMILL_TRAIL, EAST_HARBOR_BRIDGE_TRAIL, ...COTTAGE_SPUR_TRAILS];
 
   for (let i = 0; i < count; i += 1) {
     const x = positions[i * 3 + 0];
@@ -149,9 +153,23 @@ function buildPeninsulaTerrain(scene, root, shadowGen) {
     } else if (inQuay && y < 1.52) {
       col = cQuayUnder.clone();
     } else {
-      const sunMix = clamp(0.5 + n1 * 0.65, 0, 1);
-      const shadeMix = clamp(0.35 - n2 * 0.5 + smoothstep(6.0, 16.0, y) * 0.22, 0, 1);
-      col = Color3.Lerp(Color3.Lerp(cGrassMid, cGrassSun, sunMix), cGrassDeep, shadeMix * 0.62);
+      const sunMix = clamp(0.48 + n1 * 0.72, 0, 1);
+      const shadeMix = clamp(0.38 - n2 * 0.54 + smoothstep(6.0, 16.0, y) * 0.22, 0, 1);
+      col = Color3.Lerp(Color3.Lerp(cGrassMid, cGrassSun, sunMix), cGrassDeep, shadeMix * 0.66);
+      // Mondstadt warm golden-ochre dirt & verge beneath all stepping-stone footpaths
+      if (y > 1.55 && ny > 0.74) {
+        let minTrailD = 99.0;
+        for (let ti = 0; ti < allTrails.length; ti += 1) {
+          const td = distToPolyline2D(x, z, allTrails[ti]);
+          if (td < minTrailD) minTrailD = td;
+        }
+        if (minTrailD < 2.25) {
+          const coreW = 1.0 - smoothstep(0.55, 1.45, minTrailD);
+          const vergeW = 1.0 - smoothstep(1.10, 2.25, minTrailD);
+          col = Color3.Lerp(col, cTrailEdge, vergeW * 0.65);
+          col = Color3.Lerp(col, Color3.Lerp(cTrailCenter, cTrailEdge, clamp(n2 * 0.35 + 0.25, 0, 1)), coreW * 0.88);
+        }
+      }
     }
 
     if (z >= -112.0 && z <= -23.5) {
@@ -253,10 +271,11 @@ function buildCourtyardAndTrails(scene, root) {
     specularIntensity: 0.52,
   });
   const limestoneMat = makePbrMat("CourtyardLimestoneMat", scene, {
-    color: 0xe5dfd2,
-    roughness: 0.64,
-    bumpTexture: getGraniteSlabNormalTexture(scene, 4, 4),
-    bumpLevel: 0.32,
+    color: 0xf4ead6,
+    roughness: 0.62,
+    albedoTexture: getGraniteSlabTexture(scene, 5, 5),
+    bumpTexture: getGraniteSlabNormalTexture(scene, 5, 5),
+    bumpLevel: 0.34,
   });
   const ironMat = makePbrMat("CourtyardIronMat", scene, { color: 0x222629, roughness: 0.42, metallic: 0.82 });
   const brassMat = makePbrMat("CourtyardBrassMat", scene, { color: 0xcba358, roughness: 0.25, metallic: 0.88 });
@@ -664,7 +683,7 @@ function buildDistantHorizonAndArchipelago(scene, root, fleetContainer) {
     const ca = Math.cos(sp.ang);
     const sa = Math.sin(sp.ang);
     for (let r = 0; r <= segV; r += 1) {
-      const rv = r / segV;
+      const rv = r === 0 ? 0.015 : r / segV;
       for (let t = 0; t <= segU; t += 1) {
         const ang = (t / segU) * Math.PI * 2;
         const wobble = 1.0 + 0.18 * Math.sin(ang * 3 + sp.cx) + 0.1 * Math.cos(ang * 5);
@@ -737,9 +756,10 @@ function buildDistantHorizonAndArchipelago(scene, root, fleetContainer) {
   islMesh.material = hillMat;
   islMesh.isPickable = false;
 
-  // Across-Bay Harbor Village Buildings & Campanile Bell Tower on Island 0 (248, -74) (Mondstadt ivory + azure slate roofs)
+  // Across-Bay Harbor Village Buildings & Pitched-Roof Cottages on Island 0 (248, -74) (Mondstadt ivory + azure slate roofs)
   const vWallMat = makePbrMat("VillageWallMat", scene, { color: 0xfbf4e4, roughness: 0.85 });
-  const vRoofMat = makePbrMat("VillageRoofMat", scene, { color: 0x3b6cb8, roughness: 0.74 });
+  const vTimberMat = makePbrMat("VillageTimberMat", scene, { color: 0x4b3320, roughness: 0.78 });
+  const vRoofMat = makePbrMat("VillageRoofMat", scene, { color: 0x265ea8, roughness: 0.72 });
   const villageGlowMat = makePbrMat("VillageGlowMat", scene, {
     color: 0xffe8b0,
     emissive: 0xffb85c,
@@ -769,9 +789,19 @@ function buildDistantHorizonAndArchipelago(scene, root, fleetContainer) {
     house.material = vWallMat;
     house.parent = hor;
     house.isPickable = false;
-    const roof = CreateBox(`VillageRoof_${h}`, { width: w + 0.4, height: 0.9, depth: w * 0.9 }, scene);
-    roof.position.set(bx, surfY + bh + 0.4, bz);
-    roof.rotation.y = house.rotation.y;
+    const belt = CreateBox(`VillageBelt_${h}`, { width: w + 0.14, height: 0.28, depth: w * 0.85 + 0.14 }, scene);
+    belt.position.set(bx, surfY + bh * 0.94, bz);
+    belt.rotation.y = house.rotation.y;
+    belt.material = vTimberMat;
+    belt.parent = hor;
+    belt.isPickable = false;
+    const roof = CreateCylinder(
+      `VillageRoof_${h}`,
+      { diameterTop: 0.16, diameterBottom: w * 1.52, height: 2.1 + rng() * 0.9, tessellation: 4 },
+      scene
+    );
+    roof.position.set(bx, surfY + bh + 1.02, bz);
+    roof.rotation.y = house.rotation.y + Math.PI * 0.25;
     roof.material = vRoofMat;
     roof.parent = hor;
     roof.isPickable = false;
