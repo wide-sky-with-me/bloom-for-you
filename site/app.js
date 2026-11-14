@@ -1,34 +1,34 @@
 // 《鸢尾湾·花与海之约》 — 海景花墅、莫奈花园与群岛海湾庄园
-// Realistic PBR Naturalism + Monet Garden Palette + Golden Hour / Moonlit Night + Offline-Ready Architecture.
+// Babylon.js 9.36.0 + Havok 1.3.14 Physics + Blender 4.0.2 Sculpted/Rigged GLBs + Golden Hour / Moonlit Night.
+
+import { Engine } from "@babylonjs/core/Engines/engine";
+import { Scene } from "@babylonjs/core/scene";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import "@babylonjs/core/Culling/ray";
+import "@babylonjs/core/Collisions/pickingInfo";
+import "@babylonjs/core/Loading/loadingScreen";
 
 import {
-  THREE,
   clamp,
   lerp,
   POND_CONFIG,
   SWING_CONFIG,
   clearNavigationRegistry,
   isPositionWalkable,
-} from "./modules/pbr-kit.js";
-import {
-  createExplorationControls,
-  findNearestWalkableSpot,
-} from "./modules/exploration-controls.js";
-import {
-  SUN_DIRECTION,
-  MOON_DIRECTION,
-  createRealisticSkyEnvironment,
-  buildRealisticOceanAndSky,
-} from "./modules/realistic-ocean-sky.js";
-import { buildHarborAndEstate } from "./modules/harbor-and-estate.js";
-import { buildCoastalVilla } from "./modules/coastal-villa.js";
-import { buildBotanicalFlora } from "./modules/botanical-flora.js";
-import { buildSecretGardensAndPond } from "./modules/secret-gardens-and-pond.js";
-import { buildDistantHorizon } from "./modules/distant-horizon.js";
+} from "./modules/world-spatial.js";
+import { initHavokPhysics, loadAllGameModels } from "./modules/assets-loader.js";
+import { buildOceanAndSky } from "./modules/ocean-sky-stage.js";
+import { buildTerrainAndDistantHorizon } from "./modules/island-terrain-and-horizon.js";
+import { buildFloraAndFX } from "./modules/flora-and-fx.js";
+import { buildHarborVillaWorld } from "./modules/harbor-villa-world.js";
+import { createExplorationControls, findNearestWalkableSpot } from "./modules/exploration-camera.js";
+import { createCoupleMode } from "./modules/couple-mode-babylon.js";
 import { resolveGiftConfig } from "./modules/gift-config.js";
 import { createHarborAudio } from "./audio.js";
-import { preloadCoupleParts } from "./modules/couple-characters.js";
-import { createCoupleMode } from "./modules/couple-mode.js";
 
 function populateLetterModal(gift) {
   if (!gift) return;
@@ -86,137 +86,97 @@ async function init() {
   const btnReset = document.getElementById("btn-reset");
   const debugHud = document.getElementById("debug-hud");
 
-  setLoadingProgress(0.1, "正在初始化物理光照与海湾天空…");
+  setLoadingProgress(0.08, "正在唤醒 Babylon 9.36 WebGL2 与 Havok 物理引擎…");
   clearNavigationRegistry();
 
-  const renderer = new THREE.WebGLRenderer({
+  const engine = new Engine(
     canvas,
-    antialias: true,
-    alpha: false,
-    powerPreference: "high-performance",
-  });
-  const gl = renderer.getContext();
-  const dbg = gl.getExtension("WEBGL_debug_renderer_info");
-  const gpuRendererName = String(
-    (dbg && gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) || gl.getParameter(gl.RENDERER) || "WebGL2"
+    true,
+    {
+      preserveDrawingBuffer: false,
+      stencil: true,
+      powerPreference: "high-performance",
+      antialias: true,
+      disableWebGL2Support: false,
+    },
+    true
   );
-  const isSoftware = /SwiftShader|llvmpipe|Software/i.test(gpuRendererName);
 
-  renderer.setPixelRatio(isSoftware ? 1 : Math.min(window.devicePixelRatio || 1, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight, false);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.04;
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFShadowMap;
-  if (isSoftware) {
-    renderer.shadowMap.autoUpdate = false;
-    renderer.shadowMap.needsUpdate = true;
+  const gl = engine._gl;
+  let gpuRendererName = "WebGL2";
+  if (gl) {
+    const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+    gpuRendererName = String(
+      (dbg && gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) || gl.getParameter(gl.RENDERER) || "WebGL2"
+    );
   }
+  const isSoftware = /SwiftShader|llvmpipe|Software/i.test(gpuRendererName);
+  engine.setHardwareScalingLevel(isSoftware ? 1 : 1 / Math.min(window.devicePixelRatio || 1, 2));
 
-  const fogColorHex = 0xefd7be;
-  const fogDensity = 0.00064;
-  renderer.setClearColor(fogColorHex, 1);
-
-  const scene = new THREE.Scene();
-  scene.environment = createRealisticSkyEnvironment(renderer);
-  scene.environmentIntensity = 0.72;
-  scene.fog = new THREE.FogExp2(fogColorHex, fogDensity);
+  const scene = new Scene(engine);
+  scene.useRightHandedSystem = true;
+  scene.clearColor = new Color4(0.86, 0.80, 0.75, 1.0);
+  scene.blockMaterialDirtyMechanism = true;
 
   const isPortrait = window.innerWidth < window.innerHeight;
-  const camera = new THREE.PerspectiveCamera(
-    isPortrait ? 62 : 52,
-    window.innerWidth / Math.max(1, window.innerHeight),
-    0.14,
-    2200
-  );
+  const camera = new UniversalCamera("MainCamera", new Vector3(11.9, 38.5, 62.2), scene);
+  camera.fov = ((isPortrait ? 62 : 52) * Math.PI) / 180;
+  camera.minZ = 0.14;
+  camera.maxZ = 2400;
+  camera.inputs.clear();
+  scene.activeCamera = camera;
 
-  // Warm Golden Hour angled sunlight + Mediterranean sage/limestone hemisphere fill
-  const hemiLight = new THREE.HemisphereLight(0xfce6ce, 0x6d8167, 1.02);
-  hemiLight.position.set(0, 80, 0);
-  scene.add(hemiLight);
-
-  const sunLight = new THREE.DirectionalLight(0xffdca8, 2.45);
-  sunLight.position.copy(SUN_DIRECTION).multiplyScalar(140);
-  sunLight.castShadow = true;
-  const shadowMapDim = isSoftware ? 1024 : 2048;
-  sunLight.shadow.mapSize.set(shadowMapDim, shadowMapDim);
-  sunLight.shadow.camera.near = 25;
-  sunLight.shadow.camera.far = 290;
-  // Tightly focused on foreground & midground core estate (Section 七.5)
-  const shadowExtent = 86;
-  sunLight.shadow.camera.left = -shadowExtent;
-  sunLight.shadow.camera.right = shadowExtent;
-  sunLight.shadow.camera.top = shadowExtent;
-  sunLight.shadow.camera.bottom = -shadowExtent;
-  sunLight.shadow.bias = -0.00035;
-  sunLight.shadow.normalBias = 0.03;
-  scene.add(sunLight);
-
-  // Build World Subsystems with concise loading progress updates
-  const worldRoot = new THREE.Group();
-  worldRoot.name = "IrisBayCoastalEstateWorld";
-  scene.add(worldRoot);
-
-  const oceanSky = buildRealisticOceanAndSky({ fogColor: fogColorHex, fogDensity });
-  worldRoot.add(oceanSky.group);
-  setLoadingProgress(0.22, "正在构建群岛海湾、对岸石屋小镇与环湾山脉…");
-
-  const distantHorizon = buildDistantHorizon();
-  worldRoot.add(distantHorizon.group);
-  setLoadingProgress(0.36, "正在铺设蜿蜒半岛、花岗岩码头、金色沙滩与亲水木栈道…");
-
-  const estate = buildHarborAndEstate();
-  worldRoot.add(estate.group);
-  setLoadingProgress(0.5, "正在建造可步入海景花墅与室内陈设…");
-
-  const villa = buildCoastalVilla();
-  worldRoot.add(villa.group);
-  setLoadingProgress(0.64, "正在栽植莫奈花园玫瑰、鸢尾、绣球与坡地草甸…");
-
-  const flora = buildBotanicalFlora();
-  worldRoot.add(flora.group);
-
-  const [secretGardens] = await Promise.all([
-    buildSecretGardensAndPond({
-      villaGroup: villa.group,
-      onProgress(ratio) {
-        setLoadingProgress(0.68 + ratio * 0.28, "正在唤醒叠石瀑布、海蚀岩礁、双人建模与繁花秋千…");
-      },
-    }),
-    preloadCoupleParts(),
-    estate.loadCoastalPhotogrammetry(),
-  ]);
-  worldRoot.add(secretGardens.group);
-
-  // Build explicit raycast target whitelist (Section 七.8):
-  // Only interactive proxies + walkable Peninsula/Villa/Boardwalk surfaces; never distant horizon, sky, ocean, or 29k flora instances.
-  const raycastTargets = [];
-  const raycastSet = new Set();
-  const addRayTarget = (obj) => {
-    if (obj && !raycastSet.has(obj)) {
-      raycastSet.add(obj);
-      raycastTargets.push(obj);
-    }
-  };
-  worldRoot.traverse((obj) => {
-    if (obj.userData && obj.userData.interactive) {
-      addRayTarget(obj);
-    }
-  });
-  addRayTarget(villa.group);
-  for (const child of estate.group.children) {
-    if (
-      child.name === "CoastalTerrainAndHorizon" ||
-      child.name === "CourtyardAndTrails" ||
-      child.name === "HarborQuayAndBoathouse" ||
-      child.name === "NorthCreekAndArchedBridge" ||
-      child.name === "GoldenBeachAndBoardwalk" ||
-      child.name === "CliffsideMarbleGazebo"
-    ) {
-      addRayTarget(child);
-    }
+  // Initialize Havok Physics V2
+  let havokCtrl = null;
+  let havokError = null;
+  try {
+    havokCtrl = await initHavokPhysics(scene);
+  } catch (err) {
+    havokError = err;
+    console.warn("[app] Havok initialization fallback:", err);
   }
+
+  setLoadingProgress(0.18, "正在加载 48 组精雕与动作绑定三维模型…");
+  const containers = await loadAllGameModels(scene, (ratio, key) => {
+    const r = clamp(Number(ratio) || 0, 0, 1);
+    const frac = 0.18 + 0.50 * r;
+    setLoadingProgress(frac, `正在解析三维模型 (${Math.round(r * 100)}% · ${key || ""})…`);
+  });
+
+  setLoadingProgress(0.72, "正在构建海岸大气散射、海浪与半圆形山湾…");
+  const oceanSky = buildOceanAndSky(scene);
+  const horizon = buildTerrainAndDistantHorizon(scene, containers, oceanSky.shadowGen);
+
+  setLoadingProgress(0.84, "正在栽植莫奈花园玫瑰、鸢尾、绣球与风格化林木…");
+  const flora = buildFloraAndFX(scene, containers, oceanSky.shadowGen);
+
+  setLoadingProgress(0.92, "正在部署两层海景花墅、莫奈睡莲池、海港游艇与全景灯光…");
+  const world = buildHarborVillaWorld(scene, {
+    models: containers,
+    shadowGen: oceanSky.shadowGen,
+    courtRefs: horizon.courtRefs,
+  });
+
+  const havokBodies = havokCtrl ? havokCtrl.syncColliders() : 0;
+  scene.blockMaterialDirtyMechanism = false;
+
+  const allInteractables = [...flora.interactables, ...world.interactables];
+  const interactableById = new Map(allInteractables.map((it) => [it.id, it]));
+
+  const LEGACY_ID_MAP = {
+    mailbox: "estate-mailbox-letter",
+    "love-letter": "villa-love-letter",
+    "couple-swing": "garden-swing-ride",
+    "garden-pond": "garden-koi-feed",
+    lighthouse: "estate-lighthouse-flash",
+    boat: "estate-sloop-sail",
+    instruments: "villa-guitar",
+    umbrella: "estate-deck-lounger",
+    "flower-gazebo": "estate-gazebo-swing",
+    bicycle: "estate-bicycle-bell",
+    windmill: "estate-windmill-spin",
+    "beach-boardwalk": "estate-boardwalk-steps-sit",
+  };
 
   let activePresetName = "aerialOverlook";
   function markActivePill(presetName) {
@@ -242,18 +202,19 @@ async function init() {
     },
   });
 
-  // Centralized Gift Config & Tactile Letter Modal with Pre-Open Camera/Control Restoration
   const audio = createHarborAudio();
   const giftData = await resolveGiftConfig();
   populateLetterModal(giftData);
 
-  // 小贤贤 & 小冉子 — controllable couple (first / second / third person)
+  // 小贤贤 & 小冉子 — rigged stylized couple
   const couple = createCoupleMode({
-    scene: worldRoot,
+    scene,
     camera,
     canvas,
+    models: containers,
+    shadowGen: oceanSky.shadowGen,
     audio,
-    sources: [villa, estate, secretGardens, flora],
+    sources: [flora, world],
     ui: {
       panel: document.getElementById("couple-panel"),
       prompt: document.getElementById("couple-prompt"),
@@ -273,8 +234,7 @@ async function init() {
       if (!on) markActivePill(controls.getMode() === "aerial" ? "aerialOverlook" : "");
     },
   });
-  addRayTarget(couple.xian.root);
-  addRayTarget(couple.ran.root);
+
   document.getElementById("btn-couple")?.addEventListener("click", (e) => {
     e.stopPropagation();
     audio.unlock();
@@ -284,6 +244,7 @@ async function init() {
       couple.enter();
     }
   });
+
   window.addEventListener("bloom:open-letter", () => {
     openLetterModal({ saveState: true });
     audio.playLetterUnfold();
@@ -330,7 +291,7 @@ async function init() {
     if (e.target === letterModal) closeLetterModal({ restoreState: true });
   });
 
-  // Scenic Camera Presets
+  // 16 Scenic Camera Presets
   const CAMERA_PRESETS = {
     aerialOverlook: {
       type: "aerial",
@@ -437,14 +398,7 @@ async function init() {
           floorY: p.floorY ?? null,
         });
       } else {
-        controls.teleportWalk(
-          p.x,
-          p.z,
-          p.yaw,
-          p.pitch,
-          p.eyeHeight ?? 1.68,
-          p.floorY ?? null
-        );
+        controls.teleportWalk(p.x, p.z, p.yaw, p.pitch, p.eyeHeight ?? 1.68, p.floorY ?? null);
       }
     } else if (smooth) {
       controls.flyToAerial(p.target, p.radius, p.phi, p.theta);
@@ -465,46 +419,18 @@ async function init() {
     });
   });
 
-  // Golden Hour <-> Moonlit Night State & Smooth Interpolation
-  const _daySunCol = new THREE.Color(0xffdca8);
-  const _nightMoonCol = new THREE.Color(0x9ec2ee);
-  const _dayHemiSky = new THREE.Color(0xfce6ce);
-  const _nightHemiSky = new THREE.Color(0x3a5682);
-  const _dayHemiGround = new THREE.Color(0x6d8167);
-  const _nightHemiGround = new THREE.Color(0x23313e);
-  const _lightDir = new THREE.Vector3();
-
+  // Golden Hour <-> Moonlit Night State & Simulation Time
   let nightMix = 0.0;
   let targetNightMix = 0.0;
+  let simTime = 0.0;
+  let simPaused = false;
 
   function applyNightMix(mix) {
     nightMix = clamp(mix, 0, 1);
-    _lightDir.copy(SUN_DIRECTION).lerp(MOON_DIRECTION, nightMix).normalize();
-    sunLight.position.copy(_lightDir).multiplyScalar(140);
-    sunLight.color.copy(_daySunCol).lerp(_nightMoonCol, nightMix);
-    sunLight.intensity = lerp(2.45, 0.96, nightMix);
-
-    hemiLight.color.copy(_dayHemiSky).lerp(_nightHemiSky, nightMix);
-    hemiLight.groundColor.copy(_dayHemiGround).lerp(_nightHemiGround, nightMix);
-    hemiLight.intensity = lerp(1.02, 0.64, nightMix);
-
-    renderer.toneMappingExposure = lerp(1.04, 0.96, nightMix);
-    scene.environmentIntensity = lerp(0.72, 0.28, nightMix);
-
     oceanSky.setNightMix?.(nightMix);
-    distantHorizon.setNightMix?.(nightMix);
-    estate.setNightMix?.(nightMix);
-    villa.setNightMix?.(nightMix);
-    secretGardens.setNightMix?.(nightMix);
-
-    const fogCol = oceanSky.getFogColor ? oceanSky.getFogColor() : null;
-    if (fogCol) {
-      scene.fog.color.copy(fogCol);
-      renderer.setClearColor(fogCol, 1);
-    }
-    if (isSoftware) {
-      renderer.shadowMap.needsUpdate = true;
-    }
+    world.setNightMix?.(nightMix);
+    horizon.update?.(simTime, nightMix);
+    scene.clearColor.set(scene.fogColor.r, scene.fogColor.g, scene.fogColor.b, 1.0);
   }
 
   function updateDayNightUI() {
@@ -518,9 +444,7 @@ async function init() {
   function setDayNight(mode, { immediate = false } = {}) {
     targetNightMix = mode === "night" || mode === true ? 1.0 : 0.0;
     updateDayNightUI();
-    if (immediate) {
-      applyNightMix(targetNightMix);
-    }
+    if (immediate) applyNightMix(targetNightMix);
     return targetNightMix > 0.5 ? "night" : "day";
   }
 
@@ -530,10 +454,7 @@ async function init() {
     setDayNight(targetNightMix > 0.5 ? "day" : "night");
   });
 
-  // Unified Simulation Time & Pause / Resume (Camera & UI remain active when paused!)
-  let simTime = 0.0;
-  let simPaused = false;
-
+  // Simulation Time UI & Pause / Resume
   function updatePauseUI() {
     if (btnPause) {
       btnPause.textContent = simPaused ? "运行" : "暂停";
@@ -553,7 +474,6 @@ async function init() {
     setSimPaused(!simPaused);
   });
 
-  // Deterministic World Reset (Section 六)
   function resetWorld() {
     closeLetterModal({ restoreState: false });
     preLetterSnapshot = null;
@@ -561,16 +481,10 @@ async function init() {
     setSimPaused(false);
     setDayNight("day", { immediate: true });
     simTime = 0.0;
-    oceanSky.reset?.();
-    distantHorizon.reset?.();
-    estate.reset?.();
-    villa.reset?.();
+    horizon.update?.(0, 0);
     flora.reset?.();
-    secretGardens.reset?.();
+    world.reset?.();
     setCameraPreset("aerialOverlook", { smooth: false });
-    if (isSoftware) {
-      renderer.shadowMap.needsUpdate = true;
-    }
   }
 
   btnReset?.addEventListener("click", (e) => {
@@ -579,7 +493,7 @@ async function init() {
     resetWorld();
   });
 
-  // Quality Tiers & Default-Hidden Debug HUD (` or F3 or ?debug=1)
+  // Quality Tiers & Default-Hidden Debug HUD
   let qualityMode = "auto";
   let activeQualityTier = "high";
   const tierLabelMap = { high: "高", medium: "中", low: "低" };
@@ -587,18 +501,10 @@ async function init() {
   function applyQualityTier(tier) {
     activeQualityTier = tier === "low" || tier === "medium" ? tier : "high";
     const maxDpr = activeQualityTier === "low" ? 1.0 : activeQualityTier === "medium" ? 1.35 : 2.0;
-    renderer.setPixelRatio(isSoftware ? 1 : Math.min(window.devicePixelRatio || 1, maxDpr));
-    renderer.setSize(window.innerWidth, window.innerHeight, false);
-
-    sunLight.castShadow = activeQualityTier !== "low";
-    oceanSky.setQualityTier?.(activeQualityTier);
-    distantHorizon.setQualityTier?.(activeQualityTier);
+    engine.setHardwareScalingLevel(isSoftware ? 1 : 1 / Math.min(window.devicePixelRatio || 1, maxDpr));
+    oceanSky.sunLight.shadowEnabled = activeQualityTier !== "low";
+    oceanSky.setQualityDetail?.(activeQualityTier);
     flora.setQualityTier?.(activeQualityTier);
-    secretGardens.setQualityTier?.(activeQualityTier);
-
-    if (isSoftware) {
-      renderer.shadowMap.needsUpdate = true;
-    }
     updateDebugHudUI();
   }
 
@@ -618,9 +524,6 @@ async function init() {
   }
 
   let measuredFps = 60;
-  let fpsFrameAcc = 0;
-  let fpsTimeAcc = 0;
-
   function updateDebugHudUI() {
     if (!debugHud || debugHud.hidden) return;
     const fpsEl = document.getElementById("dbg-fps");
@@ -630,8 +533,8 @@ async function init() {
     if (fpsEl) {
       fpsEl.textContent = measuredFps >= 10 ? String(Math.round(measuredFps)) : measuredFps.toFixed(1);
     }
-    if (callsEl) callsEl.textContent = String(renderer.info.render.calls);
-    if (trisEl) trisEl.textContent = renderer.info.render.triangles.toLocaleString();
+    if (callsEl) callsEl.textContent = String(engine._drawCalls?.current || scene.getActiveMeshes().length);
+    if (trisEl) trisEl.textContent = Math.round((scene.getActiveIndices?.() || 0) / 3).toLocaleString();
     if (tierEl) {
       const base = tierLabelMap[activeQualityTier] || "高";
       tierEl.textContent = qualityMode === "auto" ? `${base} (自动)` : base;
@@ -654,11 +557,9 @@ async function init() {
 
   try {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("debug") === "1") {
-      toggleDebugHud(true);
-    }
+    if (params.get("debug") === "1") toggleDebugHud(true);
   } catch {
-    // Ignore URL parsing issues under non-standard environments
+    // Ignore invalid search params
   }
 
   window.addEventListener("keydown", (e) => {
@@ -668,12 +569,7 @@ async function init() {
       } else if (couple.isActive()) {
         couple.exit();
       } else if (controls.getMode() !== "aerial") {
-        controls.flyToAerial(
-          [-4.5, 2.8, 9.2],
-          window.innerWidth < window.innerHeight ? 76.0 : 66.0,
-          1.0,
-          0.3
-        );
+        controls.flyToAerial([-4.5, 2.8, 9.2], window.innerWidth < window.innerHeight ? 76.0 : 66.0, 1.0, 0.3);
         markActivePill("aerialOverlook");
       }
     } else if (e.key === "`" || e.key === "~" || e.key === "F3") {
@@ -685,7 +581,7 @@ async function init() {
     }
   });
 
-  // Subtle auto-dimming of bottom capsule when pointer is idle
+  // Subtle auto-dimming of bottom capsule when idle
   let idleTimer = null;
   function bumpCapsuleActivity() {
     if (!exploreBar) return;
@@ -697,83 +593,54 @@ async function init() {
   window.addEventListener("keydown", bumpCapsuleActivity, { passive: true });
   bumpCapsuleActivity();
 
-  // Interactive 3D Raycasting restricted to explicit raycastTargets
-  const raycaster = new THREE.Raycaster();
-  const pointerNDC = new THREE.Vector2();
-
+  // Picking (filtering out sky dome, water sheet, FX particles & instanced grass blades)
   function pickScene(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
-    pointerNDC.x = ((clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
-    pointerNDC.y = -((clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
-    raycaster.setFromCamera(pointerNDC, camera);
-    const hits = raycaster.intersectObjects(raycastTargets, true);
-    let groundPoint = null;
-    for (let i = 0; i < hits.length; i += 1) {
-      const h = hits[i];
-      if (!groundPoint && h.point) groundPoint = h.point;
-      let cur = h.object;
-      while (cur) {
-        if (cur.userData && cur.userData.interactive) {
-          return { interactive: cur.userData.interactive, root: cur, hitPoint: h.point };
-        }
-        cur = cur.parent;
-      }
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const pickInfo = scene.pick(
+      x,
+      y,
+      (mesh) =>
+        mesh.isVisible &&
+        mesh.isEnabled() &&
+        mesh.isPickable &&
+        !(mesh.hasThinInstances && !mesh.metadata?.interactive) &&
+        !/^(SkyDome|BeerLambertOcean|FX_|CoupleTag_)/i.test(mesh.name)
+    );
+    if (!pickInfo || !pickInfo.hit || !pickInfo.pickedMesh) {
+      return { interactive: null, hitPoint: null };
     }
-    return { interactive: null, hitPoint: groundPoint };
+    let cur = pickInfo.pickedMesh;
+    while (cur) {
+      if (cur.metadata?.interactive) {
+        return { interactive: cur.metadata.interactive, root: cur, hitPoint: pickInfo.pickedPoint };
+      }
+      cur = cur.parent;
+    }
+    return { interactive: null, hitPoint: pickInfo.pickedPoint };
   }
 
   let pondCloseupToggle = true;
 
   function triggerInteraction(id) {
-    switch (id) {
-      case "mailbox":
-      case "love-letter":
-        openLetterModal({ saveState: true });
-        audio.playLetterUnfold();
-        return { id, letterOpen: true };
-      case "couple-swing":
-        secretGardens.boostSwing?.();
-        flora.burstPetals?.();
-        audio.playPetalGlissando();
-        return { id, swingBoosted: true };
-      case "garden-pond":
-        secretGardens.ripplePond?.();
-        audio.playFishRipple?.();
-        return { id, pondRippled: true };
-      case "beach-boardwalk":
-        audio.playShipBell();
-        return { id, boardwalkVisited: true };
-      case "lighthouse":
-        estate.flashLighthouse?.();
-        oceanSky.triggerRainbow?.();
-        audio.playLighthouseBell();
-        return { id, lighthouseLit: true };
-      case "boat":
-        estate.rockBoats?.();
-        audio.playShipBell();
-        return { id, rocked: true };
-      case "instruments":
-      case "umbrella":
-        audio.playDuetArpeggio();
-        return { id, duetPlayed: true };
-      case "flower-gazebo":
-      case "bicycle":
-        estate.swingGazebo?.();
-        flora.burstPetals?.();
-        audio.playPetalGlissando();
-        return { id, petalsBurst: true };
-      case "windmill":
-        estate.boostWindmill?.();
-        flora.burstPetals?.();
-        audio.playRoofChime(true);
-        return { id, windmillBoosted: true };
-      default:
-        return null;
+    const resolvedId = LEGACY_ID_MAP[id] || id;
+    if (resolvedId === "estate-mailbox-letter" || resolvedId === "villa-love-letter") {
+      openLetterModal({ saveState: true });
     }
+    const item = interactableById.get(resolvedId);
+    if (item) {
+      const msg = couple.isActive()
+        ? couple.activateById(resolvedId)
+        : item.activate?.({ actor: "xian", audio });
+      if (resolvedId === "flora-rose-pick" || resolvedId === "garden-swing-ride") {
+        flora.burstPetals?.();
+      }
+      return { id, resolvedId, activated: true, message: typeof msg === "string" ? msg : item.label };
+    }
+    return null;
   }
 
-  // "除去场景锁定 · 点哪看哪": single click orbits-focuses exactly where you clicked;
-  // interactive objects still play their interaction; double-click dives in to walk.
   function handleOverlookFocusClick(picked) {
     const id = picked.interactive?.id || null;
     const hit = picked.hitPoint;
@@ -781,7 +648,7 @@ async function init() {
       couple.enter(id === "char-xian" ? "xian" : "ran");
       return;
     }
-    if (id === "love-letter" || id === "mailbox") {
+    if (id === "love-letter" || id === "mailbox" || id === "villa-love-letter" || id === "estate-mailbox-letter") {
       openLetterModal({ saveState: true });
       audio.playLetterUnfold();
       return;
@@ -797,81 +664,36 @@ async function init() {
     const id = picked.interactive?.id || null;
     const hit = picked.hitPoint;
 
-    if (
-      id === "garden-pond" ||
-      (hit && Math.hypot(hit.x - POND_CONFIG.cx, hit.z - POND_CONFIG.cz) < 6.8)
-    ) {
+    if (id === "garden-pond" || id === "garden-koi-feed" || (hit && Math.hypot(hit.x - POND_CONFIG.cx, hit.z - POND_CONFIG.cz) < 6.8)) {
       pondCloseupToggle = true;
       setCameraPreset("pondFishShrimpCloseup", { smooth: true });
       markActivePill("pondWaterfallWalk");
-      triggerInteraction("garden-pond");
+      triggerInteraction("garden-koi-feed");
       return;
     }
 
-    if (
-      id === "couple-swing" ||
-      (hit && Math.hypot(hit.x - SWING_CONFIG.cx, hit.z - SWING_CONFIG.cz) < 6.0)
-    ) {
+    if (id === "couple-swing" || id === "garden-swing-ride" || (hit && Math.hypot(hit.x - SWING_CONFIG.cx, hit.z - SWING_CONFIG.cz) < 6.0)) {
       setCameraPreset("coupleSwingWalk", { smooth: true });
-      triggerInteraction("couple-swing");
+      triggerInteraction("garden-swing-ride");
       return;
     }
 
     if (id === "beach-boardwalk" || (hit && hit.x >= -16.0 && hit.x <= 6.2 && hit.z >= 25.0 && hit.z <= 35.0)) {
       setCameraPreset("beachBoardwalkWalk", { smooth: true });
-      triggerInteraction("beach-boardwalk");
+      triggerInteraction("estate-boardwalk-steps-sit");
       return;
     }
 
-    if (id === "love-letter") {
+    if (id === "love-letter" || id === "villa-love-letter") {
       openLetterModal({ saveState: true });
       audio.playLetterUnfold();
       return;
     }
 
     if (hit && hit.x >= -25.2 && hit.x <= -3.0 && hit.z >= -11.0 && hit.z <= 6.4) {
-      if (hit.y > 5.4) {
-        setCameraPreset("villaMasterWalk", { smooth: true });
-      } else if (hit.z < -1.4 && hit.x >= -10.4) {
-        setCameraPreset("villaStudyWalk", { smooth: true });
-      } else {
-        setCameraPreset("villaLivingWalk", { smooth: true });
-      }
-      return;
-    }
-
-    if (id === "mailbox") {
-      controls.diveToWalk(-12.2, 12.6, -0.32, -0.02);
-      markActivePill("");
-      triggerInteraction("mailbox");
-      return;
-    }
-    if (id === "love-letter") {
-      openLetterModal({ saveState: true });
-      audio.playLetterUnfold();
-      return;
-    }
-    if (id === "lighthouse") {
-      controls.diveToWalk(39.0, -14.5, -1.05, 0.14);
-      markActivePill("harborPierWalk");
-      triggerInteraction("lighthouse");
-      return;
-    }
-    if (id === "boat") {
-      setCameraPreset("harborPierWalk", { smooth: true });
-      triggerInteraction("boat");
-      return;
-    }
-    if (id === "flower-gazebo") {
-      setCameraPreset("gazeboFlowerWalk", { smooth: true });
-      markActivePill("");
-      triggerInteraction("flower-gazebo");
-      return;
-    }
-    if (id === "windmill") {
-      controls.diveToWalk(-44.0, -58.5, 0.65, 0.12);
-      markActivePill("creekBridgeWalk");
-      triggerInteraction("windmill");
+      if (hit.y > 5.4) setCameraPreset("villaMasterWalk", { smooth: true });
+      else if (hit.z < -1.4 && hit.x >= -10.4) setCameraPreset("villaStudyWalk", { smooth: true });
+      else setCameraPreset("villaLivingWalk", { smooth: true });
       return;
     }
 
@@ -913,7 +735,6 @@ async function init() {
     }
 
     if (controls.getMode() === "aerial") {
-      // defer so a double-click can turn into a dive instead of a focus
       if (clickTimer) clearTimeout(clickTimer);
       clickTimer = setTimeout(() => {
         clickTimer = null;
@@ -923,20 +744,10 @@ async function init() {
     }
 
     if (picked.interactive) {
-      if (picked.interactive.id === "garden-pond") {
+      if (picked.interactive.id === "garden-pond" || picked.interactive.id === "garden-koi-feed") {
         pondCloseupToggle = !pondCloseupToggle;
-        setCameraPreset(
-          pondCloseupToggle ? "pondFishShrimpCloseup" : "pondWaterfallWalk",
-          { smooth: true }
-        );
+        setCameraPreset(pondCloseupToggle ? "pondFishShrimpCloseup" : "pondWaterfallWalk", { smooth: true });
         markActivePill("pondWaterfallWalk");
-      } else if (picked.interactive.id === "couple-swing") {
-        const wp = controls.getWalkPosition();
-        if (Math.hypot(wp.x - SWING_CONFIG.cx, wp.z - SWING_CONFIG.cz) > 9.0) {
-          setCameraPreset("coupleSwingWalk", { smooth: true });
-        }
-      } else if (picked.interactive.id === "beach-boardwalk") {
-        setCameraPreset("beachBoardwalkWalk", { smooth: true });
       }
       triggerInteraction(picked.interactive.id);
       return;
@@ -963,28 +774,23 @@ async function init() {
   window.addEventListener("resize", () => {
     const w = window.innerWidth;
     const h = Math.max(1, window.innerHeight);
-    camera.fov = w < h ? 62 : 52;
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-    renderer.setSize(w, h, false);
+    camera.fov = ((w < h ? 62 : 52) * Math.PI) / 180;
+    engine.resize();
   });
 
-  // Step Simulation Subsystems vs Camera/UI Frame Loop
   function stepSimulation(simDt) {
     simTime += simDt;
-    oceanSky.update?.(simTime, simDt);
-    distantHorizon.update?.(simTime, simDt);
-    estate.update?.(simTime, simDt);
-    villa.update?.(simTime, simDt);
+    oceanSky.update?.(simTime, camera.position);
+    horizon.update?.(simTime, nightMix);
     flora.update?.(simTime, simDt);
-    secretGardens.update?.(simTime, simDt);
+    world.update?.(simDt, simTime);
   }
 
   function checkLetterProximity() {
-    if (controls.getMode() !== "walk" || !villa.letterWorldPos) return;
+    if (controls.getMode() !== "walk") return;
     const wp = controls.getWalkPosition();
     if (Math.abs(wp.y - 2.6) > 1.4) return;
-    const dist = Math.hypot(wp.x - villa.letterWorldPos.x, wp.z - villa.letterWorldPos.z);
+    const dist = Math.hypot(wp.x - -7.4, wp.z - -7.55);
     if (dist < 1.55 && !autoOpenedNearDesk && letterModal && letterModal.hidden) {
       autoOpenedNearDesk = true;
       openLetterModal({ saveState: true });
@@ -1001,65 +807,52 @@ async function init() {
     startFrozenForQA = false;
   }
 
-  // Initial state & shader compilation warmup frame before hiding loading overlay
-  const syncPx = new Uint8Array(4);
+  // Initial warmup frame before revealing canvas
   applyNightMix(0.0);
   stepSimulation(0.016);
   controls.update(0.016);
-  if (isSoftware) renderer.shadowMap.needsUpdate = true;
+  couple.update(0.016);
   const tWarm0 = performance.now();
-  renderer.render(scene, camera);
-  if (isSoftware && startFrozenForQA) {
-    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, syncPx);
-  }
+  scene.render();
   const warmMs = Math.max(1, performance.now() - tWarm0);
-  if (isSoftware) {
-    measuredFps = 1000 / warmMs;
-  }
+  if (isSoftware) measuredFps = 1000 / warmMs;
+
   setLoadingProgress(1.0, "庄园已就绪");
   hideLoadingOverlay();
 
-  const clock = new THREE.Clock();
   let renderFrozenForQA = startFrozenForQA;
-  let rafId = 0;
+  let lastFrameMs = performance.now();
+  let hudTickAcc = 0;
   let autoQualityWarmupSec = 0;
 
-  function animate() {
-    if (renderFrozenForQA) {
-      rafId = 0;
-      clock.getDelta();
-      return;
-    }
-    rafId = requestAnimationFrame(animate);
-    const rawDt = clock.getDelta();
+  engine.runRenderLoop(() => {
+    const now = performance.now();
+    const rawDt = Math.max(0.001, (now - lastFrameMs) / 1000);
+    lastFrameMs = now;
+    if (renderFrozenForQA) return;
+
     const frameDt = Math.min(rawDt, 0.05);
 
-    // Smooth day/night transition runs even while simulation is paused
     if (Math.abs(nightMix - targetNightMix) > 0.0008) {
       const nextMix =
         nightMix + Math.sign(targetNightMix - nightMix) * Math.min(Math.abs(targetNightMix - nightMix), frameDt * 1.05);
       applyNightMix(nextMix);
     }
 
-    // Camera orbit/walk & proximity checks stay responsive even when paused
     controls.update(frameDt);
     couple.update(frameDt);
     checkLetterProximity();
 
-    // Advance dynamic world ONLY when simulation is running
     if (!simPaused) {
       stepSimulation(frameDt);
     }
 
-    renderer.render(scene, camera);
+    scene.render();
 
-    // Real-time empirical FPS & auto-quality monitor
-    fpsFrameAcc += 1;
-    fpsTimeAcc += Math.max(rawDt, 0.0001);
-    if (fpsTimeAcc >= 0.4) {
-      measuredFps = fpsFrameAcc / fpsTimeAcc;
-      fpsFrameAcc = 0;
-      fpsTimeAcc = 0;
+    measuredFps = engine.getFps() || measuredFps;
+    hudTickAcc += rawDt;
+    if (hudTickAcc >= 0.4) {
+      hudTickAcc = 0;
       updateDebugHudUI();
 
       if (!isSoftware && qualityMode === "auto") {
@@ -1071,36 +864,73 @@ async function init() {
         }
       }
     }
-  }
-
-  if (!renderFrozenForQA) {
-    animate();
-  }
+  });
 
   // Deterministic QA, Performance Inspection & Control API
   window.__fairytaleWorld = {
     ready: true,
+    renderer: "babylon-9.36.0-havok-1.3.14",
+    engine,
     scene,
     camera,
-    renderer,
     controls,
     oceanSky,
-    distantHorizon,
-    estate,
-    villa,
+    horizon,
     flora,
-    secretGardens,
+    world,
     couple,
     openLetterModal: () => openLetterModal({ saveState: true }),
     closeLetterModal: () => closeLetterModal({ restoreState: true }),
     triggerInteraction,
+    listInteractables: () =>
+      allInteractables.map((it) => ({
+        id: it.id,
+        label: it.label,
+        x: Number(it.position.x.toFixed(2)),
+        y: Number(it.position.y.toFixed(2)),
+        z: Number(it.position.z.toFixed(2)),
+        hasPose: Boolean(it.pose?.seats?.length),
+      })),
+    activateInteractable: (id) => triggerInteraction(id),
+    enterCoupleMode: (id) => couple.enter(id),
+    exitCoupleMode: () => couple.exit(),
+    teleportCouple: (x, z, yaw = 0, floorY = null) => couple.teleport(x, z, yaw, floorY),
+    setCoupleView: (v) => couple.setView(v),
+    doCoupleAction: (name) => couple.doAction(name),
     setCameraPreset,
+    setPreset: (name, opts) => setCameraPreset(name, opts),
+    selectPreset: (name, opts = { smooth: false }) => setCameraPreset(name, opts),
     setDayNight,
+    setNight: (on) => setDayNight(on ? "night" : "day", { immediate: true }),
     setSimPaused,
     togglePause: () => setSimPaused(!simPaused),
     resetWorld,
     setQuality,
     toggleDebugHud,
+    getState() {
+      const wp = controls.getWalkPosition();
+      return {
+        ready: true,
+        renderer: "babylon-9.36.0-havok-1.3.14",
+        mode: controls.getMode(),
+        activePreset: activePresetName,
+        simTime: Number(simTime.toFixed(4)),
+        simPaused,
+        nightMix: Number(nightMix.toFixed(3)),
+        havokBodies,
+        havokActive: Boolean(havokCtrl),
+        havokError: havokError ? String(havokError) : null,
+        interactableCount: allInteractables.length,
+        walkPosition: [Number(wp.x.toFixed(2)), Number(wp.y.toFixed(2)), Number(wp.z.toFixed(2))],
+        cameraPosition: [
+          Number(camera.position.x.toFixed(2)),
+          Number(camera.position.y.toFixed(2)),
+          Number(camera.position.z.toFixed(2)),
+        ],
+        couple: couple.getState(),
+        letterVisible: Boolean(letterModal && !letterModal.hidden),
+      };
+    },
     getSimState() {
       return {
         simTime: Number(simTime.toFixed(4)),
@@ -1113,18 +943,7 @@ async function init() {
       };
     },
     setPaused(next) {
-      const wantFrozen = Boolean(next);
-      if (wantFrozen === renderFrozenForQA) return;
-      renderFrozenForQA = wantFrozen;
-      if (renderFrozenForQA) {
-        if (rafId) {
-          cancelAnimationFrame(rafId);
-          rafId = 0;
-        }
-      } else if (!rafId) {
-        clock.getDelta();
-        animate();
-      }
+      renderFrozenForQA = Boolean(next);
     },
     advanceAndRender(totalSeconds = 0.25, stepDt = 0.05) {
       const steps = Math.max(1, Math.round(totalSeconds / stepDt));
@@ -1132,25 +951,20 @@ async function init() {
         if (Math.abs(nightMix - targetNightMix) > 0.0008) {
           const nextMix =
             nightMix +
-            Math.sign(targetNightMix - nightMix) *
-              Math.min(Math.abs(targetNightMix - nightMix), stepDt * 1.05);
+            Math.sign(targetNightMix - nightMix) * Math.min(Math.abs(targetNightMix - nightMix), stepDt * 1.05);
           applyNightMix(nextMix);
         }
         controls.update(stepDt);
         couple.update(stepDt);
         checkLetterProximity();
-        if (!simPaused) {
-          stepSimulation(stepDt);
-        }
+        if (!simPaused) stepSimulation(stepDt);
       }
       return new Promise((resolve) => {
         requestAnimationFrame(() => {
           const t0 = performance.now();
-          renderer.render(scene, camera);
+          scene.render();
           if (isSoftware) {
-            gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, syncPx);
-            const dtMs = Math.max(1, performance.now() - t0);
-            measuredFps = 1000 / dtMs;
+            measuredFps = 1000 / Math.max(1, performance.now() - t0);
             updateDebugHudUI();
           }
           requestAnimationFrame(() => resolve(true));
@@ -1160,48 +974,33 @@ async function init() {
     getPerformanceMetrics() {
       return {
         fps: Number(measuredFps.toFixed(1)),
-        drawCalls: renderer.info.render.calls,
-        triangles: renderer.info.render.triangles,
-        geometries: renderer.info.memory.geometries,
-        textures: renderer.info.memory.textures,
+        drawCalls: engine._drawCalls?.current || scene.getActiveMeshes().length,
+        triangles: Math.round((scene.getActiveIndices?.() || 0) / 3),
+        meshes: scene.meshes.length,
+        materials: scene.materials.length,
+        textures: scene.textures.length,
         qualityMode,
         activeQualityTier,
-        pixelRatio: renderer.getPixelRatio(),
         gpuRendererName,
         isSoftware,
+        havokBodies,
       };
     },
     getStats() {
       let meshes = 0;
-      let instancedCount = 0;
-      let triangles = 0;
-      const interactiveIds = new Set();
-      worldRoot.traverse((obj) => {
-        if (obj.isMesh && obj.visible) {
+      let instancedFloraCount = 0;
+      for (let i = 0; i < scene.meshes.length; i += 1) {
+        const m = scene.meshes[i];
+        if (m instanceof Mesh && m.isVisible) {
           meshes += 1;
-          const instances = obj.isInstancedMesh ? obj.count : 1;
-          if (obj.isInstancedMesh) instancedCount += obj.count;
-          const geom = obj.geometry;
-          if (geom) {
-            const baseTri = geom.index
-              ? geom.index.count / 3
-              : (geom.attributes.position?.count || 0) / 3;
-            triangles += baseTri * instances;
-          }
+          if (m.hasThinInstances) instancedFloraCount += m.thinInstanceCount || 0;
         }
-        if (obj.userData && obj.userData.interactive) {
-          interactiveIds.add(obj.userData.interactive.id);
-        }
-      });
+      }
       const wp = controls.getWalkPosition();
       return {
         mode: controls.getMode(),
         eyeHeight: Number(controls.getEyeHeight().toFixed(2)),
-        walkPosition: [
-          Number(wp.x.toFixed(2)),
-          Number(wp.y.toFixed(2)),
-          Number(wp.z.toFixed(2)),
-        ],
+        walkPosition: [Number(wp.x.toFixed(2)), Number(wp.y.toFixed(2)), Number(wp.z.toFixed(2))],
         cameraPosition: [
           Number(camera.position.x.toFixed(2)),
           Number(camera.position.y.toFixed(2)),
@@ -1211,13 +1010,12 @@ async function init() {
         simPaused,
         nightMix: Number(nightMix.toFixed(3)),
         activeQualityTier,
-        drawCalls: renderer.info.render.calls,
-        renderedTriangles: renderer.info.render.triangles,
-        raycastTargetCount: raycastTargets.length,
+        drawCalls: engine._drawCalls?.current || scene.getActiveMeshes().length,
+        renderedTriangles: Math.round((scene.getActiveIndices?.() || 0) / 3),
         meshes,
-        instancedFloraCount: instancedCount,
-        triangles: Math.round(triangles),
-        interactiveIds: Array.from(interactiveIds).sort(),
+        instancedFloraCount,
+        havokBodies,
+        interactiveIds: allInteractables.map((it) => it.id).sort(),
         letterVisible: Boolean(letterModal && !letterModal.hidden),
       };
     },

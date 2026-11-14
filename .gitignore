@@ -20,3 +20,5 @@ site/assets/closeup-*.svg
 node_modules/
 dist-vite/
 .vite/
+studies/
+tools/blender/_tex_cache/

@@ -1,8 +1,8 @@
 {
   "name": "iris-bay-bloom-for-you",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
-  "description": "《鸢尾湾·花与海之约》 — 海景花墅、莫奈花园与群岛海湾庄园 (Three.js 3D 互动礼赠场景与离线单文件工程)",
+  "description": "《鸢尾湾·花与海之约》 — 海景花墅、莫奈花园与群岛海湾庄园 (Babylon.js 9 + Havok 物理 + Blender 骨骼/精致建模游戏引擎版)",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,7 +13,10 @@
     "test": "python3 -m unittest discover -s tests -v"
   },
   "dependencies": {
-    "three": "0.186.1"
+    "@babylonjs/core": "9.36.0",
+    "@babylonjs/havok": "1.3.14",
+    "@babylonjs/loaders": "9.36.0",
+    "@babylonjs/materials": "9.36.0"
   },
   "devDependencies": {
     "vite": "^6.2.0"

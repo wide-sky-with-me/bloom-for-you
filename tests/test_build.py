@@ -23,25 +23,43 @@ class IrisBayCoastalEstateTests(unittest.TestCase):
             self.assertTrue((built / "index.html").is_file())
             self.assertTrue((built / ".nojekyll").is_file())
             self.assertTrue((built / "THIRD_PARTY_NOTICES.md").is_file())
+            self.assertTrue((built / "assets" / "havok" / "HavokPhysics.wasm").is_file())
 
             manifest = json.loads((built / "release.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["schema"], 9)
+            self.assertEqual(manifest["schema"], 10)
             self.assertEqual(manifest["title"], "鸢尾湾·花与海之约")
-            self.assertEqual(manifest["style"], "iris-bay-monet-garden-coastal-estate-v6")
+            self.assertEqual(manifest["style"], "iris-bay-monet-garden-coastal-estate-babylon9")
             self.assertEqual(manifest["worldSizeMeters"], 260)
-            self.assertEqual(manifest["renderer"], "three-0.186.1")
+            self.assertEqual(manifest["renderer"], "babylon-9.36.0-havok-1.3.14")
             self.assertEqual(manifest["navigation"], "default-aerial-overlook-click-to-dive-and-walk-inside")
             for mod in (
-                "modules/pbr-kit.js",
-                "modules/gift-config.js",
-                "modules/exploration-controls.js",
-                "modules/realistic-ocean-sky.js",
-                "modules/harbor-and-estate.js",
-                "modules/coastal-villa.js",
-                "modules/vintage-craft-props.js",
-                "modules/botanical-flora.js",
-                "modules/couple-characters.js",
-                "modules/couple-mode.js",
+                "world-spatial.js",
+                "assets-loader.js",
+                "ocean-sky-stage.js",
+                "island-terrain-and-horizon.js",
+                "flora-and-fx.js",
+                "harbor-villa-world.js",
+                "couple-rigged-controller.js",
+                "couple-mode-babylon.js",
+                "exploration-camera.js",
+                "gift-config.js",
+            ):
+                self.assertIn(mod, manifest["modules"])
+
+            for asset_rel in (
+                "assets/havok/HavokPhysics.wasm",
+                "assets/models/couple_xian.glb",
+                "assets/models/couple_ran.glb",
+                "assets/models/coastal_villa.glb",
+                "assets/models/garden_monet_pond.glb",
+                "assets/models/garden_swing_arches.glb",
+                "assets/models/coastal_lighthouse.glb",
+                "assets/models/hilltop_windmill.glb",
+                "assets/models/creek_bridge.glb",
+                "assets/models/cliffside_gazebo.glb",
+                "assets/models/provencal_cottage.glb",
+                "assets/models/harbor_fleet.glb",
+                "assets/models/stylized_trees.glb",
                 "assets/models/freshwater_shrimp.glb",
                 "assets/models/ryukin_goldfish.glb",
                 "assets/models/pond_koi.glb",
@@ -64,16 +82,19 @@ class IrisBayCoastalEstateTests(unittest.TestCase):
                 "assets/models/ph_coastal_shrub.glb",
                 "assets/models/ph_lifebuoy.glb",
                 "assets/models/ph_picnic_table.glb",
-                "assets/models/couple_parts.glb",
             ):
-                self.assertIn(mod, manifest["files"])
+                self.assertIn(asset_rel, manifest["files"])
 
     def test_npm_project_config_and_lockfile_present(self) -> None:
         self.assertTrue((ROOT / "package.json").is_file())
         self.assertTrue((ROOT / "package-lock.json").is_file())
         self.assertTrue((ROOT / "vite.config.js").is_file())
         pkg = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-        self.assertIn("three", pkg.get("dependencies", {}))
+        deps = pkg.get("dependencies", {})
+        self.assertEqual(deps.get("@babylonjs/core"), "9.36.0")
+        self.assertEqual(deps.get("@babylonjs/havok"), "1.3.14")
+        self.assertEqual(deps.get("@babylonjs/loaders"), "9.36.0")
+        self.assertEqual(deps.get("@babylonjs/materials"), "9.36.0")
         self.assertIn("dev", pkg.get("scripts", {}))
         self.assertIn("build", pkg.get("scripts", {}))
 
@@ -89,6 +110,7 @@ class IrisBayCoastalEstateTests(unittest.TestCase):
         self.assertIn('id="letter-modal"', html)
         self.assertIn('id="debug-hud"', html)
         self.assertRegex(html, r'<aside[^>]*id="debug-hud"[^>]*hidden')
+        self.assertNotIn("importmap", html)
         for forbidden_hud in ("sw-topbar", "sw-nav", "sw-route", "sw-scrollbar", "sw-copylayer"):
             self.assertNotIn(forbidden_hud, html)
 
@@ -117,8 +139,21 @@ class IrisBayCoastalEstateTests(unittest.TestCase):
         self.assertGreater(SINGLE_HTML.stat().st_size, 5_000_000)
         text = SINGLE_HTML.read_text(encoding="utf-8")
         self.assertIn("window.__INLINE_GIFT_CONFIG__", text)
+        self.assertIn("window.__INLINE_HAVOK_WASM_GZIP_B64__", text)
         self.assertIn("window.__INLINE_GLB_GZIP_B64__", text)
         for model_key in (
+            "couple_xian",
+            "couple_ran",
+            "coastal_villa",
+            "garden_monet_pond",
+            "garden_swing_arches",
+            "coastal_lighthouse",
+            "hilltop_windmill",
+            "creek_bridge",
+            "cliffside_gazebo",
+            "provencal_cottage",
+            "harbor_fleet",
+            "stylized_trees",
             "freshwater_shrimp",
             "ryukin_goldfish",
             "pond_koi",
@@ -155,7 +190,6 @@ class IrisBayCoastalEstateTests(unittest.TestCase):
             "ph_coastal_shrub",
             "ph_lifebuoy",
             "ph_picnic_table",
-            "couple_parts",
         ):
             self.assertIn(f'"{model_key}":', text)
         self.assertIn("data:font/woff2;base64,", text)
@@ -182,7 +216,7 @@ class IrisBayCoastalEstateTests(unittest.TestCase):
             SITE / "audio.js",
             *sorted((SITE / "modules").glob("*.js")),
         ]
-        self.assertEqual(len(js_files), 14)
+        self.assertEqual(len(js_files), 12)
         for js_path in js_files:
             proc = subprocess.run(
                 [node, "--check", str(js_path)],

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the '予你花开 · 写实海景花墅与漫山花海自由漫游世界' 3D PBR static Pages artifact."""
+"""Build the '鸢尾湾·花与海之约' Babylon 9.36 + Havok 1.3.14 static Pages artifact."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 
 ROOT = Path(__file__).resolve().parent
 
@@ -18,21 +19,32 @@ REQUIRED_SITE_FILES = (
     "app.js",
     "audio.js",
     "gift.json",
-    "modules/pbr-kit.js",
+    "modules/world-spatial.js",
+    "modules/assets-loader.js",
+    "modules/ocean-sky-stage.js",
+    "modules/island-terrain-and-horizon.js",
+    "modules/flora-and-fx.js",
+    "modules/harbor-villa-world.js",
+    "modules/couple-rigged-controller.js",
+    "modules/couple-mode-babylon.js",
+    "modules/exploration-camera.js",
     "modules/gift-config.js",
-    "modules/exploration-controls.js",
-    "modules/realistic-ocean-sky.js",
-    "modules/harbor-and-estate.js",
-    "modules/coastal-villa.js",
-    "modules/vintage-craft-props.js",
-    "modules/botanical-flora.js",
-    "modules/secret-gardens-and-pond.js",
-    "modules/distant-horizon.js",
-    "modules/couple-characters.js",
-    "modules/couple-mode.js",
     "assets/flower-song.woff2",
     "assets/FONT-LICENSE.txt",
     "assets/flower.svg",
+    "assets/havok/HavokPhysics.wasm",
+    "assets/models/couple_xian.glb",
+    "assets/models/couple_ran.glb",
+    "assets/models/coastal_villa.glb",
+    "assets/models/garden_monet_pond.glb",
+    "assets/models/garden_swing_arches.glb",
+    "assets/models/coastal_lighthouse.glb",
+    "assets/models/hilltop_windmill.glb",
+    "assets/models/creek_bridge.glb",
+    "assets/models/cliffside_gazebo.glb",
+    "assets/models/provencal_cottage.glb",
+    "assets/models/harbor_fleet.glb",
+    "assets/models/stylized_trees.glb",
     "assets/models/freshwater_shrimp.glb",
     "assets/models/ryukin_goldfish.glb",
     "assets/models/pond_koi.glb",
@@ -69,13 +81,6 @@ REQUIRED_SITE_FILES = (
     "assets/models/ph_coastal_shrub.glb",
     "assets/models/ph_lifebuoy.glb",
     "assets/models/ph_picnic_table.glb",
-    "assets/models/couple_parts.glb",
-    "vendor/three-0.186.1/three.module.js",
-    "vendor/three-0.186.1/three.core.js",
-    "vendor/three-0.186.1/addons/loaders/GLTFLoader.js",
-    "vendor/three-0.186.1/addons/utils/BufferGeometryUtils.js",
-    "vendor/three-0.186.1/addons/utils/SkeletonUtils.js",
-    "vendor/three-0.186.1/LICENSE",
 )
 
 
@@ -100,25 +105,18 @@ def verify_source(source: Path) -> dict:
     ):
         raise ValueError("gift.json: letter must contain non-empty text paragraphs")
 
-    three_dir = source / "vendor" / "three-0.186.1"
-    three_meta = json.loads((three_dir / "metadata.json").read_text(encoding="utf-8"))
-    if three_meta.get("name") != "three" or three_meta.get("version") != "0.186.1":
-        raise ValueError("Unexpected Three.js vendor version")
-    for name in (
-        "three.module.js",
-        "three.core.js",
-        "LICENSE",
-        "addons/loaders/GLTFLoader.js",
-        "addons/utils/BufferGeometryUtils.js",
-        "addons/utils/SkeletonUtils.js",
-    ):
-        record = three_meta.get("files", {}).get(name, {})
-        path = three_dir / name
-        if not path.is_file() or _sha256(path) != record.get("sha256"):
-            raise ValueError(f"Three.js vendor integrity failed: {name}")
-
     module_files = sorted(p.name for p in (source / "modules").glob("*.js"))
     return {"modules": module_files}
+
+
+def _ensure_vite_dist() -> Path:
+    vite_dist = ROOT / "dist-vite"
+    if not (vite_dist / "index.html").is_file():
+        npm = shutil.which("npm")
+        if not npm:
+            raise FileNotFoundError("dist-vite/index.html missing and npm is not installed")
+        subprocess.run([npm, "run", "build:web"], cwd=str(ROOT), check=True)
+    return vite_dist
 
 
 def build(output: Path) -> Path:
@@ -131,7 +129,9 @@ def build(output: Path) -> Path:
         shutil.rmtree(output)
 
     summary = verify_source(source)
-    shutil.copytree(source, output, dirs_exist_ok=True)
+    vite_dist = _ensure_vite_dist()
+
+    shutil.copytree(vite_dist, output, dirs_exist_ok=True)
     shutil.copy2(ROOT / "THIRD_PARTY_NOTICES.md", output / "THIRD_PARTY_NOTICES.md")
     (output / ".nojekyll").touch()
 
@@ -142,11 +142,11 @@ def build(output: Path) -> Path:
             file_hashes[rel] = _sha256(file_path)
 
     release = {
-        "schema": 9,
+        "schema": 10,
         "title": "鸢尾湾·花与海之约",
-        "style": "iris-bay-monet-garden-coastal-estate-v6",
+        "style": "iris-bay-monet-garden-coastal-estate-babylon9",
         "worldSizeMeters": 260,
-        "renderer": "three-0.186.1",
+        "renderer": "babylon-9.36.0-havok-1.3.14",
         "navigation": "default-aerial-overlook-click-to-dive-and-walk-inside",
         "modules": summary["modules"],
         "revision": os.environ.get("BLOOM_BUILD_REVISION", "local"),
@@ -156,7 +156,7 @@ def build(output: Path) -> Path:
         json.dumps(release, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    print(f"Built Realistic Coastal Villa & Flower Estate 3D World: {output}")
+    print(f"Built Iris Bay Babylon 9 + Havok Static World: {output}")
     return output
 
 

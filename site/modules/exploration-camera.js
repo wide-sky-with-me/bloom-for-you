@@ -1,17 +1,18 @@
-// Seamless Panoramic Overlook (Default) + Click-to-Dive Smooth Flight
-// + First-Person Walk-Inside Exploration Controller for Realistic Coastal Estate.
+// Panoramic Overlook (Default) + Click-to-Dive Smooth Flight
+// + First-Person Walk-Inside Exploration Controller (Babylon 9.36 Right-Handed).
 
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import {
-  THREE,
   clamp,
   lerp,
   getWorldTerrainY,
   getWalkSurfaceY,
   isPositionWalkable,
   resolveWalkPosition,
-} from "./pbr-kit.js";
+} from "./world-spatial.js";
 
 const DEFAULT_EYE_HEIGHT = 1.68;
+const UP_VEC = new Vector3(0, 1, 0);
 
 function shortestAngleDelta(from, to) {
   let d = ((to - from + Math.PI) % (Math.PI * 2)) - Math.PI;
@@ -23,10 +24,39 @@ function easeInOutCubic(u) {
   return u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
 }
 
+function sphericalOffset(radius, phi, theta, out = new Vector3()) {
+  const sp = Math.sin(phi);
+  out.set(radius * sp * Math.sin(theta), radius * Math.cos(phi), radius * sp * Math.cos(theta));
+  return out;
+}
+
+function lookDirFromAngles(yaw, pitch, out = new Vector3()) {
+  const cp = Math.cos(pitch);
+  out.set(-Math.sin(yaw) * cp, Math.sin(pitch), -Math.cos(yaw) * cp);
+  return out;
+}
+
+function sampleCatmullRom(pts, u, out = new Vector3()) {
+  const n = pts.length;
+  if (n === 0) return out.set(0, 0, 0);
+  if (n === 1) return out.copyFrom(pts[0]);
+  const scaled = clamp(u, 0, 1) * (n - 1);
+  const seg = Math.min(n - 2, Math.floor(scaled));
+  const t = scaled - seg;
+  const p0 = pts[Math.max(0, seg - 1)];
+  const p1 = pts[seg];
+  const p2 = pts[seg + 1];
+  const p3 = pts[Math.min(n - 1, seg + 2)];
+  const t2 = t * t;
+  const t3 = t2 * t;
+  const evalAxis = (a, b, c, d) =>
+    0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+  out.set(evalAxis(p0.x, p1.x, p2.x, p3.x), evalAxis(p0.y, p1.y, p2.y, p3.y), evalAxis(p0.z, p1.z, p2.z, p3.z));
+  return out;
+}
+
 function isInsideVilla1FShell(x, z) {
-  const inMain = x > -23.5 && x < -10.3 && z > -9.9 && z < 4.1;
-  const inStudy = x >= -10.3 && x < -3.9 && z > -9.9 && z < -1.3;
-  return inMain || inStudy;
+  return (x > -23.5 && x < -10.3 && z > -9.9 && z < 4.1) || (x >= -10.3 && x < -3.9 && z > -9.9 && z < -1.3);
 }
 
 function isInsideVilla2FShell(x, z) {
@@ -41,7 +71,6 @@ function inStudySuite(x, z) {
   return x > -10.5 && x < -3.9 && z > -9.9 && z < -1.3;
 }
 
-// Builds doorway-aware waypoints when walking into, out of, or between 1F Villa rooms
 function buildSmartWaypoints(startX, startZ, destX, destZ, startY = 2.6, destY = 2.6) {
   const pts = [];
   if (startY > 4.5 || destY > 4.5) {
@@ -95,12 +124,11 @@ export function findNearestWalkableSpot(targetX, targetZ, maxRadius = 11.0, refY
 }
 
 export function createExplorationControls(camera, domElement, opts = {}) {
-  let mode = "aerial"; // Default to panoramic overlook ("默认俯瞰角度")
-  let enabled = true; // disabled while couple roaming mode drives the camera
+  let mode = "aerial";
+  let enabled = true;
   const onModeChange = opts.onModeChange || (() => {});
 
-  // Walk state (camera yaw = 0 looks toward -Z, yaw = PI looks toward +Z)
-  const walkPos = new THREE.Vector3(-14.0, getWalkSurfaceY(-14.0, 16.5), 16.5);
+  const walkPos = new Vector3(-14.0, getWalkSurfaceY(-14.0, 16.5), 16.5);
   let currentEyeHeight = DEFAULT_EYE_HEIGHT;
   let desiredEyeHeight = DEFAULT_EYE_HEIGHT;
   let yaw = 0.0;
@@ -109,28 +137,45 @@ export function createExplorationControls(camera, domElement, opts = {}) {
   let desiredPitch = pitch;
   let walkBobPhase = 0;
   let walkWaypoints = [];
-
-  // Smooth flight transition state
   let activeFlight = null;
 
-  // Keyboard state
   const keys = new Set();
 
-  // Aerial orbit state (Default Overlook framing Swing Garden + Villa + Waterfall Pond + Harbor Yachts)
   const defaultRadius = opts.isPortrait ? 76.0 : 66.0;
-  const aerialTarget = new THREE.Vector3(-4.5, 2.8, 9.2);
+  const aerialTarget = new Vector3(-4.5, 2.8, 9.2);
   const desiredAerialTarget = aerialTarget.clone();
-  const aerialSpherical = new THREE.Spherical(defaultRadius, 1.0, 0.3);
-  const desiredAerialSpherical = aerialSpherical.clone();
+  const aerialSpherical = { radius: defaultRadius, phi: 1.0, theta: 0.3 };
+  const desiredAerialSpherical = { ...aerialSpherical };
 
-  // Pointer drag tracking
   let dragType = null;
   let lastPos = { x: 0, y: 0 };
   let movedPx = 0;
   const touches = new Map();
   let lastPinch = 0;
 
-  const euler = new THREE.Euler(0, 0, 0, "YXZ");
+  const tmpVec = new Vector3();
+  const tmpDir = new Vector3();
+  const tmpTarget = new Vector3();
+
+  function applyWalkCameraPose(bob = 0) {
+    camera.position.set(walkPos.x, walkPos.y + currentEyeHeight + bob, walkPos.z);
+    lookDirFromAngles(yaw, pitch, tmpDir);
+    tmpTarget.copyFrom(camera.position).addInPlace(tmpDir);
+    camera.setTarget(tmpTarget);
+  }
+
+  function applyAerialCameraPose() {
+    sphericalOffset(aerialSpherical.radius, aerialSpherical.phi, aerialSpherical.theta, tmpVec);
+    camera.position.copyFrom(aerialTarget).addInPlace(tmpVec);
+    camera.setTarget(aerialTarget);
+  }
+
+  function currentLookDirection() {
+    const tgt = camera.getTarget();
+    const dir = tgt.subtract(camera.position);
+    if (dir.lengthSquared() < 1e-6) return new Vector3(0, 0, -1);
+    return dir.normalize();
+  }
 
   function setMode(nextMode) {
     if (mode === nextMode) return;
@@ -139,14 +184,7 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     onModeChange(mode);
   }
 
-  function teleportWalk(
-    x,
-    z,
-    lookYaw = 0,
-    lookPitch = 0.0,
-    eyeHeight = DEFAULT_EYE_HEIGHT,
-    floorY = null
-  ) {
+  function teleportWalk(x, z, lookYaw = 0, lookPitch = 0.0, eyeHeight = DEFAULT_EYE_HEIGHT, floorY = null) {
     activeFlight = null;
     mode = "walk";
     walkWaypoints = [];
@@ -158,9 +196,7 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     desiredYaw = lookYaw;
     pitch = lookPitch;
     desiredPitch = lookPitch;
-    euler.set(pitch, yaw, 0, "YXZ");
-    camera.position.set(x, walkPos.y + currentEyeHeight, z);
-    camera.quaternion.setFromEuler(euler);
+    applyWalkCameraPose(0);
     onModeChange(mode);
   }
 
@@ -170,112 +206,80 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     const start2F = isInsideVilla2FShell(startPos.x, startPos.z) && startPos.y >= 5.8 && startPos.y < 10.2;
     const end2F = isInsideVilla2FShell(endPos.x, endPos.z) && endPos.y >= 5.8 && endPos.y < 10.2;
 
-    // Entering 2F Master Suite from outside or 1F: exit 1F if needed, then glide via South Juliet Balcony French Doors (-14.0, 7.72, 4.0)
     if (!start2F && end2F) {
       const pts = [startPos.clone()];
       if (start1F) {
         if (inStudySuite(startPos.x, startPos.z)) {
-          pts.push(new THREE.Vector3(-12.2, 4.18, -5.2));
+          pts.push(new Vector3(-12.2, 4.18, -5.2));
         }
-        pts.push(
-          new THREE.Vector3(-14.0, 4.18, 1.8),
-          new THREE.Vector3(-14.0, 4.35, 8.8),
-          new THREE.Vector3(-14.0, 7.82, 8.4)
-        );
+        pts.push(new Vector3(-14.0, 4.18, 1.8), new Vector3(-14.0, 4.35, 8.8), new Vector3(-14.0, 7.82, 8.4));
       } else {
         pts.push(
-          new THREE.Vector3(
+          new Vector3(
             lerp(startPos.x, -14.0, 0.72),
             Math.max(8.2, lerp(startPos.y, 7.9, 0.68)),
             Math.max(9.8, lerp(startPos.z, 9.8, 0.72))
           )
         );
       }
-      pts.push(
-        new THREE.Vector3(-14.0, 7.74, 5.6),
-        new THREE.Vector3(-14.0, 7.72, 2.2),
-        endPos.clone()
-      );
-      return { curve: new THREE.CatmullRomCurve3(pts), arcLift: 0.0, indoorRoute: true };
+      pts.push(new Vector3(-14.0, 7.74, 5.6), new Vector3(-14.0, 7.72, 2.2), endPos.clone());
+      return { pts, arcLift: 0.0, indoorRoute: true };
     }
 
-    // Exiting 2F Master Suite to 1F or outdoor/aerial: glide cleanly out 2F South Balcony French Doors first
     if (start2F && !end2F) {
-      const pts = [
-        startPos.clone(),
-        new THREE.Vector3(-14.0, 7.72, 2.2),
-        new THREE.Vector3(-14.0, 7.78, 7.6),
-      ];
+      const pts = [startPos.clone(), new Vector3(-14.0, 7.72, 2.2), new Vector3(-14.0, 7.78, 7.6)];
       if (end1F) {
-        pts.push(
-          new THREE.Vector3(-14.0, 4.35, 8.8),
-          new THREE.Vector3(-14.0, 4.20, 5.6),
-          new THREE.Vector3(-14.0, 4.18, 1.8)
-        );
+        pts.push(new Vector3(-14.0, 4.35, 8.8), new Vector3(-14.0, 4.2, 5.6), new Vector3(-14.0, 4.18, 1.8));
         if (inStudySuite(endPos.x, endPos.z)) {
-          pts.push(new THREE.Vector3(-11.8, 4.18, -5.2));
+          pts.push(new Vector3(-11.8, 4.18, -5.2));
         }
       }
       pts.push(endPos.clone());
-      return {
-        curve: new THREE.CatmullRomCurve3(pts),
-        arcLift: end1F ? 0.0 : 1.1,
-        indoorRoute: true,
-      };
+      return { pts, arcLift: end1F ? 0.0 : 1.1, indoorRoute: true };
     }
 
-    // Entering fixed-roof 1F villa from outside: glide down to arched portico and through open front French doors
     if (!start1F && end1F) {
       const pts = [
         startPos.clone(),
-        new THREE.Vector3(
+        new Vector3(
           lerp(startPos.x, -14.0, 0.72),
           Math.max(5.4, lerp(startPos.y, 4.35, 0.68)),
           Math.max(11.6, lerp(startPos.z, 11.6, 0.72))
         ),
-        new THREE.Vector3(-14.0, 4.22, 6.2),
-        new THREE.Vector3(-14.0, 4.18, 1.8),
+        new Vector3(-14.0, 4.22, 6.2),
+        new Vector3(-14.0, 4.18, 1.8),
       ];
       if (inStudySuite(endPos.x, endPos.z)) {
-        pts.push(new THREE.Vector3(-11.8, 4.18, -5.2));
+        pts.push(new Vector3(-11.8, 4.18, -5.2));
       }
       pts.push(endPos.clone());
-      return { curve: new THREE.CatmullRomCurve3(pts), arcLift: 0.0, indoorRoute: true };
+      return { pts, arcLift: 0.0, indoorRoute: true };
     }
 
-    // Exiting fixed-roof 1F villa to outdoor walk or aerial overlook: exit cleanly via open front doorway first
     if (start1F && !end1F) {
       const pts = [startPos.clone()];
       if (inStudySuite(startPos.x, startPos.z)) {
-        pts.push(new THREE.Vector3(-11.8, 4.18, -5.2));
+        pts.push(new Vector3(-11.8, 4.18, -5.2));
       }
-      pts.push(
-        new THREE.Vector3(-14.0, 4.18, 1.8),
-        new THREE.Vector3(-14.0, 4.35, 8.6),
-        endPos.clone()
-      );
-      return { curve: new THREE.CatmullRomCurve3(pts), arcLift: 1.2, indoorRoute: true };
+      pts.push(new Vector3(-14.0, 4.18, 1.8), new Vector3(-14.0, 4.35, 8.6), endPos.clone());
+      return { pts, arcLift: 1.2, indoorRoute: true };
     }
 
-    // Room-to-room inside 1F villa: route through central conservatory archway so walls are never crossed
     if (start1F && end1F && inStudySuite(startPos.x, startPos.z) !== inStudySuite(endPos.x, endPos.z)) {
-      const pts = [
-        startPos.clone(),
-        new THREE.Vector3(-11.8, 4.18, -5.2),
-        new THREE.Vector3(-14.0, 4.18, -1.6),
-        endPos.clone(),
-      ];
-      return { curve: new THREE.CatmullRomCurve3(pts), arcLift: 0.0, indoorRoute: true };
+      return {
+        pts: [startPos.clone(), new Vector3(-11.8, 4.18, -5.2), new Vector3(-14.0, 4.18, -1.6), endPos.clone()],
+        arcLift: 0.0,
+        indoorRoute: true,
+      };
     }
 
-    // Outdoor-to-outdoor flight: lift cleanly above the two-story petite villa gable roof (peak Y = 11.55m)
     const midX = 0.5 * (startPos.x + endPos.x);
     const midZ = 0.5 * (startPos.z + endPos.z);
     const crossesVillaRoof = midX > -25.5 && midX < -2.5 && midZ > -11.5 && midZ < 7.2;
-    const dist = startPos.distanceTo(endPos);
+    const dist = Vector3.Distance(startPos, endPos);
     const baseLift = clamp(dist * 0.12, 1.4, 9.0);
     return {
-      curve: null,
+      pts: null,
       arcLift: crossesVillaRoof ? Math.max(baseLift, 11.8) : baseLift,
       indoorRoute: false,
     };
@@ -289,7 +293,7 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     { duration = 0.92, eyeHeight = DEFAULT_EYE_HEIGHT, floorY = null } = {}
   ) {
     const startPos = camera.position.clone();
-    const startQuat = camera.quaternion.clone();
+    const startDir = currentLookDirection();
 
     mode = "walk";
     walkWaypoints = [];
@@ -302,9 +306,8 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     pitch = lookPitch;
     desiredPitch = lookPitch;
 
-    const endPos = new THREE.Vector3(x, groundY + eyeHeight, z);
-    euler.set(lookPitch, lookYaw, 0, "YXZ");
-    const endQuat = new THREE.Quaternion().setFromEuler(euler);
+    const endPos = new Vector3(x, groundY + eyeHeight, z);
+    const endDir = lookDirFromAngles(lookYaw, lookPitch, new Vector3()).normalize();
     const route = buildSafeFlightCurve(startPos, endPos);
 
     activeFlight = {
@@ -312,11 +315,10 @@ export function createExplorationControls(camera, domElement, opts = {}) {
       duration: Math.max(0.18, route.indoorRoute ? Math.max(duration, 1.08) : duration),
       startPos,
       endPos,
-      startQuat,
-      endQuat,
-      curve: route.curve,
+      startDir,
+      endDir,
+      pts: route.pts,
       arcLift: route.arcLift,
-      indoorRoute: route.indoorRoute,
     };
     onModeChange(mode);
   }
@@ -326,36 +328,30 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     mode = "aerial";
     walkWaypoints = [];
     aerialTarget.set(targetArr[0], targetArr[1], targetArr[2]);
-    desiredAerialTarget.copy(aerialTarget);
-    aerialSpherical.set(radius, clamp(phi, 0.18, 1.38), theta);
-    desiredAerialSpherical.copy(aerialSpherical);
-    const offset = new THREE.Vector3().setFromSpherical(aerialSpherical);
-    camera.position.copy(aerialTarget).add(offset);
-    camera.lookAt(aerialTarget);
+    desiredAerialTarget.copyFrom(aerialTarget);
+    aerialSpherical.radius = radius;
+    aerialSpherical.phi = clamp(phi, 0.18, 1.38);
+    aerialSpherical.theta = theta;
+    Object.assign(desiredAerialSpherical, aerialSpherical);
+    applyAerialCameraPose();
     onModeChange(mode);
   }
 
-  function flyToAerial(
-    targetArr = [-4.5, 2.8, 9.2],
-    radius = defaultRadius,
-    phi = 1.0,
-    theta = 0.3,
-    duration = 0.88
-  ) {
+  function flyToAerial(targetArr = [-4.5, 2.8, 9.2], radius = defaultRadius, phi = 1.0, theta = 0.3, duration = 0.88) {
     const startPos = camera.position.clone();
-    const startQuat = camera.quaternion.clone();
+    const startDir = currentLookDirection();
 
     mode = "aerial";
     walkWaypoints = [];
     aerialTarget.set(targetArr[0], targetArr[1], targetArr[2]);
-    desiredAerialTarget.copy(aerialTarget);
-    aerialSpherical.set(radius, clamp(phi, 0.18, 1.38), theta);
-    desiredAerialSpherical.copy(aerialSpherical);
+    desiredAerialTarget.copyFrom(aerialTarget);
+    aerialSpherical.radius = radius;
+    aerialSpherical.phi = clamp(phi, 0.18, 1.38);
+    aerialSpherical.theta = theta;
+    Object.assign(desiredAerialSpherical, aerialSpherical);
 
-    const offset = new THREE.Vector3().setFromSpherical(aerialSpherical);
-    const endPos = aerialTarget.clone().add(offset);
-    const lookMat = new THREE.Matrix4().lookAt(endPos, aerialTarget, new THREE.Vector3(0, 1, 0));
-    const endQuat = new THREE.Quaternion().setFromRotationMatrix(lookMat);
+    const endPos = aerialTarget.add(sphericalOffset(aerialSpherical.radius, aerialSpherical.phi, aerialSpherical.theta, new Vector3()));
+    const endDir = aerialTarget.subtract(endPos).normalize();
     const route = buildSafeFlightCurve(startPos, endPos);
 
     activeFlight = {
@@ -363,11 +359,10 @@ export function createExplorationControls(camera, domElement, opts = {}) {
       duration: Math.max(0.18, route.indoorRoute ? Math.max(duration, 1.05) : duration),
       startPos,
       endPos,
-      startQuat,
-      endQuat,
-      curve: route.curve,
+      startDir,
+      endDir,
+      pts: route.pts,
       arcLift: route.arcLift,
-      indoorRoute: route.indoorRoute,
     };
     onModeChange(mode);
   }
@@ -377,9 +372,7 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     if (!isPositionWalkable(destX, destZ, 0.25, refY)) return false;
     activeFlight = null;
     desiredEyeHeight = DEFAULT_EYE_HEIGHT;
-    if (mode !== "walk") {
-      setMode("walk");
-    }
+    if (mode !== "walk") setMode("walk");
     walkWaypoints = buildSmartWaypoints(walkPos.x, walkPos.z, destX, destZ, walkPos.y, refY);
     const [fx, fz] = walkWaypoints[0];
     if (Math.hypot(fx - walkPos.x, fz - walkPos.z) > 0.35) {
@@ -389,22 +382,8 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     return true;
   }
 
-  // Keyboard Listeners (only move in walk mode — keep default overlook until user clicks to dive!)
   window.addEventListener("keydown", (e) => {
-    if (
-      [
-        "KeyW",
-        "KeyA",
-        "KeyS",
-        "KeyD",
-        "ArrowUp",
-        "ArrowDown",
-        "ArrowLeft",
-        "ArrowRight",
-        "ShiftLeft",
-        "ShiftRight",
-      ].includes(e.code)
-    ) {
+    if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight"].includes(e.code)) {
       keys.add(e.code);
       if (mode === "walk" && enabled) {
         activeFlight = null;
@@ -425,7 +404,7 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     try {
       domElement.setPointerCapture?.(e.pointerId);
     } catch {
-      // Synthetic pointer/mouse events may not have an active captureable pointerId
+      // Ignore synthetic pointer events
     }
     if (touches.size === 1) {
       lastPos = { x: e.clientX, y: e.clientY };
@@ -447,34 +426,29 @@ export function createExplorationControls(camera, domElement, opts = {}) {
       const dy = e.clientY - lastPos.y;
       movedPx += Math.hypot(dx, dy);
       lastPos = { x: e.clientX, y: e.clientY };
-
       if (!enabled) return;
-      if (movedPx > 5 && activeFlight) {
-        activeFlight = null;
-      }
+      if (movedPx > 5 && activeFlight) activeFlight = null;
 
       if (mode === "walk") {
         const sens = 0.0034;
         desiredYaw -= dx * sens;
         desiredPitch = clamp(desiredPitch - dy * sens, -1.28, 1.18);
       } else if (dragType === "look") {
-        desiredAerialSpherical.theta -=
-          (dx / Math.max(320, domElement.clientWidth)) * Math.PI * 1.65;
+        desiredAerialSpherical.theta -= (dx / Math.max(320, domElement.clientWidth)) * Math.PI * 1.65;
         desiredAerialSpherical.phi = clamp(
-          desiredAerialSpherical.phi -
-            (dy / Math.max(320, domElement.clientHeight)) * Math.PI * 1.15,
+          desiredAerialSpherical.phi - (dy / Math.max(320, domElement.clientHeight)) * Math.PI * 1.15,
           0.08,
           1.53
         );
       } else if (dragType === "pan") {
         const panScale = desiredAerialSpherical.radius * 0.0014;
-        const fwd = new THREE.Vector3();
-        camera.getWorldDirection(fwd);
+        const fwd = currentLookDirection();
         fwd.y = 0;
-        fwd.normalize();
-        const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
-        desiredAerialTarget.addScaledVector(right, -dx * panScale);
-        desiredAerialTarget.addScaledVector(fwd, dy * panScale);
+        if (fwd.lengthSquared() < 1e-6) fwd.set(0, 0, -1);
+        else fwd.normalize();
+        const right = Vector3.Cross(fwd, UP_VEC).normalize();
+        desiredAerialTarget.addInPlace(right.scale(-dx * panScale));
+        desiredAerialTarget.addInPlace(fwd.scale(dy * panScale));
         desiredAerialTarget.x = clamp(desiredAerialTarget.x, -180, 180);
         desiredAerialTarget.z = clamp(desiredAerialTarget.z, -180, 180);
       }
@@ -508,11 +482,7 @@ export function createExplorationControls(camera, domElement, opts = {}) {
       if (mode === "aerial") {
         activeFlight = null;
         const factor = Math.exp(clamp(e.deltaY, -160, 160) * 0.0014);
-        desiredAerialSpherical.radius = clamp(
-          desiredAerialSpherical.radius * factor,
-          4.0,
-          260.0
-        );
+        desiredAerialSpherical.radius = clamp(desiredAerialSpherical.radius * factor, 4.0, 260.0);
       } else {
         activeFlight = null;
         const step = -clamp(e.deltaY, -120, 120) * 0.022;
@@ -526,8 +496,6 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     { passive: false }
   );
 
-  const _tmpOffset = new THREE.Vector3();
-
   function getStateSnapshot() {
     return {
       mode,
@@ -540,8 +508,8 @@ export function createExplorationControls(camera, domElement, opts = {}) {
       desiredPitch,
       aerialTarget: aerialTarget.clone(),
       desiredAerialTarget: desiredAerialTarget.clone(),
-      aerialSpherical: aerialSpherical.clone(),
-      desiredAerialSpherical: desiredAerialSpherical.clone(),
+      aerialSpherical: { ...aerialSpherical },
+      desiredAerialSpherical: { ...desiredAerialSpherical },
     };
   }
 
@@ -550,30 +518,22 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     activeFlight = null;
     walkWaypoints = [];
     mode = snap.mode;
-    walkPos.copy(snap.walkPos);
+    walkPos.copyFrom(snap.walkPos);
     currentEyeHeight = snap.currentEyeHeight;
     desiredEyeHeight = snap.desiredEyeHeight;
     yaw = snap.yaw;
     pitch = snap.pitch;
     desiredYaw = snap.desiredYaw;
     desiredPitch = snap.desiredPitch;
-    aerialTarget.copy(snap.aerialTarget);
-    desiredAerialTarget.copy(snap.desiredAerialTarget);
-    aerialSpherical.copy(snap.aerialSpherical);
-    desiredAerialSpherical.copy(snap.desiredAerialSpherical);
-    if (mode === "walk") {
-      euler.set(pitch, yaw, 0, "YXZ");
-      camera.position.set(walkPos.x, walkPos.y + currentEyeHeight, walkPos.z);
-      camera.quaternion.setFromEuler(euler);
-    } else {
-      _tmpOffset.setFromSpherical(aerialSpherical);
-      camera.position.copy(aerialTarget).add(_tmpOffset);
-      camera.lookAt(aerialTarget);
-    }
+    aerialTarget.copyFrom(snap.aerialTarget);
+    desiredAerialTarget.copyFrom(snap.desiredAerialTarget);
+    Object.assign(aerialSpherical, snap.aerialSpherical);
+    Object.assign(desiredAerialSpherical, snap.desiredAerialSpherical);
+    if (mode === "walk") applyWalkCameraPose(0);
+    else applyAerialCameraPose();
     onModeChange(mode);
   }
 
-  // "点哪看哪": orbit-focus any clicked point in aerial view (no preset snapping)
   function focusOn(point, radius = null) {
     activeFlight = null;
     if (mode !== "aerial") setMode("aerial");
@@ -583,7 +543,6 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     desiredAerialSpherical.phi = clamp(desiredAerialSpherical.phi, 0.55, 1.25);
   }
 
-  // Smoothly turn the walking head to look at any point
   function lookAtPoint(point) {
     if (mode !== "walk") return focusOn(point);
     const eyeY = walkPos.y + currentEyeHeight;
@@ -601,14 +560,13 @@ export function createExplorationControls(camera, domElement, opts = {}) {
       activeFlight.elapsed += dt;
       const u = clamp(activeFlight.elapsed / activeFlight.duration, 0, 1);
       const e = easeInOutCubic(u);
-      if (activeFlight.curve) {
-        activeFlight.curve.getPoint(e, camera.position);
+      if (activeFlight.pts) {
+        sampleCatmullRom(activeFlight.pts, e, camera.position);
       } else {
-        camera.position.lerpVectors(activeFlight.startPos, activeFlight.endPos, e);
+        Vector3.LerpToRef(activeFlight.startPos, activeFlight.endPos, e, camera.position);
       }
       camera.position.y += Math.sin(u * Math.PI) * activeFlight.arcLift;
 
-      // Enforce ground clearance along outdoor flights so camera never dips below terrain
       if (!isInsideVillaShell(camera.position.x, camera.position.z)) {
         const minGroundClearY = Math.max(0.65, getWorldTerrainY(camera.position.x, camera.position.z) + 0.78);
         if (camera.position.y < minGroundClearY) {
@@ -616,10 +574,13 @@ export function createExplorationControls(camera, domElement, opts = {}) {
         }
       }
 
-      camera.quaternion.slerpQuaternions(activeFlight.startQuat, activeFlight.endQuat, e);
-      if (u >= 1) {
-        activeFlight = null;
-      }
+      Vector3.LerpToRef(activeFlight.startDir, activeFlight.endDir, e, tmpDir);
+      if (tmpDir.lengthSquared() < 1e-5) tmpDir.copyFrom(activeFlight.endDir);
+      else tmpDir.normalize();
+      tmpTarget.copyFrom(camera.position).addInPlace(tmpDir.scale(5));
+      camera.setTarget(tmpTarget);
+
+      if (u >= 1) activeFlight = null;
       return;
     }
 
@@ -682,31 +643,23 @@ export function createExplorationControls(camera, domElement, opts = {}) {
 
       const targetGroundY = getWalkSurfaceY(walkPos.x, walkPos.z, walkPos.y);
       walkPos.y = lerp(walkPos.y, targetGroundY, clamp(dt * 14.0, 0.1, 1.0));
-      if (moved) {
-        walkBobPhase += dt * 9.5;
-      }
+      if (moved) walkBobPhase += dt * 9.5;
       const bob = moved ? Math.sin(walkBobPhase) * 0.022 : 0.0;
-
-      euler.set(pitch, yaw, 0, "YXZ");
-      camera.position.set(walkPos.x, walkPos.y + currentEyeHeight + bob, walkPos.z);
-      camera.quaternion.setFromEuler(euler);
+      applyWalkCameraPose(bob);
     } else {
-      aerialTarget.lerp(desiredAerialTarget, 0.14);
+      Vector3.LerpToRef(aerialTarget, desiredAerialTarget, 0.14, aerialTarget);
       aerialSpherical.radius = lerp(aerialSpherical.radius, desiredAerialSpherical.radius, 0.14);
       aerialSpherical.phi = lerp(aerialSpherical.phi, desiredAerialSpherical.phi, 0.14);
       aerialSpherical.theta = lerp(aerialSpherical.theta, desiredAerialSpherical.theta, 0.14);
-      _tmpOffset.setFromSpherical(aerialSpherical);
-      camera.position.copy(aerialTarget).add(_tmpOffset);
-      camera.lookAt(aerialTarget);
+      applyAerialCameraPose();
       const minAerialY = Math.max(1.2, getWorldTerrainY(camera.position.x, camera.position.z) + 0.9);
       if (camera.position.y < minAerialY) {
         camera.position.y = minAerialY;
-        camera.lookAt(aerialTarget);
+        camera.setTarget(aerialTarget);
       }
     }
   }
 
-  // Boot in Default Panoramic Overlook ("默认俯瞰角度，点击什么地方才深入")
   setAerialImmediate([-4.5, 2.8, 9.2], defaultRadius, 1.0, 0.3);
 
   return {

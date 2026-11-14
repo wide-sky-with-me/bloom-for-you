@@ -19,15 +19,11 @@ function copyDirRecursive(src, dest) {
 }
 
 function irisBayVitePlugin() {
-  let resolvedOutDir = path.resolve(__dirname, "dist");
+  let resolvedOutDir = path.resolve(__dirname, "dist-vite");
   return {
     name: "iris-bay-static-assets",
     configResolved(config) {
       resolvedOutDir = path.resolve(config.root, config.build.outDir);
-    },
-    transformIndexHtml(html) {
-      // Strip the raw static importmap when served/bundled by Vite so local npm `three` resolves cleanly
-      return html.replace(/<script\s+type="importmap">[\s\S]*?<\/script>\s*/i, "");
     },
     closeBundle() {
       const modelsSrc = path.resolve(__dirname, "site/assets/models");
@@ -35,6 +31,16 @@ function irisBayVitePlugin() {
       if (existsSync(modelsSrc)) {
         copyDirRecursive(modelsSrc, modelsDest);
       }
+
+      const havokSrc = path.resolve(__dirname, "site/assets/havok/HavokPhysics.wasm");
+      const havokNmSrc = path.resolve(__dirname, "node_modules/@babylonjs/havok/lib/esm/HavokPhysics.wasm");
+      const wasmSrc = existsSync(havokSrc) ? havokSrc : havokNmSrc;
+      if (existsSync(wasmSrc)) {
+        const havokDestDir = path.resolve(resolvedOutDir, "assets/havok");
+        mkdirSync(havokDestDir, { recursive: true });
+        copyFileSync(wasmSrc, path.resolve(havokDestDir, "HavokPhysics.wasm"));
+      }
+
       const giftSrc = path.resolve(__dirname, "site/gift.json");
       if (existsSync(giftSrc)) {
         copyFileSync(giftSrc, path.resolve(resolvedOutDir, "gift.json"));
@@ -42,6 +48,11 @@ function irisBayVitePlugin() {
       const noticesSrc = path.resolve(__dirname, "THIRD_PARTY_NOTICES.md");
       if (existsSync(noticesSrc)) {
         copyFileSync(noticesSrc, path.resolve(resolvedOutDir, "THIRD_PARTY_NOTICES.md"));
+      }
+      const flowerSrc = path.resolve(__dirname, "site/assets/flower.svg");
+      if (existsSync(flowerSrc)) {
+        mkdirSync(path.resolve(resolvedOutDir, "assets"), { recursive: true });
+        copyFileSync(flowerSrc, path.resolve(resolvedOutDir, "assets/flower.svg"));
       }
     },
   };
@@ -52,12 +63,15 @@ export default defineConfig({
   base: "./",
   publicDir: false,
   plugins: [irisBayVitePlugin()],
+  optimizeDeps: {
+    exclude: ["@babylonjs/havok"],
+  },
   build: {
     outDir: "../dist-vite",
     emptyOutDir: true,
     target: "es2022",
     assetsInlineLimit: 4096,
-    chunkSizeWarningLimit: 1200,
+    chunkSizeWarningLimit: 5500,
   },
   server: {
     host: "127.0.0.1",

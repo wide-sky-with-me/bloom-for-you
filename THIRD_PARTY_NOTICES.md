@@ -2,10 +2,11 @@
 
 This static web application is 100% self-hosted with zero external runtime network requests.
 
-## 1. Three.js (`v0.186.1`)
-- Path: `site/vendor/three-0.186.1/`
-- License: MIT License (see `site/vendor/three-0.186.1/LICENSE`)
-- Copyright: Copyright © 2010-2026 three.js authors
+## 1. Babylon.js (`v9.36.0`) & Havok Physics (`v1.3.14`)
+- Packages: `@babylonjs/core@9.36.0`, `@babylonjs/loaders@9.36.0`, `@babylonjs/materials@9.36.0`
+- License: Apache License 2.0 (Copyright © Babylon.js contributors / Microsoft)
+- Package: `@babylonjs/havok@1.3.14` (`site/assets/havok/HavokPhysics.wasm`)
+- License: MIT / Havok Physics WebAssembly runtime distributed via `@babylonjs/havok` (see `node_modules/@babylonjs/havok/LICENSE` when installed).
 
 ## 2. FlowerSong Subset Font (`flower-song.woff2`)
 - Path: `site/assets/flower-song.woff2`
@@ -97,4 +98,18 @@ All 18 real-world scanned furniture, lighting, tableware, and vintage prop model
 34. `site/assets/models/ph_lifebuoy.glb` — `lifebuoy` (Poly Haven, CC0 1.0)
 35. `site/assets/models/ph_picnic_table.glb` — `wooden_picnic_table` (Poly Haven, CC0 1.0)
 
-`site/assets/models/couple_parts.glb` is an original first-party Blender sculpt authored specifically for this project.
+## 5. First-Party Blender 4.0.2 Sculpted & Rigged `.glb` Assets
+The 12 architectural, landscape, flora, fleet, and skeletal character `.glb` bundles below are first-party assets generated specifically for this project via Blender 4.0.2 scripts in `tools/blender/`:
+
+- `site/assets/models/couple_xian.glb` — Stylized anime couple character ("小贤贤"), full armature, 17 NLA animation clips, Head/Lash shape keys (`EyeBlink`, `Smile`, `Kiss`, `ShyBlush`), painted iris/skin UVs
+- `site/assets/models/couple_ran.glb` — Stylized anime couple character ("小冉子"), full armature, 17 NLA animation clips, Head/Lash shape keys
+- `site/assets/models/coastal_villa.glb` — Two-story Provencal stone & timber villa with walkthrough doorway, staircase, interior paneling, animated shutters/doors/gramophone/globe/coffee-lever
+- `site/assets/models/garden_monet_pond.glb` — Monet cascading stone pond & waterfall tiers
+- `site/assets/models/garden_swing_arches.glb` — Bougainvillea swing pergola & bench arches
+- `site/assets/models/coastal_lighthouse.glb` — Harbor stone & crimson-stripe lighthouse with gallery & lantern room
+- `site/assets/models/hilltop_windmill.glb` — Sail windmill tower & rotating rotor
+- `site/assets/models/creek_bridge.glb` — Arched stone creek footbridge
+- `site/assets/models/cliffside_gazebo.glb` — Marble headland dome gazebo & swinging bench
+- `site/assets/models/provencal_cottage.glb` — Pastel Provencal hillside stone cottages
+- `site/assets/models/harbor_fleet.glb` — Harbor yacht cruiser, coastal sloop & launch hulls
+- `site/assets/models/stylized_trees.glb` — Cypress, olive, pine & cherry canopy variants for botanical instancing
