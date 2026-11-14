@@ -366,9 +366,129 @@ def normalize_vrm_scene(target_height: float):
 # Shape Keys Consolidation (EyeBlink, Smile, Kiss, ShyBlush) & Face Split
 # ---------------------------------------------------------------------------
 
+def _make_anime_blush_texture(char_id: str) -> bpy.types.Image:
+    """Create a soft airbrushed anime cheek-blush + subtle slash-hatch texture with alpha."""
+    TEX_BAKED.mkdir(parents=True, exist_ok=True)
+    out_png = TEX_BAKED / f"{char_id}_anime_blush.png"
+    w, h = 256, 128
+    yy, xx = np.mgrid[0:h, 0:w]
+    u = (xx / (w - 1)) * 2.0 - 1.0  # -1..1
+    v = (yy / (h - 1)) * 2.0 - 1.0  # -1..1
+    # Soft coral-pink oval blush radial falloff
+    r2 = (u / 0.82) ** 2 + (v / 0.72) ** 2
+    glow = np.clip(1.0 - np.sqrt(r2), 0.0, 1.0) ** 1.85
+    # 3 delicate diagonal anime blush lines inside the oval
+    lines = np.zeros_like(glow)
+    for ox in (-0.34, 0.0, 0.34):
+        dist = np.abs((u - ox) + v * 0.28)
+        in_y = np.clip(1.0 - np.abs(v) / 0.42, 0.0, 1.0)
+        lines += np.clip(1.0 - dist / 0.055, 0.0, 1.0) * in_y
+    lines = np.clip(lines, 0.0, 1.0)
+
+    alpha = np.clip(glow * 0.72 + lines * 0.36 * glow, 0.0, 0.92)
+    rgba = np.zeros((h, w, 4), dtype=np.uint8)
+    base_col = (255, 118, 146) if char_id == "xian" else (252, 128, 134)
+    line_col = (242, 82, 116)
+    mix_r = base_col[0] * (1.0 - lines * 0.5) + line_col[0] * (lines * 0.5)
+    mix_g = base_col[1] * (1.0 - lines * 0.5) + line_col[1] * (lines * 0.5)
+    mix_b = base_col[2] * (1.0 - lines * 0.5) + line_col[2] * (lines * 0.5)
+    rgba[:, :, 0] = np.clip(mix_r, 0, 255).astype(np.uint8)
+    rgba[:, :, 1] = np.clip(mix_g, 0, 255).astype(np.uint8)
+    rgba[:, :, 2] = np.clip(mix_b, 0, 255).astype(np.uint8)
+    rgba[:, :, 3] = np.clip(alpha * 255.0, 0, 255).astype(np.uint8)
+    Image.fromarray(rgba, "RGBA").save(out_png, optimize=True)
+    img = bpy.data.images.load(str(out_png))
+    img.colorspace_settings.name = "sRGB"
+    return img
+
+
+def add_blush_overlay_mesh(arm, face_skin_obj, char_id: str) -> None:
+    """Create contoured curved cheek-blush patches hugging Face_Skin cheeks so
+    ShyBlush intensity animates visibly and smoothly without clipping or Z-fighting."""
+    if not face_skin_obj:
+        return
+    # Locate actual eye & cheek coordinates in normalized space
+    mesh_data = face_skin_obj.data
+    cheek_z = 1.394 if char_id == "xian" else 1.531
+    cx_center = 0.041 if char_id == "xian" else 0.043
+    rx, rz = 0.023, 0.0135
+
+    bm_src = bmesh.new()
+    bm_src.from_mesh(mesh_data)
+    bm_src.verts.ensure_lookup_table()
+    bm_src.verts.index_update()
+
+    # Smoothly project curved grid over L and R cheeks via BVH raycast onto Face_Skin!
+    from mathutils.bvhtree import BVHTree
+    bvh = BVHTree.FromBMesh(bm_src)
+
+    bm_b = bmesh.new()
+    uv_layer = bm_b.loops.layers.uv.verify()
+    nx, nz = 6, 4
+    for side in (1.0, -1.0):
+        grid = []
+        for iz in range(nz + 1):
+            tz = iz / nz
+            zz = cheek_z + (tz - 0.5) * 2.0 * rz
+            row = []
+            for ix in range(nx + 1):
+                tx = ix / nx
+                xx = side * cx_center + (tx - 0.5) * 2.0 * rx
+                origin = Vector((xx, -0.22, zz))
+                direction = Vector((0.0, 1.0, 0.0))
+                loc, nrm, _, _ = bvh.ray_cast(origin, direction, 0.30)
+                if loc is None:
+                    loc = Vector((xx, -0.072 if char_id == "xian" else -0.082, zz))
+                    nrm = Vector((xx * 2.5, -1.0, 0.0)).normalized()
+                else:
+                    if nrm.y > 0:
+                        nrm = -nrm
+                pt = loc + nrm.normalized() * 0.0020
+                row.append((bm_b.verts.new(pt), tx, 1.0 - tz))
+            grid.append(row)
+        for iz in range(nz):
+            for ix in range(nx):
+                p00, u00, v00 = grid[iz][ix]
+                p10, u10, v10 = grid[iz][ix + 1]
+                p11, u11, v11 = grid[iz + 1][ix + 1]
+                p01, u01, v01 = grid[iz + 1][ix]
+                f = bm_b.faces.new((p00, p10, p11, p01))
+                for loop, uu, vv in zip(f.loops, (u00, u10, u11, u01), (v00, v10, v11, v01)):
+                    loop[uv_layer].uv = (uu, vv)
+
+    bm_src.free()
+    bmesh.ops.recalc_face_normals(bm_b, faces=bm_b.faces)
+    blush_mesh = bpy.data.meshes.new(f"{char_id}_Face_Blush")
+    bm_b.to_mesh(blush_mesh)
+    bm_b.free()
+
+    blush_img = _make_anime_blush_texture(char_id)
+    mat = bpy.data.materials.new(f"{char_id}_FaceBlush")
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.inputs["Roughness"].default_value = 0.85
+    if "Specular IOR Level" in bsdf.inputs:
+        bsdf.inputs["Specular IOR Level"].default_value = 0.02
+    tex_node = nt.nodes.new("ShaderNodeTexImage")
+    tex_node.image = blush_img
+    nt.links.new(tex_node.outputs["Color"], bsdf.inputs["Base Color"])
+    nt.links.new(tex_node.outputs["Alpha"], bsdf.inputs["Alpha"])
+    nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    mat.blend_method = "BLEND"
+    mat.use_backface_culling = False
+
+    bobj = bpy.data.objects.new(f"{char_id}_Face_Blush", blush_mesh)
+    bpy.context.collection.objects.link(bobj)
+    bobj.data.materials.append(mat)
+    skin_mesh_by_nearest_z(bobj, arm, lambda _co: {"J_Bip_C_Head": 1.0})
+
+
 def consolidate_face_morphs_and_split(arm, char_id: str, vrm_json: dict):
-    """Map VRM blendShapeGroups -> EyeBlink, Smile, Kiss, ShyBlush; strip EyeExtra;
-    split Face into Face_Skin (outlined) + Face_Features (eyes/lashes/brows, un-outlined)."""
+    """Decompose VRM blendShapeGroups cleanly by facial region (Eye/Brow/Mouth) into 17
+    orthogonal morph targets; strip EyeExtra; split Face into Face_Skin + Face_Features + Face_Blush."""
     face_obj = bpy.data.objects.get("Face")
     if not face_obj:
         return []
@@ -395,6 +515,38 @@ def consolidate_face_morphs_and_split(arm, char_id: str, vrm_json: dict):
             binds.append((f"target_{b['index']}", float(b.get("weight", 100)) / 100.0))
         preset_map[pname] = binds
 
+    # Build per-vertex region masks (1.0 / 0.0) in normalized space
+    n_verts = len(face_obj.data.vertices)
+    vert_mats = [set() for _ in range(n_verts)]
+    for poly in face_obj.data.polygons:
+        mn = face_obj.data.materials[poly.material_index].name if face_obj.data.materials[poly.material_index] else ""
+        for vi in poly.vertices:
+            vert_mats[vi].add(mn)
+
+    brow_mask = np.zeros((n_verts, 1), dtype=np.float32)
+    eye_mats = ("EyeWhite", "EyeIris", "EyeHighlight", "FaceEyelash", "FaceEyeline")
+    # Locate eye vs mouth Y/Z band using actual EyeWhite & FaceMouth vertices
+    eye_zs = [face_obj.data.vertices[vi].co.z for vi in range(n_verts) if any("EyeWhite" in m for m in vert_mats[vi])]
+    mouth_zs = [face_obj.data.vertices[vi].co.z for vi in range(n_verts) if any("FaceMouth" in m for m in vert_mats[vi])]
+    eye_min_z = (min(eye_zs) - 0.018) if eye_zs else (1.38 if char_id == "xian" else 1.52)
+    mouth_max_z = (max(mouth_zs) + 0.016) if mouth_zs else (1.39 if char_id == "xian" else 1.53)
+    split_nose_z = 0.5 * (eye_min_z + mouth_max_z)
+
+    eye_mask = np.zeros((n_verts, 1), dtype=np.float32)
+    mouth_mask = np.zeros((n_verts, 1), dtype=np.float32)
+    for vi in range(n_verts):
+        ms = vert_mats[vi]
+        z_v = face_obj.data.vertices[vi].co.z
+        is_brow = any("FaceBrow" in m for m in ms)
+        is_mouth_mat = any("FaceMouth" in m for m in ms)
+        is_eye_mat = any(k in m for m in ms for k in eye_mats)
+        if is_brow:
+            brow_mask[vi, 0] = 1.0
+        elif is_eye_mat or (not is_mouth_mat and z_v >= split_nose_z):
+            eye_mask[vi, 0] = 1.0
+        if is_mouth_mat or (not is_brow and not is_eye_mat and z_v < split_nose_z):
+            mouth_mask[vi, 0] = 1.0
+
     sk = face_obj.data.shape_keys
     if sk:
         basis_coords = np.array([p.co[:] for p in sk.key_blocks["Basis"].data], dtype=np.float32)
@@ -411,11 +563,33 @@ def consolidate_face_morphs_and_split(arm, char_id: str, vrm_json: dict):
                 d += eval_delta(tname) * w
             return d
 
+        d_joy = sum_preset("joy")
+        d_fun = sum_preset("fun")
+        d_sorrow = sum_preset("sorrow")
+        d_angry = sum_preset("angry")
+        d_surp = sum_preset("surprised")
+        d_a = sum_preset("a")
+        d_o = sum_preset("o")
+        d_u = sum_preset("u")
+
         custom_morphs = {
             "EyeBlink": sum_preset("blink"),
-            "Smile": sum_preset("joy") * 0.72 + sum_preset("fun") * 0.35,
-            "Kiss": sum_preset("u") * 0.85 + sum_preset("blink") * 0.15,
-            "ShyBlush": sum_preset("fun") * 0.45 + sum_preset("sorrow") * 0.25,
+            "BlinkL": sum_preset("blink_l"),
+            "BlinkR": sum_preset("blink_r"),
+            "EyeJoy": d_joy * eye_mask,
+            "EyeSoft": (d_fun * 0.58 + d_sorrow * 0.24) * eye_mask,
+            "EyeWide": d_surp * eye_mask,
+            "BrowHappy": (d_fun * 0.65 + d_joy * 0.35) * brow_mask,
+            "BrowShy": d_sorrow * 0.85 * brow_mask,
+            "BrowPlayful": d_angry * 0.55 * brow_mask,
+            "BrowUp": d_surp * 0.85 * brow_mask,
+            "Smile": (d_fun * 0.58 + d_joy * 0.45) * mouth_mask,
+            "GrinOpen": (d_joy * 0.88 + d_a * 0.22) * mouth_mask,
+            "MouthA": d_a * 0.78 * mouth_mask,
+            "MouthO": d_o * 0.72 * mouth_mask,
+            "MouthPout": (d_sorrow * 0.62 + d_u * 0.22) * mouth_mask,
+            "Kiss": d_u * 0.85 * mouth_mask + sum_preset("blink") * 0.14 * eye_mask,
+            "ShyBlush": d_sorrow * 0.35 * brow_mask + (d_fun * 0.36 + d_u * 0.18) * mouth_mask,
         }
 
         # Remove all existing non-Basis VRM targets cleanly
@@ -460,6 +634,9 @@ def consolidate_face_morphs_and_split(arm, char_id: str, vrm_json: dict):
         for mod in obj.modifiers:
             if mod.type == "ARMATURE":
                 mod.object = arm
+
+    # Add sculpted cheek blush decal mesh hugging Face_Skin
+    add_blush_overlay_mesh(arm, bpy.data.objects.get(f"{char_id}_Face_Skin"), char_id)
 
     return [o for o in bpy.data.objects if o.type == "MESH"]
 
@@ -573,9 +750,48 @@ def make_textured_pbr_mat(name: str, image: bpy.types.Image, roughness: float = 
     return mat
 
 
+def add_secondary_bone_chains(arm, specs: list[tuple[str, str, tuple[float, float, float], tuple[float, float, float]]]) -> None:
+    """Append real deformed secondary physics bones (coat tails, capelet, ribbons) in normalized space."""
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = arm.data.edit_bones
+    for bname, parent_name, head, tail in specs:
+        if bname in eb:
+            b = eb[bname]
+        else:
+            b = eb.new(bname)
+        b.head = Vector(head)
+        b.tail = Vector(tail)
+        b.roll = 0.0
+        b.use_deform = True
+        b.use_connect = False
+        if parent_name in eb:
+            b.parent = eb[parent_name]
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+
 def add_ran_genshin_costume(arm):
     """Add textured Fontaine sapphire swallowtail coat + asymmetric shoulder capelet,
-    gold-buckled waist sash with ribbon tails, forearm hero bracers, and starburst Hydro Vision."""
+    gold-buckled waist sash with ribbon tails, forearm hero bracers, and starburst Hydro Vision,
+    with 12 secondary spring-bone chains for real flowing cape, coattails, and sash physics."""
+    add_secondary_bone_chains(
+        arm,
+        [
+            ("J_Sec_RanCapeL0", "J_Bip_C_UpperChest", (0.15, 0.055, 1.32), (0.18, 0.085, 1.22)),
+            ("J_Sec_RanCapeL1", "J_Sec_RanCapeL0", (0.18, 0.085, 1.22), (0.19, 0.115, 1.12)),
+            ("J_Sec_RanCapeBack0", "J_Bip_C_UpperChest", (0.10, 0.09, 1.32), (0.12, 0.12, 1.22)),
+            ("J_Sec_RanCapeBack1", "J_Sec_RanCapeBack0", (0.12, 0.12, 1.22), (0.14, 0.15, 1.12)),
+            ("J_Sec_RanCoatL0", "J_Bip_C_Hips", (0.11, 0.06, 1.03), (0.14, 0.09, 0.88)),
+            ("J_Sec_RanCoatL1", "J_Sec_RanCoatL0", (0.14, 0.09, 0.88), (0.17, 0.13, 0.75)),
+            ("J_Sec_RanCoatL2", "J_Sec_RanCoatL1", (0.17, 0.13, 0.75), (0.20, 0.16, 0.63)),
+            ("J_Sec_RanCoatR0", "J_Bip_C_Hips", (-0.11, 0.06, 1.03), (-0.14, 0.09, 0.88)),
+            ("J_Sec_RanCoatR1", "J_Sec_RanCoatR0", (-0.14, 0.09, 0.88), (-0.17, 0.13, 0.75)),
+            ("J_Sec_RanCoatR2", "J_Sec_RanCoatR1", (-0.17, 0.13, 0.75), (-0.20, 0.16, 0.63)),
+            ("J_Sec_RanSash0", "J_Bip_C_Hips", (-0.115, -0.02, 1.05), (-0.135, 0.01, 0.88)),
+            ("J_Sec_RanSash1", "J_Sec_RanSash0", (-0.135, 0.01, 0.88), (-0.16, 0.05, 0.66)),
+        ],
+    )
     coat_img = _make_ran_coat_texture()
     mat_coat = make_textured_pbr_mat("ran_GenshinCoat", coat_img, roughness=0.58, metallic=0.06, double_sided=False)
     mat_lining = make_simple_pbr_mat("ran_CoatLining", (0.86, 0.18, 0.34, 1.0), roughness=0.70, double_sided=True)
@@ -654,33 +870,6 @@ def add_ran_genshin_costume(arm):
             for loop, uu, vv in zip(f.loops, (1, 1, 1, 1), (1 - v0, 1 - v1, 1 - v3, 1 - v2)):
                 loop[uv_layer].uv = (uu, vv)
 
-    # Asymmetric Knightly Left-Shoulder Mantle + Draped Back Tail + Waist Sash
-    cape_rings = [
-        (1.395, 0.08, 0.21, -0.02, 0.015),
-        (1.335, 0.05, 0.30, -0.04, 0.055),
-        (1.235, 0.03, 0.33, -0.01, 0.115),
-        (1.120, 0.06, 0.29, 0.06, 0.155),
-    ]
-    c_rows = []
-    for ri, (z_c, x0, x1, y_f, y_b) in enumerate(cape_rings):
-        row = []
-        v_uv = 1.0 - ri / (len(cape_rings) - 1)
-        for j in range(11):
-            t = j / 10.0
-            th = -math.pi * 0.42 + t * math.pi * 1.12
-            px = x0 + (x1 - x0) * (0.45 + 0.55 * math.sin(th * 0.8 + 0.4))
-            py = (y_f * (1.0 - math.sin(t * math.pi * 0.5)) + y_b * math.sin(t * math.pi * 0.5)) - 0.015
-            pz = z_c - math.sin(t * math.pi) * 0.028 * (ri / 3.0)
-            row.append((bm.verts.new((px, py, pz)), t, v_uv))
-        c_rows.append(row)
-    for r in range(len(c_rows) - 1):
-        for c in range(10):
-            pts = (c_rows[r][c], c_rows[r][c + 1], c_rows[r + 1][c + 1], c_rows[r + 1][c])
-            f = bm.faces.new([p[0] for p in pts])
-            f.material_index = 1 if r == len(c_rows) - 2 else 0
-            for loop, (_, uu, vv) in zip(f.loops, pts):
-                loop[uv_layer].uv = (uu, vv)
-
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     coat_mesh = bpy.data.meshes.new("ran_GenshinCoat")
     bm.to_mesh(coat_mesh)
@@ -703,10 +892,10 @@ def add_ran_genshin_costume(arm):
     def coat_weights(co: Vector):
         z = co.z
         w = {}
-        if co.x > 0.21 and z >= 1.24:
-            w["J_Bip_L_UpperArm"] = 0.55
-            w["J_Bip_L_Shoulder"] = 0.30
-            w["J_Bip_C_UpperChest"] = 0.15
+        if abs(co.x) > 0.165 and z >= 1.29:
+            side = "L" if co.x >= 0 else "R"
+            w[f"J_Bip_{side}_Shoulder"] = 0.45
+            w["J_Bip_C_UpperChest"] = 0.55
         elif z >= 1.27:
             w["J_Bip_C_UpperChest"] = 0.85
             w["J_Bip_C_Chest"] = 0.15
@@ -718,16 +907,97 @@ def add_ran_genshin_costume(arm):
             w["J_Bip_C_Chest"] = 0.20
             w["J_Bip_C_Hips"] = 0.15
         else:
-            w["J_Bip_C_Hips"] = 0.55
-            if co.x > 0.025:
-                w["J_Bip_L_UpperLeg"] = 0.35 * min(1.0, (1.07 - z) / 0.35)
-                w["J_Bip_C_Hips"] += 0.35 * (1.0 - min(1.0, (1.07 - z) / 0.35))
-            elif co.x < -0.025:
-                w["J_Bip_R_UpperLeg"] = 0.35 * min(1.0, (1.07 - z) / 0.35)
-                w["J_Bip_C_Hips"] += 0.35 * (1.0 - min(1.0, (1.07 - z) / 0.35))
+            side = "L" if co.x >= 0.0 else "R"
+            leg_b = f"J_Bip_{side}_UpperLeg"
+            c0, c1, c2 = f"J_Sec_RanCoat{side}0", f"J_Sec_RanCoat{side}1", f"J_Sec_RanCoat{side}2"
+            t_tail = max(0.0, min(1.0, (1.07 - z) / 0.41))
+            if t_tail < 0.35:
+                f = t_tail / 0.35
+                w["J_Bip_C_Hips"] = 1.0 - f * 0.75
+                w[c0] = f * 0.75
+            elif t_tail < 0.72:
+                f = (t_tail - 0.35) / 0.37
+                w[c0] = (1.0 - f) * 0.65
+                w[c1] = 0.35 + f * 0.50
+                w[leg_b] = 0.12 if co.y > -0.02 else 0.06
+            else:
+                f = (t_tail - 0.72) / 0.28
+                w[c1] = (1.0 - f) * 0.55
+                w[c2] = 0.35 + f * 0.55
+                w[leg_b] = 0.10
         return w
 
     skin_mesh_by_nearest_z(coat_obj, arm, coat_weights)
+
+    # Asymmetric Knightly Left-Shoulder Mantle as its own clean skinned cape object
+    bm_cape = bmesh.new()
+    uv_cape = bm_cape.loops.layers.uv.verify()
+    cape_rings = [
+        (1.400, 0.065, 0.195, 0.015, 0.075),
+        (1.335, 0.055, 0.228, 0.045, 0.115),
+        (1.225, 0.040, 0.225, 0.070, 0.145),
+        (1.105, 0.055, 0.195, 0.085, 0.175),
+    ]
+    c_rows = []
+    for ri, (z_c, x0, x1, y_f, y_b) in enumerate(cape_rings):
+        row = []
+        v_uv = 1.0 - ri / (len(cape_rings) - 1)
+        for j in range(11):
+            t = j / 10.0
+            th = -math.pi * 0.42 + t * math.pi * 1.12
+            px = x0 + (x1 - x0) * (0.45 + 0.55 * math.sin(th * 0.8 + 0.4))
+            py = y_f * (1.0 - math.sin(t * math.pi * 0.5)) + y_b * math.sin(t * math.pi * 0.5)
+            pz = z_c - math.sin(t * math.pi) * 0.026 * (ri / 3.0)
+            row.append((bm_cape.verts.new((px, py, pz)), t, v_uv))
+        c_rows.append(row)
+    for r in range(len(c_rows) - 1):
+        for c in range(10):
+            pts = (c_rows[r][c], c_rows[r][c + 1], c_rows[r + 1][c + 1], c_rows[r + 1][c])
+            f = bm_cape.faces.new([p[0] for p in pts])
+            f.material_index = 1 if r == len(c_rows) - 2 else 0
+            for loop, (_, uu, vv) in zip(f.loops, pts):
+                loop[uv_cape].uv = (uu, vv)
+    bmesh.ops.recalc_face_normals(bm_cape, faces=bm_cape.faces)
+    cape_mesh = bpy.data.meshes.new("ran_ShoulderCape")
+    bm_cape.to_mesh(cape_mesh)
+    bm_cape.free()
+    cape_obj = bpy.data.objects.new("ran_ShoulderCape", cape_mesh)
+    bpy.context.collection.objects.link(cape_obj)
+    cape_obj.data.materials.append(mat_coat)
+    cape_obj.data.materials.append(mat_gold)
+    cape_obj.data.materials.append(mat_lining)
+    solid_c = cape_obj.modifiers.new("Solidify", "SOLIDIFY")
+    solid_c.thickness = 0.006
+    solid_c.offset = -1.0
+    solid_c.material_offset = 2
+    bpy.context.view_layer.objects.active = cape_obj
+    bpy.ops.object.modifier_apply(modifier="Solidify")
+    for p in cape_obj.data.polygons:
+        p.use_smooth = True
+
+    def cape_weights(co: Vector):
+        z = co.z
+        outer = max(0.0, min(1.0, (co.x - 0.11) / 0.08))
+        w = {}
+        if z >= 1.345:
+            w["J_Bip_C_UpperChest"] = 0.72 - 0.15 * outer
+            w["J_Sec_RanCapeL0"] = 0.28 * outer
+            w["J_Sec_RanCapeBack0"] = 0.28 * (1.0 - outer) + 0.15 * outer
+        elif z >= 1.22:
+            f = (1.345 - z) / 0.125
+            w["J_Bip_C_UpperChest"] = 0.25 * (1.0 - f)
+            w["J_Sec_RanCapeL0"] = (0.45 + 0.25 * (1.0 - f)) * outer + 0.15 * (1.0 - outer)
+            w["J_Sec_RanCapeL1"] = 0.35 * f * outer
+            w["J_Sec_RanCapeBack0"] = (0.45 + 0.25 * (1.0 - f)) * (1.0 - outer)
+            w["J_Sec_RanCapeBack1"] = 0.35 * f * (1.0 - outer)
+        else:
+            w["J_Sec_RanCapeL1"] = 0.75 * outer + 0.15 * (1.0 - outer)
+            w["J_Sec_RanCapeL0"] = 0.20 * outer
+            w["J_Sec_RanCapeBack1"] = 0.70 * (1.0 - outer)
+            w["J_Sec_RanCapeBack0"] = 0.20 * (1.0 - outer)
+        return w
+
+    skin_mesh_by_nearest_z(cape_obj, arm, cape_weights)
 
     # Flowing Waist Sash Ribbons + Left Shoulder Epaulet Cord
     bm_s = bmesh.new()
@@ -753,7 +1023,17 @@ def add_ran_genshin_costume(arm):
     bpy.context.collection.objects.link(sash_obj)
     sash_obj.data.materials.append(mat_sash)
     sash_obj.data.materials.append(mat_gold)
-    skin_mesh_by_nearest_z(sash_obj, arm, lambda co: {"J_Bip_C_Hips": 0.72, "J_Bip_C_Spine": 0.28})
+
+    def sash_weights(co: Vector):
+        if co.z >= 1.01:
+            return {"J_Bip_C_Hips": 0.75, "J_Bip_C_Spine": 0.25}
+        if co.z >= 0.85:
+            f = (1.01 - co.z) / 0.16
+            return {"J_Bip_C_Hips": (1.0 - f) * 0.55, "J_Sec_RanSash0": 0.45 + f * 0.55}
+        f = min(1.0, (0.85 - co.z) / 0.19)
+        return {"J_Sec_RanSash0": max(0.10, 0.75 * (1.0 - f)), "J_Sec_RanSash1": 0.25 + f * 0.75}
+
+    skin_mesh_by_nearest_z(sash_obj, arm, sash_weights)
 
     # 2. Forearm Hero Cuffs / Bracers snugly fitted around L/R forearms in T-pose
     bm_c = bmesh.new()
@@ -824,8 +1104,17 @@ def add_ran_genshin_costume(arm):
 
 
 def add_xian_vision_charm(arm):
-    """Add a glowing Sakura-Rose Vision charm, back silk trailing waist ribbons,
-    and a delicate gold & rose-crystal Genshin hairline brooch."""
+    """Add a glowing Sakura-Rose Vision charm, back silk trailing waist ribbons with 4 secondary
+    ribbon physics bones, and a delicate gold & rose-crystal Genshin hairline brooch."""
+    add_secondary_bone_chains(
+        arm,
+        [
+            ("J_Sec_XianRibL0", "J_Bip_C_Hips", (0.028, 0.095, 0.995), (0.068, 0.135, 0.820)),
+            ("J_Sec_XianRibL1", "J_Sec_XianRibL0", (0.068, 0.135, 0.820), (0.112, 0.175, 0.625)),
+            ("J_Sec_XianRibR0", "J_Bip_C_Hips", (-0.028, 0.095, 0.995), (-0.068, 0.135, 0.820)),
+            ("J_Sec_XianRibR1", "J_Sec_XianRibR0", (-0.068, 0.135, 0.820), (-0.112, 0.175, 0.625)),
+        ],
+    )
     mat_gold = make_simple_pbr_mat("xian_VisionGold", (0.96, 0.80, 0.38, 1.0), roughness=0.22, metallic=0.90)
     mat_gem = make_simple_pbr_mat(
         "xian_VisionGem",
@@ -882,7 +1171,22 @@ def add_xian_vision_charm(arm):
     vobj.data.materials.append(mat_gold)
     vobj.data.materials.append(mat_gem)
     vobj.data.materials.append(mat_ribbon)
-    skin_mesh_by_nearest_z(vobj, arm, lambda _co: {"J_Bip_C_Hips": 0.65, "J_Bip_C_Spine": 0.35})
+
+    def xian_charm_weights(co: Vector):
+        # Ribbon tail sits at y > 0.08 on the back waist; hip gem sits on front/side (y < 0.0)
+        if co.y > 0.08:
+            side = "L" if co.x >= 0.0 else "R"
+            r0, r1 = f"J_Sec_XianRib{side}0", f"J_Sec_XianRib{side}1"
+            if co.z >= 0.96:
+                return {"J_Bip_C_Hips": 0.72, "J_Bip_C_Spine": 0.16, r0: 0.12}
+            if co.z >= 0.80:
+                f = (0.96 - co.z) / 0.16
+                return {"J_Bip_C_Hips": max(0.05, 0.45 * (1.0 - f)), r0: 0.55 + f * 0.40}
+            f = min(1.0, (0.80 - co.z) / 0.18)
+            return {r0: max(0.10, 0.70 * (1.0 - f)), r1: 0.30 + f * 0.70}
+        return {"J_Bip_C_Hips": 0.65, "J_Bip_C_Spine": 0.35}
+
+    skin_mesh_by_nearest_z(vobj, arm, xian_charm_weights)
 
     # Delicate Gold + Rose Starlight Hairline Ornament mounted to Head bone
     bm_h = bmesh.new()
@@ -1002,13 +1306,15 @@ def apply_vrm_fk(arm, pb_map, anat_dirs: dict[str, Vector], rel_euler_map: dict,
                 if bn in arm.data.bones and bn not in resolved_rel:
                     resolved_rel[bn] = (-finger_curl * 0.5 * w, s * finger_curl * 0.35 * w, 0.0)
 
-    # Apply Victoria skirt bone deflections if present
-    if skirt_map:
-        for prefix, ang_euler in skirt_map.items():
-            for bn in arm.data.bones.keys():
-                if bn.startswith(prefix) and not bn.endswith("_end"):
-                    step_w = 0.5 if bn.endswith("0") else (0.35 if bn.endswith("1") else 0.25)
-                    resolved_rel[bn] = tuple(a * step_w for a in ang_euler)
+    # Apply Victoria skirt & Ran coat/cape drapes with clean per-pose overrides
+    effective_skirt = dict(skirt_map or {})
+    effective_skirt.setdefault("J_Sec_RanCapeL", (0.12, 0.24, 0.0))
+    effective_skirt.setdefault("J_Sec_RanCapeBack", (0.10, 0.0, 0.0))
+    for prefix, ang_euler in effective_skirt.items():
+        for bn in arm.data.bones.keys():
+            if bn.startswith(prefix) and not bn.endswith("_end"):
+                step_w = 0.5 if bn.endswith("0") else (0.35 if bn.endswith("1") else 0.25)
+                resolved_rel[bn] = tuple(a * step_w for a in ang_euler)
 
     world_rot = {}
     for bone in arm.data.bones:
@@ -1056,7 +1362,7 @@ def add_nla_action(arm_obj, clip_name: str, n_frames: int, pose_fn, looped: bool
         arm_obj.animation_data_create()
     arm_obj.animation_data.action = action
 
-    step = 2 if n_frames <= 36 else 3
+    step = 1 if n_frames <= 36 else 2
     frames = list(range(1, n_frames + 1, step))
     if frames[-1] != n_frames:
         frames.append(n_frames)
@@ -1068,7 +1374,7 @@ def add_nla_action(arm_obj, clip_name: str, n_frames: int, pose_fn, looped: bool
             pb.rotation_quaternion = (1.0, 0.0, 0.0, 0.0)
         pose_fn(arm_obj.pose.bones, u)
         for pb in arm_obj.pose.bones:
-            # Keyframe only animated/main bones to keep GLB compact and fast
+            # Keyframe main body & custom secondary base pose (HairJoint / Eye left clean for live physics!)
             if pb.name.startswith("J_Bip_") or pb.name.startswith("J_Sec_"):
                 if pb.name == "J_Bip_C_Hips":
                     pb.keyframe_insert(data_path="location", frame=fr)
@@ -1094,106 +1400,211 @@ def author_all_17_clips(arm, char_id: str) -> None:
     female = char_id == "xian"
     anat_dirs = compute_anatomical_rest_dirs(arm)
 
-    def pose_idle(pb, u):
+    def _walk_leg(phase: float):
+        """Biomechanical double-knee human walk cycle with heel strike, loading yield, and toe roll-off."""
+        ph = phase % math.tau
+        s = math.sin(ph)
+        c = math.cos(ph)
+        # Negative rx = Thigh forward (-Y); positive rx = Thigh backward (+Y)
+        thigh_x = -0.43 * s - 0.045 * math.sin(2.0 * ph) + (0.015 if female else 0.025)
+        # Double-knee action: peak swing clearance (~0.78 rad) + soft loading response (~0.21 rad) after heel strike
+        swing_bend = (max(0.0, c) ** 1.2) * (0.76 if female else 0.72)
+        load_yield = math.exp(-((ph - 2.15) ** 2) / 0.36) * 0.21
+        shin_x = 0.07 + swing_bend + load_yield
+        # Ankle dorsiflexes up (-rx) before heel strike (ph ~ pi/2), plantarflexes (+rx) at late stance push-off (ph ~ 4.35)
+        foot_x = (
+            -0.17 * math.exp(-((ph - 1.55) ** 2) / 0.24)
+            + 0.31 * math.exp(-((ph - 4.35) ** 2) / 0.32)
+            - 0.04 * max(0.0, c)
+        )
+        # Toe roll-off bends toes up (-rx) as heel rises
+        toe_x = -0.44 * math.exp(-((ph - 4.45) ** 2) / 0.30)
+        thigh_z = (0.032 if female else 0.012) * s
+        return thigh_x, shin_x, foot_x, toe_x, thigh_z
+
+    def _walk_arm(side_sign: float, back_s: float, lag_s: float, wrist_s: float):
+        """Contralateral arm swing (back_s > 0 => +Y backward) with forward elbow flex & overlapping wrist lag."""
+        lat = (0.145 if female else 0.195) + (0.035 if back_s > 0 else -0.040 * (-back_s))
+        uy = back_s * (0.37 if female else 0.43) + 0.03
+        uz = -math.sqrt(max(0.25, 1.0 - lat * lat - uy * uy))
+        # Elbow strictly flexes forward (-Y relative to upper arm), stronger on forward swing
+        flex = (0.28 if female else 0.24) + max(0.0, -lag_s) * 0.30 + 0.05
+        fy = uy - flex
+        fx = lat * (0.74 if female else 0.86)
+        fz = uz * 0.92
+        hy = fy - 0.10 - 0.08 * (-wrist_s)
+        hx = fx * 0.86
+        hz = fz - 0.08
+        return (side_sign * lat, uy, uz), (side_sign * fx, fy, fz), (side_sign * hx, hy, hz)
+
+    def _eval_walk(pb, u, hold_side: str | None = None):
         t = u * math.tau
-        breath = math.sin(t)
-        sway = math.sin(t * 0.5)
-        pb["J_Bip_C_Hips"].location = (sway * 0.005, 0.0, breath * 0.005)
+        s1 = math.sin(t)
+        # Double-frequency harmonic vertical bounce + smooth lateral weight shift over stance foot
+        bob_z = -0.018 * math.cos(2.0 * t) - 0.008
+        shift_x = (0.024 if female else 0.014) * (-s1)
+        hip_roll = (0.055 if female else 0.032) * (-s1)
+        pb["J_Bip_C_Hips"].location = (shift_x, 0.0, bob_z)
+
+        l_th, l_sh, l_ft, l_toe, l_thz = _walk_leg(t)
+        r_th, r_sh, r_ft, r_toe, r_thz = _walk_leg(t + math.pi)
+
+        # True contralateral arm swing: Left leg forward (s1 > 0) => Left arm swings backward (+Y, +sin(t-0.14))
+        l_arm_b = math.sin(t - 0.14)
+        l_arm_e = math.sin(t - 0.55)
+        l_arm_w = math.sin(t - 0.90)
+        r_arm_b = math.sin(t + math.pi - 0.14)
+        r_arm_e = math.sin(t + math.pi - 0.55)
+        r_arm_w = math.sin(t + math.pi - 0.90)
+
+        uaL, faL, hdL = _walk_arm(1.0, l_arm_b, l_arm_e, l_arm_w)
+        uaR, faR, hdR = _walk_arm(-1.0, r_arm_b, r_arm_e, r_arm_w)
+        aim = {
+            "UpperArm.L": uaL,
+            "Forearm.L": faL,
+            "Hand.L": hdL,
+            "UpperArm.R": uaR,
+            "Forearm.R": faR,
+            "Hand.R": hdR,
+        }
+        sway_bounce = math.sin(2.0 * t) * 0.025
+        if hold_side == "L":
+            aim["UpperArm.L"] = (0.32, -0.20 + l_arm_b * 0.04, -0.82)
+            aim["Forearm.L"] = (0.26, -0.36 + sway_bounce, -0.76)
+            aim["Hand.L"] = (0.22, -0.44 + sway_bounce, -0.74)
+        elif hold_side == "R":
+            aim["UpperArm.R"] = (-0.32, -0.20 + r_arm_b * 0.04, -0.82)
+            aim["Forearm.R"] = (-0.26, -0.36 + sway_bounce, -0.76)
+            aim["Hand.R"] = (-0.22, -0.44 + sway_bounce, -0.74)
+
+        lean_chest_z = 0.06 if hold_side == "L" else (-0.06 if hold_side == "R" else 0.0)
+        glance_head_z = 0.12 if hold_side == "L" else (-0.12 if hold_side == "R" else 0.0)
+
         apply_vrm_fk(
             arm, pb, anat_dirs,
             {
-                "Hips": (0.0, 0.0, sway * 0.025),
-                "Spine": (0.015 + breath * 0.015, 0.0, 0.0),
-                "Chest": (breath * 0.020, 0.0, -sway * 0.020),
-                "Head": (-0.02 + breath * 0.015, 0.0, sway * 0.045),
-                "Shoulder.L": (0.0, 0.08, 0.0),
-                "Shoulder.R": (0.0, -0.08, 0.0),
+                "Hips": (0.035, hip_roll, -0.078 * s1),
+                "Spine": (0.030, -hip_roll * 0.65, 0.048 * s1),
+                "Chest": (0.025, -hip_roll * 0.35, 0.062 * s1 + lean_chest_z),
+                "Neck": (-0.020, 0.0, -0.045 * s1 + glance_head_z * 0.45),
+                "Head": (-0.020 + math.cos(2.0 * t) * 0.014, 0.0, -0.030 * s1 + glance_head_z * 0.55),
+                "Shoulder.L": (0.0, 0.07, -0.04 * l_arm_b),
+                "Shoulder.R": (0.0, -0.07, 0.04 * r_arm_b),
+                "Thigh.L": (l_th, 0.0, l_thz),
+                "Shin.L": (l_sh, 0.0, 0.0),
+                "Foot.L": (l_ft, 0.0, 0.0),
+                "Toe.L": (l_toe, 0.0, 0.0),
+                "Thigh.R": (r_th, 0.0, r_thz),
+                "Shin.R": (r_sh, 0.0, 0.0),
+                "Foot.R": (r_ft, 0.0, 0.0),
+                "Toe.R": (r_toe, 0.0, 0.0),
+            },
+            aim,
+            finger_curl=0.45 if hold_side else 0.32,
+            skirt_map={
+                "J_Sec_L_SkirtFront": (-0.30 - abs(s1) * 0.22, 0.0, 0.0),
+                "J_Sec_R_SkirtFront": (-0.30 - abs(s1) * 0.22, 0.0, 0.0),
+                "J_Sec_L_SkirtBack": (0.24 + abs(s1) * 0.16, 0.0, 0.0),
+                "J_Sec_R_SkirtBack": (0.24 + abs(s1) * 0.16, 0.0, 0.0),
+                "J_Sec_RanCoatL": (0.16 + max(0.0, -s1) * 0.18, -0.05, 0.0),
+                "J_Sec_RanCoatR": (0.16 + max(0.0, s1) * 0.18, 0.05, 0.0),
+                "J_Sec_RanCapeL": (0.24 + abs(s1) * 0.12, 0.18, 0.0),
+                "J_Sec_RanCapeBack": (0.22 + abs(s1) * 0.12, 0.0, 0.0),
+            },
+        )
+
+    def pose_idle(pb, u):
+        t = u * math.tau
+        breath = math.sin(t * 2.0)
+        sway = math.sin(t)
+        shift_w = math.sin(t) * (0.018 if female else 0.012)
+        pb["J_Bip_C_Hips"].location = (shift_w, 0.0, breath * 0.005 - abs(sway) * 0.004)
+        l_relax = max(0.0, sway)
+        r_relax = max(0.0, -sway)
+        apply_vrm_fk(
+            arm, pb, anat_dirs,
+            {
+                "Hips": (0.0, sway * (0.032 if female else 0.016), sway * 0.030),
+                "Spine": (0.012 + breath * 0.014, -sway * 0.018, 0.0),
+                "Chest": (breath * 0.022, -sway * 0.012, -sway * 0.025),
+                "Neck": (-0.01 + breath * 0.010, 0.02 * math.sin(t * 0.5), sway * 0.025),
+                "Head": (-0.015 + breath * 0.012, 0.04 * sway, sway * 0.055),
+                "Shoulder.L": (0.0, 0.08 + breath * 0.015, 0.0),
+                "Shoulder.R": (0.0, -0.08 - breath * 0.015, 0.0),
+                "Thigh.L": (-0.06 * l_relax, 0.0, 0.02),
+                "Shin.L": (0.12 * l_relax + 0.03, 0.0, 0.0),
+                "Thigh.R": (-0.06 * r_relax, 0.0, -0.02),
+                "Shin.R": (0.12 * r_relax + 0.03, 0.0, 0.0),
             },
             {
-                "UpperArm.L": (0.25, -0.04, -0.96),
-                "Forearm.L": (0.26, -0.15, -0.94),
-                "Hand.L": (0.14, -0.08, -0.98),
-                "UpperArm.R": (-0.25, -0.04, -0.96),
-                "Forearm.R": (-0.26, -0.15, -0.94),
-                "Hand.R": (-0.14, -0.08, -0.98),
+                "UpperArm.L": (0.21, -0.03 + sway * 0.04, -0.96),
+                "Forearm.L": (0.20, -0.20 + breath * 0.03, -0.93),
+                "Hand.L": (0.12, -0.14, -0.97),
+                "UpperArm.R": (-0.21, -0.03 - sway * 0.04, -0.96),
+                "Forearm.R": (-0.20, -0.20 + breath * 0.03, -0.93),
+                "Hand.R": (-0.12, -0.14, -0.97),
             },
-            finger_curl=0.30,
+            finger_curl=0.28,
             skirt_map={"J_Sec_L_SkirtFront": (-0.08, 0.0, 0.0), "J_Sec_R_SkirtFront": (-0.08, 0.0, 0.0)},
         )
 
     def pose_walk(pb, u):
-        t = u * math.tau
-        s1 = math.sin(t)
-        c1 = math.cos(t)
-        pb["J_Bip_C_Hips"].location = (s1 * 0.008, 0.0, abs(c1) * 0.020)
-        arm_L = s1 * 0.40
-        arm_R = -s1 * 0.40
-        apply_vrm_fk(
-            arm, pb, anat_dirs,
-            {
-                "Hips": (0.03, 0.0, -s1 * 0.06),
-                "Spine": (0.04, 0.0, s1 * 0.04),
-                "Chest": (0.03, 0.0, s1 * 0.05),
-                "Head": (-0.03, 0.0, -s1 * 0.02),
-                "Shoulder.L": (0.0, 0.08, 0.0),
-                "Shoulder.R": (0.0, -0.08, 0.0),
-                "Thigh.L": (s1 * 0.46, 0.0, 0.0),
-                "Shin.L": (max(0.0, -c1) * 0.56 + 0.08, 0.0, 0.0),
-                "Foot.L": (-s1 * 0.16, 0.0, 0.0),
-                "Thigh.R": (-s1 * 0.46, 0.0, 0.0),
-                "Shin.R": (max(0.0, c1) * 0.56 + 0.08, 0.0, 0.0),
-                "Foot.R": (s1 * 0.16, 0.0, 0.0),
-            },
-            {
-                "UpperArm.L": (0.16, arm_L - 0.04, -0.92),
-                "Forearm.L": (0.10, arm_L - 0.26, -0.90),
-                "UpperArm.R": (-0.16, arm_R - 0.04, -0.92),
-                "Forearm.R": (-0.10, arm_R - 0.26, -0.90),
-            },
-            finger_curl=0.35,
-            skirt_map={
-                "J_Sec_L_SkirtFront": (-0.34 - abs(s1) * 0.24, 0.0, 0.0),
-                "J_Sec_R_SkirtFront": (-0.34 - abs(s1) * 0.24, 0.0, 0.0),
-                "J_Sec_L_SkirtBack": (0.28 + abs(s1) * 0.18, 0.0, 0.0),
-                "J_Sec_R_SkirtBack": (0.28 + abs(s1) * 0.18, 0.0, 0.0),
-            },
-        )
+        _eval_walk(pb, u, hold_side=None)
 
     def pose_run(pb, u):
         t = u * math.tau
         s1 = math.sin(t)
         c1 = math.cos(t)
-        pb["J_Bip_C_Hips"].location = (s1 * 0.012, 0.0, abs(c1) * 0.040 - 0.018)
-        arm_L = s1 * 0.72
-        arm_R = -s1 * 0.72
+        # Smooth harmonic bounce + slight lateral shift
+        bob_z = -0.034 * math.cos(2.0 * t) - 0.014
+        pb["J_Bip_C_Hips"].location = (-s1 * 0.014, 0.0, bob_z)
+        # True contralateral arm pump (Left leg forward when s1 > 0 => Left arm pumps BACK +Y)
+        armL_b = math.sin(t - 0.10)
+        armR_b = -armL_b
+        # Double knee & spring ankle for lively anime sprint
+        l_th = -0.78 * s1 - 0.14
+        r_th = 0.78 * s1 - 0.14
+        l_sh = max(0.0, c1) * 0.96 + math.exp(-((t % math.tau - 2.1) ** 2) / 0.32) * 0.24 + 0.14
+        r_sh = max(0.0, -c1) * 0.96 + math.exp(-(((t + math.pi) % math.tau - 2.1) ** 2) / 0.32) * 0.24 + 0.14
+        l_ft = -0.20 * max(0.0, s1) + 0.34 * max(0.0, -s1)
+        r_ft = -0.20 * max(0.0, -s1) + 0.34 * max(0.0, s1)
         apply_vrm_fk(
             arm, pb, anat_dirs,
             {
-                "Hips": (0.14, 0.0, -s1 * 0.09),
-                "Spine": (0.10, 0.0, s1 * 0.06),
-                "Chest": (0.07, 0.0, s1 * 0.07),
-                "Head": (-0.15, 0.0, -s1 * 0.04),
-                "Shoulder.L": (0.0, 0.10, 0.0),
-                "Shoulder.R": (0.0, -0.10, 0.0),
-                "Thigh.L": (s1 * 0.78 - 0.12, 0.0, 0.0),
-                "Shin.L": (max(0.0, -c1) * 0.94 + 0.18, 0.0, 0.0),
-                "Foot.L": (-s1 * 0.22, 0.0, 0.0),
-                "Thigh.R": (-s1 * 0.78 - 0.12, 0.0, 0.0),
-                "Shin.R": (max(0.0, c1) * 0.94 + 0.18, 0.0, 0.0),
-                "Foot.R": (s1 * 0.22, 0.0, 0.0),
+                "Hips": (0.14, -0.05 * s1, -s1 * 0.10),
+                "Spine": (0.10, 0.03 * s1, s1 * 0.07),
+                "Chest": (0.08, 0.02 * s1, s1 * 0.08),
+                "Neck": (-0.09, 0.0, -s1 * 0.05),
+                "Head": (-0.08, 0.0, -s1 * 0.03),
+                "Shoulder.L": (0.0, 0.10, -0.06 * armL_b),
+                "Shoulder.R": (0.0, -0.10, 0.06 * armR_b),
+                "Thigh.L": (l_th, 0.0, 0.02 * s1),
+                "Shin.L": (l_sh, 0.0, 0.0),
+                "Foot.L": (l_ft, 0.0, 0.0),
+                "Toe.L": (-0.42 * max(0.0, -s1), 0.0, 0.0),
+                "Thigh.R": (r_th, 0.0, -0.02 * s1),
+                "Shin.R": (r_sh, 0.0, 0.0),
+                "Foot.R": (r_ft, 0.0, 0.0),
+                "Toe.R": (-0.42 * max(0.0, s1), 0.0, 0.0),
             },
             {
-                "UpperArm.L": (0.18, arm_L - 0.10, -0.82),
-                "Forearm.L": (0.06, -0.78, -0.45),
-                "UpperArm.R": (-0.18, arm_R - 0.10, -0.82),
-                "Forearm.R": (-0.06, -0.78, -0.45),
+                "UpperArm.L": (0.20, armL_b * 0.62 + 0.08, -0.78),
+                "Forearm.L": (0.10, armL_b * 0.55 - 0.72, -0.35),
+                "Hand.L": (0.06, armL_b * 0.48 - 0.78, -0.25),
+                "UpperArm.R": (-0.20, armR_b * 0.62 + 0.08, -0.78),
+                "Forearm.R": (-0.10, armR_b * 0.55 - 0.72, -0.35),
+                "Hand.R": (-0.06, armR_b * 0.48 - 0.78, -0.25),
             },
-            finger_curl=0.55,
+            finger_curl=0.52,
             skirt_map={
                 "J_Sec_L_SkirtFront": (-0.65 - abs(s1) * 0.25, 0.0, 0.0),
                 "J_Sec_R_SkirtFront": (-0.65 - abs(s1) * 0.25, 0.0, 0.0),
                 "J_Sec_L_SkirtBack": (0.48 + abs(s1) * 0.20, 0.0, 0.0),
                 "J_Sec_R_SkirtBack": (0.48 + abs(s1) * 0.20, 0.0, 0.0),
+                "J_Sec_RanCoatL": (0.34 + abs(s1) * 0.22, -0.10, 0.0),
+                "J_Sec_RanCoatR": (0.34 + abs(s1) * 0.22, 0.10, 0.0),
+                "J_Sec_RanCapeL": (0.50 + abs(s1) * 0.18, 0.14, 0.0),
+                "J_Sec_RanCapeBack": (0.45 + abs(s1) * 0.18, 0.0, 0.0),
             },
         )
 
@@ -1521,28 +1932,33 @@ def author_all_17_clips(arm, char_id: str) -> None:
         apply_vrm_fk(
             arm, pb, anat_dirs,
             {
+                "Spine": (0.02, 0.0, -0.02),
                 "Chest": (0.02, -0.05, 0.0),
-                "Head": (-0.04, 0.10, 0.08),
+                "Neck": (-0.02, 0.04, 0.05),
+                "Head": (-0.03, 0.08, 0.08),
                 "Shoulder.L": (0.0, 0.08, 0.0),
-                "Shoulder.R": (0.0, -0.06, 0.0),
+                "Shoulder.R": (0.0, -0.04, 0.05),
             },
             {
                 "UpperArm.L": (0.16, -0.06, -0.94),
                 "Forearm.L": (0.08, -0.18, -0.94),
                 "UpperArm.R": (-0.75, -0.25, 0.56),
                 "Forearm.R": (-0.15 + w * 0.7, -0.22, 0.94),
+                "Hand.R": (-0.12 + w * 0.9, -0.22, 0.96),
             },
-            finger_curl=0.12,
+            finger_curl=0.10,
         )
 
     clips = [
-        ("Idle", 48, pose_idle, True),
-        ("Walk", 24, pose_walk, True),
-        ("Run", 18, pose_run, True),
+        ("Idle", 60, pose_idle, True),
+        ("Walk", 32, pose_walk, True),
+        ("Run", 24, pose_run, True),
         ("Sit", 36, pose_sit, True),
         ("Lie", 36, pose_lie, True),
         ("HoldHand_L", 24, make_hold_hand(True), True),
         ("HoldHand_R", 24, make_hold_hand(False), True),
+        ("Walk_HoldHand_L", 32, lambda pb, u: _eval_walk(pb, u, hold_side="L"), True),
+        ("Walk_HoldHand_R", 32, lambda pb, u: _eval_walk(pb, u, hold_side="R"), True),
         ("Hug", 48, pose_hug, False),
         ("Kiss", 48, pose_kiss, False),
         ("Pat_Give", 48, pose_pat_give, False),

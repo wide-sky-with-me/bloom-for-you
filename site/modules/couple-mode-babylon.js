@@ -13,10 +13,10 @@ import {
   resolveWalkPosition,
 } from "./world-spatial.js";
 import { createInteractionFX } from "./flora-and-fx.js";
-import { createRiggedCharacter } from "./couple-rigged-controller.js";
+import { MOOD_LABELS, createRiggedCharacter } from "./couple-rigged-controller.js";
 
-const SPEED_WALK = 2.05;
-const SPEED_RUN = 3.65;
+const SPEED_WALK = 1.78;
+const SPEED_RUN = 3.55;
 
 export const ACTIONS = {
   holdhand: { label: "牵手", key: "F" },
@@ -26,6 +26,8 @@ export const ACTIONS = {
   dance: { label: "跳舞", key: "4" },
   heart: { label: "比心", key: "5" },
   carry: { label: "公主抱", key: "6" },
+  wink: { label: "眨眼", key: "7" },
+  mood: { label: "神态", key: "8" },
   hop: { label: "开心跳", key: "Space" },
   wave: { label: "招手", key: "" },
 };
@@ -290,9 +292,12 @@ export function createCoupleMode({
     const len = Math.hypot(dx, dz);
     if (len < 1e-4) {
       c.speed = lerp(c.speed, 0, clamp(dt * 10, 0, 1));
+      c.turnRate = lerp(c.turnRate || 0, 0, clamp(dt * 12, 0, 1));
       return false;
     }
-    const step = Math.min(len, speed * dt);
+    const desiredSpeed = Math.min(speed, len / Math.max(dt, 0.001));
+    const smoothSpeed = lerp(c.speed || 0, desiredSpeed, clamp(dt * 9.5, 0.18, 1));
+    const step = Math.min(len, Math.max(smoothSpeed, speed * 0.35) * dt);
     const nx = c.pos.x + (dx / len) * step;
     const nz = c.pos.z + (dz / len) * step;
     const resolved = resolveWalkPosition(c.pos.x, c.pos.z, nx, nz, 0.34, c.pos.y);
@@ -305,19 +310,22 @@ export function createCoupleMode({
         c.pos.z = resolved.z;
         c.pos.y = lerp(c.pos.y, targetSurf, clamp(dt * 14.0, 0.25, 1.0));
       }
+      const prevYaw = c.yaw;
       const wantYaw = Math.atan2(-(resolved.x - c.pos.x || dx), -(resolved.z - c.pos.z || dz));
       if (Math.abs(dx) + Math.abs(dz) > 0.001) {
         const moveYaw = Math.atan2(-dx, -dz);
-        c.yaw += angDiff(c.yaw, moveYaw) * clamp(dt * 12.0, 0, 1);
+        c.yaw += angDiff(c.yaw, moveYaw) * clamp(dt * 11.0, 0, 1);
       } else {
-        c.yaw += angDiff(c.yaw, wantYaw) * clamp(dt * 12.0, 0, 1);
+        c.yaw += angDiff(c.yaw, wantYaw) * clamp(dt * 11.0, 0, 1);
       }
-      c.speed = lerp(c.speed, moved / Math.max(dt, 0.001), clamp(dt * 10, 0, 1));
+      c.turnRate = lerp(c.turnRate || 0, angDiff(prevYaw, c.yaw) / Math.max(dt, 0.001), clamp(dt * 14, 0, 1));
+      c.speed = lerp(c.speed, moved / Math.max(dt, 0.001), clamp(dt * 9.5, 0, 1));
       c.state = c.speed > 2.35 ? "run" : "walk";
       return true;
     }
 
     c.speed = lerp(c.speed, 0, clamp(dt * 10, 0, 1));
+    c.turnRate = lerp(c.turnRate || 0, 0, clamp(dt * 12, 0, 1));
     c.state = "idle";
     return false;
   }
@@ -450,7 +458,20 @@ export function createCoupleMode({
     } else if (name === "hop") {
       leader().startAction("hop", 0.72);
     } else if (name === "wave") {
-      leader().startAction("wave", 1.8);
+      leader().startAction("wave", 1.85);
+      leader().triggerWink("R", 1.35);
+    } else if (name === "wink") {
+      const L = leader();
+      const P = partner();
+      L.startAction("wink", 1.85);
+      L.triggerWink("R", 1.65);
+      P.triggerWink("L", 1.4);
+      fx.heart(L.pos.add(new Vector3(0, 1.55, 0)), { count: 16, scale: 0.032 });
+      toast(`${L.name} 俏皮地眨了眨眼 😉`, 1800);
+    } else if (name === "mood") {
+      const m = leader().cycleMood(9.0);
+      partner().setMood(m, 9.0);
+      toast(`当前神态：${MOOD_LABELS[m] || m} ✨`, 1800);
     }
     syncUI();
   }
@@ -459,6 +480,10 @@ export function createCoupleMode({
     if (!item) return false;
     standUp(true);
     walkWaypoints = [];
+    leader().triggerTalk(1.35);
+    if (Math.hypot(partner().pos.x - leader().pos.x, partner().pos.z - leader().pos.z) < 3.5) {
+      partner().triggerTalk(1.0);
+    }
     const res = item.activate?.({
       actor: controlledId,
       audio,
@@ -863,6 +888,8 @@ export function createCoupleMode({
     else if (e.code === "Digit4") doAction("dance");
     else if (e.code === "Digit5") doAction("heart");
     else if (e.code === "Digit6") doAction("carry");
+    else if (e.code === "Digit7") doAction("wink");
+    else if (e.code === "Digit8") doAction("mood");
     else if (e.code === "Space") {
       e.preventDefault();
       if (seatSession) standUp(true);
@@ -1047,6 +1074,27 @@ export function createCoupleMode({
     if (active) updateCamera(0);
   }
 
+  function updateGazePairing() {
+    const L = leader();
+    const P = partner();
+    const dist = Math.hypot(P.pos.x - L.pos.x, P.pos.z - L.pos.z);
+    const inCoupleAct =
+      Boolean(L.action && ["hug", "kiss", "pat", "heart", "dance", "carry", "wink"].includes(L.action.name)) ||
+      carrying;
+
+    if (inCoupleAct || holdingHands || (dist < 2.8 && P.speed < 0.35)) {
+      P.lookTarget = L.getHeadWorld();
+    } else {
+      P.lookTarget = null;
+    }
+
+    if (inCoupleAct || (holdingHands && L.speed < 0.4) || (dist < 2.4 && L.speed < 0.12)) {
+      L.lookTarget = P.getHeadWorld();
+    } else {
+      L.lookTarget = null;
+    }
+  }
+
   let elapsedSec = 0;
   function update(dt) {
     const safeDt = clamp(dt || 0.016, 0.001, 0.05);
@@ -1068,6 +1116,7 @@ export function createCoupleMode({
       updateIdle(safeDt);
     }
 
+    updateGazePairing();
     xian.update(safeDt);
     ran.update(safeDt);
     fx.update(safeDt, elapsedSec);
