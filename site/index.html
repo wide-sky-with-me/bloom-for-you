@@ -2,9 +2,9 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>《鸢尾湾·花与海之约》 · 海景花墅、莫奈花园与群岛海湾庄园</title>
-  <meta name="description" content="《鸢尾湾·花与海之约》：写实自然主义与莫奈花园配色的海景花墅、睡莲鱼虾池、双人秋千与群岛海湾 3D 互动庄园。" />
+  <meta name="description" content="《鸢尾湾·花与海之约》：基于 Babylon.js 9 与自研二次元 Cel 着色的海景花墅、莫奈花园、双人漫游与群岛海湾 3D 互动庄园。" />
   <link rel="icon" href="./assets/flower.svg" type="image/svg+xml" />
   <link rel="preload" href="./assets/flower-song.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="./style.css" />
@@ -50,6 +50,7 @@
       <span class="explore-divider" aria-hidden="true"></span>
       <button type="button" class="explore-pill explore-action explore-couple" id="btn-couple">💞 双人漫游</button>
       <button type="button" class="explore-pill explore-action" id="btn-letter">纪念信笺</button>
+      <button type="button" class="explore-pill explore-action" id="btn-mute" aria-pressed="false" title="切换音效开关">音效</button>
       <button type="button" class="explore-pill explore-action" id="btn-pause" aria-pressed="false">暂停</button>
       <button type="button" class="explore-pill explore-action" id="btn-daynight" aria-pressed="false">夜景</button>
       <button type="button" class="explore-pill explore-action" id="btn-reset">复位</button>
@@ -61,26 +62,29 @@
       <button type="button" class="couple-btn couple-char is-active" data-couple-char="xian">👧 小贤贤</button>
       <span class="couple-heart" aria-hidden="true">♥</span>
       <button type="button" class="couple-btn couple-char" data-couple-char="ran">👦 小冉子</button>
+      <button type="button" class="couple-btn couple-collapse-btn" data-couple-toggle aria-expanded="true">收起 ▴</button>
     </div>
-    <div class="couple-row">
-      <button type="button" class="couple-btn" data-couple-view="first">第一人称</button>
-      <button type="button" class="couple-btn" data-couple-view="second">第二人称</button>
-      <button type="button" class="couple-btn is-active" data-couple-view="third">第三人称</button>
-    </div>
-    <div class="couple-row couple-actions">
-      <button type="button" class="couple-btn" data-couple-action="holdhand">🤝 牵手 F</button>
-      <button type="button" class="couple-btn" data-couple-action="hug">🤗 拥抱 1</button>
-      <button type="button" class="couple-btn" data-couple-action="kiss">💋 亲亲 2</button>
-      <button type="button" class="couple-btn" data-couple-action="pat">🥰 摸头 3</button>
-      <button type="button" class="couple-btn" data-couple-action="dance">💃 跳舞 4</button>
-      <button type="button" class="couple-btn" data-couple-action="heart">❤️ 比心 5</button>
-      <button type="button" class="couple-btn" data-couple-action="carry">👰 公主抱 6</button>
-      <button type="button" class="couple-btn" data-couple-action="wink">😉 眨眼 7</button>
-      <button type="button" class="couple-btn" data-couple-action="mood">✨ 神态 8</button>
-    </div>
-    <div class="couple-row">
-      <button type="button" class="couple-btn couple-interact" data-couple-interact>✋ 互动 E</button>
-      <button type="button" class="couple-btn couple-exit" data-couple-exit>退出漫游 Esc</button>
+    <div class="couple-collapsible">
+      <div class="couple-row">
+        <button type="button" class="couple-btn" data-couple-view="first">第一人称</button>
+        <button type="button" class="couple-btn" data-couple-view="second">第二人称</button>
+        <button type="button" class="couple-btn is-active" data-couple-view="third">第三人称</button>
+      </div>
+      <div class="couple-row couple-actions">
+        <button type="button" class="couple-btn" data-couple-action="holdhand">🤝 牵手 F</button>
+        <button type="button" class="couple-btn" data-couple-action="hug">🤗 拥抱 1</button>
+        <button type="button" class="couple-btn" data-couple-action="kiss">💋 亲亲 2</button>
+        <button type="button" class="couple-btn" data-couple-action="pat">🥰 摸头 3</button>
+        <button type="button" class="couple-btn" data-couple-action="dance">💃 跳舞 4</button>
+        <button type="button" class="couple-btn" data-couple-action="heart">❤️ 比心 5</button>
+        <button type="button" class="couple-btn" data-couple-action="carry">👰 公主抱 6</button>
+        <button type="button" class="couple-btn" data-couple-action="wink">😉 眨眼 7</button>
+        <button type="button" class="couple-btn" data-couple-action="mood">✨ 神态 8</button>
+      </div>
+      <div class="couple-row">
+        <button type="button" class="couple-btn couple-interact" data-couple-interact>✋ 互动 E</button>
+        <button type="button" class="couple-btn couple-exit" data-couple-exit>退出漫游 Esc</button>
+      </div>
     </div>
   </section>
   <div class="couple-prompt" id="couple-prompt" hidden></div>

@@ -30,6 +30,18 @@ import { clamp, lerp, getTerrainMeshY, mulberry32 } from "./world-spatial.js";
 export const SUN_DIRECTION = new Vector3(0.62, 0.28, 0.73).normalize();
 export const MOON_DIRECTION = new Vector3(-0.46, 0.44, 0.77).normalize();
 
+// Reusable color/vector constants to avoid per-frame allocations during day/night transitions
+const FOG_DAY = new Color3(0.64, 0.87, 0.99);
+const FOG_NIGHT = new Color3(0.08, 0.15, 0.28);
+const HEMI_DIFFUSE_DAY = new Color3(0.86, 0.94, 1.00);
+const HEMI_DIFFUSE_NIGHT = new Color3(0.36, 0.50, 0.78);
+const HEMI_GROUND_DAY = new Color3(0.32, 0.50, 0.70);
+const HEMI_GROUND_NIGHT = new Color3(0.12, 0.18, 0.30);
+const SUN_DIFFUSE_DAY = new Color3(1.0, 0.96, 0.86);
+const SUN_DIFFUSE_NIGHT = new Color3(0.64, 0.80, 1.0);
+const _tmpFogCol = new Color3();
+const _tmpLightDir = new Vector3();
+
 Effect.ShadersStore["irisSkyVertexShader"] = /* glsl */ `
   precision highp float;
   attribute vec3 position;
@@ -626,28 +638,28 @@ export function buildOceanAndSky(scene, { isSoftware = false, camera = scene.act
   }
 
   let lastEnvKey = -1;
+  let ssaoAttached = Boolean(ssaoPipeline);
+
   const setNightMix = (nightMix) => {
     const n = clamp(nightMix, 0, 1);
     skyMat.setFloat("uNightMix", n);
     oceanMat.setFloat("uNightMix", n);
 
-    const fogDay = new Color3(0.64, 0.87, 0.99);
-    const fogNight = new Color3(0.08, 0.15, 0.28);
-    const fc = Color3.Lerp(fogDay, fogNight, n);
-    scene.fogColor.copyFrom(fc);
-    scene.clearColor.set(fc.r, fc.g, fc.b, 1.0);
-    oceanMat.setColor3("uFogColor", fc);
+    Color3.LerpToRef(FOG_DAY, FOG_NIGHT, n, _tmpFogCol);
+    scene.fogColor.copyFrom(_tmpFogCol);
+    scene.clearColor.set(_tmpFogCol.r, _tmpFogCol.g, _tmpFogCol.b, 1.0);
+    oceanMat.setColor3("uFogColor", _tmpFogCol);
     scene.fogDensity = lerp(0.00086, 0.00148, n);
     oceanMat.setFloat("uFogDensity", scene.fogDensity);
 
-    hemiLight.diffuse = Color3.Lerp(new Color3(0.86, 0.94, 1.00), new Color3(0.36, 0.50, 0.78), n);
-    hemiLight.groundColor = Color3.Lerp(new Color3(0.32, 0.50, 0.70), new Color3(0.12, 0.18, 0.30), n);
+    Color3.LerpToRef(HEMI_DIFFUSE_DAY, HEMI_DIFFUSE_NIGHT, n, hemiLight.diffuse);
+    Color3.LerpToRef(HEMI_GROUND_DAY, HEMI_GROUND_NIGHT, n, hemiLight.groundColor);
     hemiLight.intensity = lerp(0.56, 0.44, n);
 
-    const lightDir = Vector3.Lerp(SUN_DIRECTION, MOON_DIRECTION, n).normalize();
-    sunLight.direction = lightDir.scale(-1);
-    sunLight.position = lightDir.scale(115);
-    sunLight.diffuse = Color3.Lerp(new Color3(1.0, 0.96, 0.86), new Color3(0.64, 0.80, 1.0), n);
+    Vector3.LerpToRef(SUN_DIRECTION, MOON_DIRECTION, n, _tmpLightDir).normalize();
+    sunLight.direction.set(-_tmpLightDir.x, -_tmpLightDir.y, -_tmpLightDir.z);
+    sunLight.position.set(_tmpLightDir.x * 115, _tmpLightDir.y * 115, _tmpLightDir.z * 115);
+    Color3.LerpToRef(SUN_DIFFUSE_DAY, SUN_DIFFUSE_NIGHT, n, sunLight.diffuse);
     sunLight.intensity = lerp(2.68, 1.12, n);
     const targetExposure = lerp(1.08, 1.18, n);
     scene.imageProcessingConfiguration.exposure = targetExposure;
@@ -673,15 +685,27 @@ export function buildOceanAndSky(scene, { isSoftware = false, camera = scene.act
   };
 
   const setQualityDetail = (tier) => {
-    oceanMat.setFloat("uDetailScale", tier === "low" ? 0.3 : tier === "medium" ? 0.65 : 1.0);
+    const isLow = tier === "low";
+    oceanMat.setFloat("uDetailScale", isLow ? 0.3 : tier === "medium" ? 0.65 : 1.0);
     shadowGen.filteringQuality = tier === "high" ? ShadowGenerator.QUALITY_MEDIUM : ShadowGenerator.QUALITY_LOW;
+    glowLayer.isEnabled = !isLow;
     if (defaultPipeline) {
-      defaultPipeline.bloomEnabled = tier !== "low";
-      defaultPipeline.sharpenEnabled = tier !== "low";
-      defaultPipeline.samples = isSoftware || tier === "low" ? 1 : tier === "medium" ? 2 : 4;
+      defaultPipeline.bloomEnabled = !isLow;
+      defaultPipeline.sharpenEnabled = !isLow;
+      defaultPipeline.samples = isSoftware || isLow ? 1 : tier === "medium" ? 2 : 4;
     }
-    if (ssaoPipeline) {
-      ssaoPipeline.totalStrength = tier === "low" ? 0.0 : tier === "medium" ? 0.50 : 0.62;
+    if (ssaoPipeline && camera) {
+      const ppm = scene.postProcessRenderPipelineManager;
+      if (isLow && ssaoAttached) {
+        ppm.detachCamerasFromRenderPipeline("IrisBaySSAO", camera);
+        ssaoAttached = false;
+      } else if (!isLow && !ssaoAttached) {
+        ppm.attachCamerasToRenderPipeline("IrisBaySSAO", camera);
+        ssaoAttached = true;
+      }
+      if (!isLow) {
+        ssaoPipeline.totalStrength = tier === "medium" ? 0.50 : 0.62;
+      }
     }
   };
 
@@ -708,6 +732,7 @@ export function buildOceanAndSky(scene, { isSoftware = false, camera = scene.act
     hemiLight,
     shadowGen,
     glowLayer,
+    isSsaoAttached: () => ssaoAttached,
     setNightMix,
     setQualityDetail,
     update,

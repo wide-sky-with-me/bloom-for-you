@@ -32,15 +32,6 @@ function irisBayVitePlugin() {
         copyDirRecursive(modelsSrc, modelsDest);
       }
 
-      const havokSrc = path.resolve(__dirname, "site/assets/havok/HavokPhysics.wasm");
-      const havokNmSrc = path.resolve(__dirname, "node_modules/@babylonjs/havok/lib/esm/HavokPhysics.wasm");
-      const wasmSrc = existsSync(havokSrc) ? havokSrc : havokNmSrc;
-      if (existsSync(wasmSrc)) {
-        const havokDestDir = path.resolve(resolvedOutDir, "assets/havok");
-        mkdirSync(havokDestDir, { recursive: true });
-        copyFileSync(wasmSrc, path.resolve(havokDestDir, "HavokPhysics.wasm"));
-      }
-
       const giftSrc = path.resolve(__dirname, "site/gift.json");
       if (existsSync(giftSrc)) {
         copyFileSync(giftSrc, path.resolve(resolvedOutDir, "gift.json"));
@@ -63,15 +54,22 @@ export default defineConfig({
   base: "./",
   publicDir: false,
   plugins: [irisBayVitePlugin()],
-  optimizeDeps: {
-    exclude: ["@babylonjs/havok"],
-  },
   build: {
     outDir: "../dist-vite",
     emptyOutDir: true,
     target: "es2022",
     assetsInlineLimit: 4096,
     chunkSizeWarningLimit: 5500,
+    rollupOptions: {
+      output: {
+        // Prevent Babylon.js dynamic shader imports from fragmenting into 170+ tiny JS files
+        manualChunks(id) {
+          if (id.includes("node_modules/@babylonjs/loaders")) return "babylon-loaders";
+          if (id.includes("node_modules/@babylonjs/")) return "babylon-core";
+          return undefined;
+        },
+      },
+    },
   },
   server: {
     host: "127.0.0.1",

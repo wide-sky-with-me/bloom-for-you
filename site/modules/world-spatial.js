@@ -115,6 +115,57 @@ export const EXCLUSION_ZONES = {
   ],
 };
 
+// Single source of truth for Coastal Villa indoor shells and doorway waypoints.
+export function isInsideVilla1FShell(x, z) {
+  return (x > -23.5 && x < -10.3 && z > -9.9 && z < 4.1) || (x >= -10.3 && x < -3.9 && z > -9.9 && z < -1.3);
+}
+
+export function isInsideVilla2FShell(x, z) {
+  return x > -23.5 && x < -11.1 && z > -9.9 && z < 4.1;
+}
+
+export function isInsideVillaShell(x, z) {
+  return isInsideVilla1FShell(x, z) || isInsideVilla2FShell(x, z);
+}
+
+export function inVillaStudySuite(x, z) {
+  return x > -10.5 && x < -3.9 && z > -9.9 && z < -1.3;
+}
+
+export function buildVillaWalkWaypoints(startX, startZ, destX, destZ, startY = 2.6, destY = 2.6) {
+  const pts = [];
+  if (startY > 4.5 || destY > 4.5) {
+    pts.push([destX, destZ]);
+    return pts;
+  }
+  const startInside = isInsideVilla1FShell(startX, startZ);
+  const destInside = isInsideVilla1FShell(destX, destZ);
+
+  if (!startInside && destInside) {
+    if (startZ > 6.8 || Math.abs(startX + 14.0) > 2.2) {
+      pts.push([-14.0, 9.2]);
+    }
+    pts.push([-14.0, 5.2], [-14.0, 2.2]);
+    if (inVillaStudySuite(destX, destZ)) {
+      pts.push([-11.6, -5.2], [-9.2, -5.2]);
+    }
+  } else if (startInside && !destInside) {
+    if (inVillaStudySuite(startX, startZ)) {
+      pts.push([-9.2, -5.2], [-11.6, -5.2]);
+    }
+    pts.push([-14.0, 2.2], [-14.0, 9.2]);
+  } else if (startInside && destInside) {
+    if (inVillaStudySuite(startX, startZ) && !inVillaStudySuite(destX, destZ)) {
+      pts.push([-9.2, -5.2], [-12.0, -5.2]);
+    } else if (!inVillaStudySuite(startX, startZ) && inVillaStudySuite(destX, destZ)) {
+      pts.push([-12.0, -5.2], [-9.2, -5.2]);
+    }
+  }
+
+  pts.push([destX, destZ]);
+  return pts;
+}
+
 // ---------------------------------------------------------------------------
 // Unified 280m Coastal Peninsula Elevation & Biome Queries
 // ---------------------------------------------------------------------------

@@ -7,11 +7,16 @@ import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 
 const SKIP_MATERIAL_RE = /water|creekwater|pondwater|glass|windowglass|sheer|foam|wake|glaze|watermat/i;
+// Explicit exclusion for furniture / prop / aquatic meshes whose names contain substrings like "chair" (hair), "bottom", or "body".
+const NON_CHARACTER_PROP_RE =
+  /chair|table|sofa|bench|desk|picnic|bistro|ryukin|koi|shrimp|goldfish|villa|cottage|gazebo|windmill|lighthouse|bridge|boat|yacht|sloop|cliff|rock|boulder|lantern|lamp|clock|mirror|frame|basket|chandelier/i;
+// Use token boundaries so "Armchair_01" never matches "hair" and "M_RyukinBody2" never matches "body".
 const CHARACTER_MATERIAL_RE =
-  /couple_|skin|body|face|hair|top|bottom|shoe|accessory|coat|cuff|vision|vrm|victoria|sakurada|mouth|brow|lash|eyeline|iris|highlight|eyewhite|cloth|ran_|xian_/i;
-const SOFT_FEATURE_RE = /face_features|eye|lash|brow|eyeline|iris|highlight|mouth/i;
-const HAIR_MATERIAL_RE = /hair/i;
-const FACE_SKIN_RE = /face_00_skin|f00_000_00_face|head_skin|^face$/i;
+  /(?:^|[_\-\s.])(couple|ran|xian|npc|vrm|victoria|sakurada|vita|shino|vivi|f00|m00|n00|skin|body|face|hair|hairback|hairfront|tops?|bottoms?|shoes?|accessory|coat|cuff|vision|mouth|brow|lash|eye|eyeiris|eyehighlight|eyeline|iris|highlight|eyewhite|cloth|dress|cape|ribbon|sleeve|skirt)(?:$|[_\-\s.\d])/i;
+const SOFT_FEATURE_RE =
+  /(?:^|[_\-\s.])(face_features|eye|eyeiris|eyehighlight|eyewhite|eyeline|eyelash|lash|brow|iris|highlight|mouth)(?:$|[_\-\s.\d])/i;
+const HAIR_MATERIAL_RE = /(?:^|[_\-\s.])(hair|hairback|hairfront|hair001|bangs)(?:$|[_\-\s.\d])/i;
+const FACE_SKIN_RE = /face_00_skin|f00_000_00_face|head_skin|face_skin|^face$/i;
 
 // Shader mode IDs encoded cleanly into uToonParams.w:
 // 0 = World, 1 = Character Cloth/Body, 2 = Character Hair, 3 = Face Skin, 4 = Eye/Face Features
@@ -44,7 +49,20 @@ export class GenshinToonPlugin extends MaterialPluginBase {
   }
 
   prepareDefines(defines, _scene, _mesh) {
-    defines.GENSHIN_TOON = this._isEnabled;
+    const mat = this._material;
+    const explicitMode = typeof mat?.metadata?.toonMode === "number" ? mat.metadata.toonMode : null;
+    if (explicitMode !== null && explicitMode !== this._mode) {
+      const updated = classifyMaterialName(mat?.name || "", explicitMode);
+      if (updated) {
+        this._mode = updated.mode;
+        this._isCharacter = updated.isCharacter;
+        this._strength = updated.strength;
+        this._rimStrength = updated.rimStrength;
+      }
+    }
+    const isTranslucent =
+      Boolean(mat) && (mat.alpha ?? 1.0) < 0.92 && mat.transparencyMode !== PBRMaterial.PBRMATERIAL_ALPHATEST;
+    defines.GENSHIN_TOON = this._isEnabled && !mat?.unlit && !isTranslucent;
   }
 
   getUniforms() {
@@ -164,15 +182,17 @@ export class GenshinToonPlugin extends MaterialPluginBase {
   }
 }
 
-function classifyMaterial(mat) {
-  if (!mat || !(mat instanceof PBRMaterial) || mat.unlit) return null;
-  if (mat.pluginManager?.getPlugin("GenshinToon")) return null;
-  const name = mat.name || "";
-  if (SKIP_MATERIAL_RE.test(name)) return null;
-  if ((mat.alpha ?? 1.0) < 0.92 && mat.transparencyMode !== PBRMaterial.MATERIAL_ALPHATEST) {
-    return null;
+export function classifyMaterialName(name, explicitToonMode = null) {
+  const matName = name || "";
+  if (SKIP_MATERIAL_RE.test(matName)) return null;
+  if (typeof explicitToonMode === "number" && explicitToonMode >= 0 && explicitToonMode <= 4) {
+    if (explicitToonMode === 0) return { isCharacter: false, mode: 0, strength: 0.80, rimStrength: 0.18 };
+    if (explicitToonMode === 4) return { isCharacter: true, mode: 4, strength: 0.45, rimStrength: 0.05 };
+    if (explicitToonMode === 2) return { isCharacter: true, mode: 2, strength: 0.90, rimStrength: 0.24 };
+    if (explicitToonMode === 3) return { isCharacter: true, mode: 3, strength: 0.84, rimStrength: 0.10 };
+    return { isCharacter: true, mode: 1, strength: 0.90, rimStrength: 0.30 };
   }
-  const isCharacter = CHARACTER_MATERIAL_RE.test(name);
+  const isCharacter = !NON_CHARACTER_PROP_RE.test(matName) && CHARACTER_MATERIAL_RE.test(matName);
   if (!isCharacter) {
     return {
       isCharacter: false,
@@ -181,9 +201,9 @@ function classifyMaterial(mat) {
       rimStrength: 0.18,
     };
   }
-  const isSoftFaceFeature = SOFT_FEATURE_RE.test(name);
-  const isHair = HAIR_MATERIAL_RE.test(name);
-  const isFaceSkin = !isSoftFaceFeature && (FACE_SKIN_RE.test(name) || (/face/i.test(name) && /skin/i.test(name)));
+  const isSoftFaceFeature = SOFT_FEATURE_RE.test(matName);
+  const isHair = HAIR_MATERIAL_RE.test(matName);
+  const isFaceSkin = !isSoftFaceFeature && (FACE_SKIN_RE.test(matName) || (/(?:^|[_\-\s.])face(?:$|[_\-\s.\d])/i.test(matName) && /skin/i.test(matName)));
   let mode = 1;
   let strength = 0.90;
   let rimStrength = 0.30;
@@ -203,9 +223,19 @@ function classifyMaterial(mat) {
   return { isCharacter: true, mode, strength, rimStrength };
 }
 
+function classifyMaterial(mat) {
+  if (!mat || !(mat instanceof PBRMaterial) || mat.unlit) return null;
+  if (mat.pluginManager?.getPlugin("GenshinToon")) return null;
+  if ((mat.alpha ?? 1.0) < 0.92 && mat.transparencyMode !== PBRMaterial.MATERIAL_ALPHATEST) {
+    return null;
+  }
+  const explicitMode = typeof mat.metadata?.toonMode === "number" ? mat.metadata.toonMode : null;
+  return classifyMaterialName(mat.name || "", explicitMode);
+}
+
 /**
  * Installs Genshin Impact cel-shading across all world & character PBR materials.
- * Returns a controller `{ setSunState(nightMix, sunDirVec) }`.
+ * Returns a controller `{ setSunState(nightMix, sunDirVec), dispose() }`.
  */
 export function installGenshinToonShading(scene, initialSunDir = new Vector3(0.58, 0.30, 0.72)) {
   const sharedState = {
@@ -225,11 +255,9 @@ export function installGenshinToonShading(scene, initialSunDir = new Vector3(0.5
   }
 
   const obs = scene.onNewMaterialAddedObservable.add((mat) => {
-    queueMicrotask(() => {
-      if (!mat.isDisposed?.()) {
-        tryAttach(mat);
-      }
-    });
+    if (mat && !mat.isDisposed?.()) {
+      tryAttach(mat);
+    }
   });
 
   return {

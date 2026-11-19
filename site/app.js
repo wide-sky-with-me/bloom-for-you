@@ -1,12 +1,11 @@
 // 《鸢尾湾·花与海之约》 — 海景花墅、莫奈花园与群岛海湾庄园
-// Babylon.js 9.36.0 + Havok 1.3.14 Physics + Blender 4.0.2 Sculpted/Rigged GLBs + Golden Hour / Moonlit Night.
+// Babylon.js 9.36.0 + Genshin Toon Cel Shading + Blender 4.0.2 Sculpted/Rigged GLBs + Golden Hour / Moonlit Night.
 
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import "@babylonjs/core/Culling/ray";
 import "@babylonjs/core/Collisions/pickingInfo";
@@ -14,13 +13,12 @@ import "@babylonjs/core/Loading/loadingScreen";
 
 import {
   clamp,
-  lerp,
   POND_CONFIG,
   SWING_CONFIG,
   clearNavigationRegistry,
   isPositionWalkable,
 } from "./modules/world-spatial.js";
-import { initHavokPhysics, loadAllGameModels } from "./modules/assets-loader.js";
+import { MODEL_COUNT, loadAllGameModels } from "./modules/assets-loader.js";
 import { buildOceanAndSky } from "./modules/ocean-sky-stage.js";
 import { buildTerrainAndDistantHorizon } from "./modules/island-terrain-and-horizon.js";
 import { buildFloraAndFX } from "./modules/flora-and-fx.js";
@@ -75,6 +73,32 @@ function hideLoadingOverlay() {
   }, 420);
 }
 
+function showFatalBootError(err) {
+  console.error("[app] Fatal initialization error:", err);
+  const overlay = document.getElementById("loading-overlay");
+  const card = overlay?.querySelector(".loading-card");
+  if (!overlay || !card) return;
+  overlay.hidden = false;
+  overlay.classList.remove("is-fading");
+  const statusEl = document.getElementById("loading-status");
+  if (statusEl) statusEl.textContent = "场景初始化遇到问题";
+  const pctEl = document.getElementById("loading-pct");
+  if (pctEl) pctEl.textContent = "";
+  const existing = card.querySelector(".loading-error");
+  if (existing) existing.remove();
+  const box = document.createElement("div");
+  box.className = "loading-error";
+  const reason = err instanceof Error ? err.message : String(err || "未知渲染上下文错误");
+  box.textContent = `无法启动 WebGL2 渲染场景：${reason}。请确认浏览器已开启硬件加速或刷新重试。`;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "loading-retry-btn";
+  btn.textContent = "重新加载";
+  btn.addEventListener("click", () => window.location.reload());
+  card.appendChild(box);
+  card.appendChild(btn);
+}
+
 async function init() {
   const canvas = document.getElementById("diorama-canvas");
   const letterModal = document.getElementById("letter-modal");
@@ -82,12 +106,30 @@ async function init() {
   const exploreBar = document.getElementById("explore-bar");
   const exploreHint = document.getElementById("explore-hint");
   const btnLetter = document.getElementById("btn-letter");
+  const btnMute = document.getElementById("btn-mute");
   const btnPause = document.getElementById("btn-pause");
   const btnDayNight = document.getElementById("btn-daynight");
   const btnReset = document.getElementById("btn-reset");
   const debugHud = document.getElementById("debug-hud");
+  const isTouchDevice = Boolean(window.matchMedia?.("(pointer: coarse)")?.matches || "ontouchstart" in window);
 
-  setLoadingProgress(0.08, "正在唤醒 Babylon 9.36 WebGL2 与 Havok 物理引擎…");
+  function hintTextFor(modeName, inCouple) {
+    if (inCouple) {
+      return isTouchDevice
+        ? "点地面行走 · 单指转视角 · 双指缩放 · 点 NPC / 道具互动"
+        : "WASD 走 · Shift 跑 · 拖拽转视角 · E 互动 · F 牵手 · V 视角 · Tab 换人 · Esc 退出";
+    }
+    if (modeName === "aerial") {
+      return isTouchDevice
+        ? "点哪看哪 · 双击深入漫步 · 单指旋转 · 双指缩放"
+        : "点哪看哪 · 双击深入漫步 · 拖拽旋转 · 右键平移 · 滚轮缩放";
+    }
+    return isTouchDevice
+      ? "点击地面自由漫步 · 拖拽环顾四周 · 点底栏返回全景"
+      : "WASD / 点击地面自由漫步 · 点哪看哪 · 按 Esc 返回全景";
+  }
+
+  setLoadingProgress(0.08, "正在唤醒 Babylon 9.36 WebGL2 渲染引擎…");
   clearNavigationRegistry();
 
   const engine = new Engine(
@@ -118,6 +160,9 @@ async function init() {
   scene.useRightHandedSystem = true;
   scene.clearColor = new Color4(0.86, 0.80, 0.75, 1.0);
   scene.blockMaterialDirtyMechanism = true;
+  const onBeforeFrameObs = scene.onBeforeAnimationsObservable.add(() => {
+    engine._drawCalls?.fetchNewFrame?.();
+  });
 
   const isPortrait = window.innerWidth < window.innerHeight;
   const camera = new UniversalCamera("MainCamera", new Vector3(11.9, 38.5, 62.2), scene);
@@ -127,22 +172,13 @@ async function init() {
   camera.inputs.clear();
   scene.activeCamera = camera;
 
-  // Initialize Havok Physics V2
-  let havokCtrl = null;
-  let havokError = null;
-  try {
-    havokCtrl = await initHavokPhysics(scene);
-  } catch (err) {
-    havokError = err;
-    console.warn("[app] Havok initialization fallback:", err);
-  }
-
-  setLoadingProgress(0.18, "正在加载 48 组精雕与动作绑定三维模型…");
+  setLoadingProgress(0.16, `正在加载 ${MODEL_COUNT} 组精雕与动作绑定三维模型…`);
   const containers = await loadAllGameModels(scene, (ratio, key) => {
     const r = clamp(Number(ratio) || 0, 0, 1);
-    const frac = 0.18 + 0.50 * r;
+    const frac = 0.16 + 0.54 * r;
     setLoadingProgress(frac, `正在解析三维模型 (${Math.round(r * 100)}% · ${key || ""})…`);
   });
+  const failedModels = Array.isArray(containers.__failedKeys) ? containers.__failedKeys : [];
 
   setLoadingProgress(0.72, "正在构建海岸大气散射、CSM 级联阴影、SSAO2 与 HDR 后处理管线…");
   const oceanSky = buildOceanAndSky(scene, { isSoftware, camera });
@@ -158,8 +194,55 @@ async function init() {
     courtRefs: horizon.courtRefs,
   });
 
-  const havokBodies = havokCtrl ? havokCtrl.syncColliders() : 0;
   scene.blockMaterialDirtyMechanism = false;
+
+  // Prune orphaned materials left behind by disposed sibling templates or replaced tint materials
+  {
+    const liveMats = new Set();
+    for (let i = 0; i < scene.meshes.length; i += 1) {
+      const mat = scene.meshes[i].material;
+      if (mat) {
+        liveMats.add(mat);
+        if (Array.isArray(mat.subMaterials)) {
+          for (let j = 0; j < mat.subMaterials.length; j += 1) {
+            if (mat.subMaterials[j]) liveMats.add(mat.subMaterials[j]);
+          }
+        }
+      }
+    }
+    for (const m of containers.hero_rose?.materials || []) {
+      liveMats.add(m);
+    }
+    for (const mat of [...scene.materials]) {
+      if (mat && !liveMats.has(mat) && mat !== scene.defaultMaterial) {
+        mat.dispose(false, false);
+      }
+    }
+  }
+
+  // Restrict GlowLayer RTT pass strictly to genuine emissive light fixtures + primary wall/terrain occluders
+  if (oceanSky.glowLayer) {
+    const glLayer = oceanSky.glowLayer;
+    for (let i = 0; i < scene.meshes.length; i += 1) {
+      const m = scene.meshes[i];
+      if (!(m instanceof Mesh) || m.getTotalVertices() <= 0) continue;
+      const mName = m.name || "";
+      if (/^(HearthFlame_|CandleFlame_|LampShade_|.*_Sparks$)/i.test(mName)) continue;
+      const mat = m.material;
+      const emCol = mat?.emissiveColor;
+      const emMax = emCol ? Math.max(emCol.r, emCol.g, emCol.b) * (mat.emissiveIntensity ?? 1) : 0;
+      const isEmissiveTarget =
+        emMax >= 0.21 ||
+        Boolean(mat?.emissiveTexture) ||
+        /^(FestoonBulbsThin|GardenFirefliesThin|SkyLantern_)/i.test(mName);
+      const isMajorOccluder =
+        mName === "PeninsulaTerrain" ||
+        (mName.startsWith("VillaGLB_") && /Stucco|Plaster|Roof|Terracotta|Stone/i.test(mName));
+      if (isEmissiveTarget || isMajorOccluder) {
+        glLayer.addIncludedOnlyMesh(m);
+      }
+    }
+  }
 
   const genshinToon = installGenshinToonShading(scene, oceanSky.sunLight.position);
 
@@ -194,18 +277,27 @@ async function init() {
     isPortrait,
     onModeChange(nextMode) {
       if (exploreHint) {
-        exploreHint.textContent =
-          nextMode === "aerial"
-            ? "点哪看哪 · 双击深入漫步 · 拖拽旋转 · 右键平移 · 滚轮缩放"
-            : "WASD / 点击地面自由漫步 · 点哪看哪 · 按 Esc 返回全景";
+        exploreHint.textContent = hintTextFor(nextMode, false);
       }
       if (nextMode === "aerial") {
         markActivePill("aerialOverlook");
       }
     },
   });
+  if (exploreHint) {
+    exploreHint.textContent = hintTextFor("aerial", false);
+  }
 
   const audio = createHarborAudio();
+  btnMute?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const nextMuted = !audio.isMuted();
+    audio.setMuted(nextMuted);
+    if (!nextMuted) audio.unlock();
+    btnMute.textContent = nextMuted ? "静音" : "音效";
+    btnMute.setAttribute("aria-pressed", nextMuted ? "true" : "false");
+  });
+
   const giftData = await resolveGiftConfig();
   populateLetterModal(giftData);
 
@@ -229,11 +321,7 @@ async function init() {
       controls.setEnabled(!on);
       document.body.classList.toggle("is-couple-mode", on);
       if (exploreHint) {
-        exploreHint.textContent = on
-          ? "WASD 走 · Shift 跑 · 拖拽转视角 · E 互动 · F 牵手 · V 视角 · Tab 换人 · Esc 退出"
-          : controls.getMode() === "aerial"
-            ? "点哪看哪 · 双击深入漫步 · 拖拽旋转 · 右键平移 · 滚轮缩放"
-            : "WASD / 点击地面自由漫步 · 点哪看哪 · 按 Esc 返回全景";
+        exploreHint.textContent = hintTextFor(controls.getMode(), on);
       }
       if (!on) markActivePill(controls.getMode() === "aerial" ? "aerialOverlook" : "");
     },
@@ -249,10 +337,11 @@ async function init() {
     }
   });
 
-  window.addEventListener("bloom:open-letter", () => {
+  const onOpenLetterEvent = () => {
     openLetterModal({ saveState: true });
     audio.playLetterUnfold();
-  });
+  };
+  window.addEventListener("bloom:open-letter", onOpenLetterEvent);
 
   let preLetterSnapshot = null;
   let preLetterPreset = "aerialOverlook";
@@ -469,6 +558,7 @@ async function init() {
 
   function setSimPaused(next) {
     simPaused = Boolean(next);
+    scene.animationsEnabled = !simPaused;
     updatePauseUI();
     return simPaused;
   }
@@ -480,6 +570,7 @@ async function init() {
   });
 
   function resetWorld() {
+    if (couple.isActive()) couple.exit();
     closeLetterModal({ restoreState: false });
     preLetterSnapshot = null;
     autoOpenedNearDesk = false;
@@ -567,7 +658,7 @@ async function init() {
     // Ignore invalid search params
   }
 
-  window.addEventListener("keydown", (e) => {
+  const onGlobalKeyDown = (e) => {
     if (e.key === "Escape") {
       if (letterModal && !letterModal.hidden) {
         closeLetterModal({ restoreState: true });
@@ -584,7 +675,8 @@ async function init() {
       e.preventDefault();
       setSimPaused(!simPaused);
     }
-  });
+  };
+  window.addEventListener("keydown", onGlobalKeyDown);
 
   // Subtle auto-dimming of bottom capsule when idle
   let idleTimer = null;
@@ -731,18 +823,38 @@ async function init() {
     }
   }
 
-  canvas.addEventListener("pointermove", (e) => {
-    if (e.buttons !== 0) return;
-    const picked = pickScene(e.clientX, e.clientY);
-    const clickable =
-      couple.isActive() || controls.getMode() === "aerial"
-        ? Boolean(picked.interactive || picked.hitPoint)
-        : Boolean(picked.interactive);
-    canvas.classList.toggle("is-hover-interactive", clickable);
-  });
+  // Throttled hover cursor picking (avoids synchronous full-scene raycast on every 120Hz/1000Hz mouse event)
+  let hoverLastPickMs = 0;
+  let hoverLastX = -999;
+  let hoverLastY = -999;
+  let hoverRafId = 0;
+  let hoverPendingX = 0;
+  let hoverPendingY = 0;
+  const onCanvasPointerMove = (e) => {
+    if (e.buttons !== 0 || e.pointerType === "touch") return;
+    if (Math.hypot(e.clientX - hoverLastX, e.clientY - hoverLastY) < 3) return;
+    hoverPendingX = e.clientX;
+    hoverPendingY = e.clientY;
+    if (hoverRafId) return;
+    hoverRafId = requestAnimationFrame(() => {
+      hoverRafId = 0;
+      const now = performance.now();
+      if (now - hoverLastPickMs < 55) return;
+      hoverLastPickMs = now;
+      hoverLastX = hoverPendingX;
+      hoverLastY = hoverPendingY;
+      const picked = pickScene(hoverPendingX, hoverPendingY);
+      const clickable =
+        couple.isActive() || controls.getMode() === "aerial"
+          ? Boolean(picked.interactive || picked.hitPoint)
+          : Boolean(picked.interactive);
+      canvas.classList.toggle("is-hover-interactive", clickable);
+    });
+  };
+  canvas.addEventListener("pointermove", onCanvasPointerMove);
 
   let clickTimer = null;
-  canvas.addEventListener("click", (e) => {
+  const onCanvasClick = (e) => {
     audio.unlock();
     if (!controls.wasClickGesture()) return;
     const picked = pickScene(e.clientX, e.clientY);
@@ -782,9 +894,10 @@ async function init() {
     } else if (picked.hitPoint) {
       controls.lookAtPoint(picked.hitPoint);
     }
-  });
+  };
+  canvas.addEventListener("click", onCanvasClick);
 
-  canvas.addEventListener("dblclick", (e) => {
+  const onCanvasDblClick = (e) => {
     if (couple.isActive() || controls.getMode() !== "aerial") return;
     if (clickTimer) {
       clearTimeout(clickTimer);
@@ -792,14 +905,16 @@ async function init() {
     }
     const picked = pickScene(e.clientX, e.clientY);
     if (picked.hitPoint || picked.interactive) handleOverlookDiveClick(picked);
-  });
+  };
+  canvas.addEventListener("dblclick", onCanvasDblClick);
 
-  window.addEventListener("resize", () => {
+  const onWindowResize = () => {
     const w = window.innerWidth;
     const h = Math.max(1, window.innerHeight);
     camera.fov = ((w < h ? 62 : 52) * Math.PI) / 180;
     engine.resize();
-  });
+  };
+  window.addEventListener("resize", onWindowResize);
 
   function stepSimulation(simDt) {
     simTime += simDt;
@@ -848,11 +963,15 @@ async function init() {
 
   setLoadingProgress(1.0, "庄园已就绪");
   hideLoadingOverlay();
+  if (failedModels.length > 0) {
+    showWorldToast(`部分模型加载失败 (${failedModels.length})，已以其余场景继续呈现`, 5000);
+  }
 
   let renderFrozenForQA = startFrozenForQA;
   let lastFrameMs = performance.now();
   let hudTickAcc = 0;
-  let autoQualityWarmupSec = 0;
+  let autoQualityDownSec = 0;
+  let autoQualityUpSec = 0;
 
   engine.runRenderLoop(() => {
     const now = performance.now();
@@ -869,7 +988,7 @@ async function init() {
     }
 
     controls.update(frameDt);
-    couple.update(frameDt);
+    couple.update(frameDt, { paused: simPaused });
     checkLetterProximity();
 
     if (!simPaused) {
@@ -885,11 +1004,25 @@ async function init() {
       updateDebugHudUI();
 
       if (!isSoftware && qualityMode === "auto") {
-        autoQualityWarmupSec += 0.4;
-        if (autoQualityWarmupSec > 2.4 && measuredFps < 32) {
-          if (activeQualityTier === "high") applyQualityTier("medium");
-          else if (activeQualityTier === "medium") applyQualityTier("low");
-          autoQualityWarmupSec = 0;
+        if (measuredFps < 30) {
+          autoQualityDownSec += 0.4;
+          autoQualityUpSec = 0;
+          if (autoQualityDownSec >= 2.4) {
+            if (activeQualityTier === "high") applyQualityTier("medium");
+            else if (activeQualityTier === "medium") applyQualityTier("low");
+            autoQualityDownSec = 0;
+          }
+        } else if (measuredFps > 52 && activeQualityTier !== "high") {
+          autoQualityUpSec += 0.4;
+          autoQualityDownSec = 0;
+          if (autoQualityUpSec >= 8.0) {
+            if (activeQualityTier === "low") applyQualityTier("medium");
+            else if (activeQualityTier === "medium") applyQualityTier("high");
+            autoQualityUpSec = 0;
+          }
+        } else {
+          autoQualityDownSec = Math.max(0, autoQualityDownSec - 0.2);
+          autoQualityUpSec = 0;
         }
       }
     }
@@ -898,7 +1031,7 @@ async function init() {
   // Deterministic QA, Performance Inspection & Control API
   window.__fairytaleWorld = {
     ready: true,
-    renderer: "babylon-9.36.0-havok-1.3.14",
+    renderer: "babylon-9.36.0",
     engine,
     scene,
     camera,
@@ -908,6 +1041,7 @@ async function init() {
     flora,
     world,
     couple,
+    audio,
     openLetterModal: () => openLetterModal({ saveState: true }),
     closeLetterModal: () => closeLetterModal({ restoreState: true }),
     triggerInteraction,
@@ -936,19 +1070,37 @@ async function init() {
     resetWorld,
     setQuality,
     toggleDebugHud,
+    dispose() {
+      if (hoverRafId) cancelAnimationFrame(hoverRafId);
+      if (idleTimer) clearTimeout(idleTimer);
+      if (clickTimer) clearTimeout(clickTimer);
+      if (worldToastTimer) clearTimeout(worldToastTimer);
+      window.removeEventListener("bloom:open-letter", onOpenLetterEvent);
+      window.removeEventListener("keydown", onGlobalKeyDown);
+      window.removeEventListener("pointermove", bumpCapsuleActivity);
+      window.removeEventListener("keydown", bumpCapsuleActivity);
+      window.removeEventListener("resize", onWindowResize);
+      canvas.removeEventListener("pointermove", onCanvasPointerMove);
+      canvas.removeEventListener("click", onCanvasClick);
+      canvas.removeEventListener("dblclick", onCanvasDblClick);
+      controls.dispose?.();
+      couple.dispose?.();
+      genshinToon.dispose?.();
+      scene.onBeforeAnimationsObservable.remove(onBeforeFrameObs);
+      engine.dispose();
+    },
     getState() {
       const wp = controls.getWalkPosition();
       return {
         ready: true,
-        renderer: "babylon-9.36.0-havok-1.3.14",
+        renderer: "babylon-9.36.0",
         mode: controls.getMode(),
         activePreset: activePresetName,
         simTime: Number(simTime.toFixed(4)),
         simPaused,
         nightMix: Number(nightMix.toFixed(3)),
-        havokBodies,
-        havokActive: Boolean(havokCtrl),
-        havokError: havokError ? String(havokError) : null,
+        failedModels,
+        ssaoAttached: oceanSky.isSsaoAttached?.() ?? false,
         interactableCount: allInteractables.length,
         walkPosition: [Number(wp.x.toFixed(2)), Number(wp.y.toFixed(2)), Number(wp.z.toFixed(2))],
         cameraPosition: [
@@ -967,6 +1119,7 @@ async function init() {
         nightMix: Number(nightMix.toFixed(3)),
         qualityMode,
         activeQualityTier,
+        ssaoAttached: oceanSky.isSsaoAttached?.() ?? false,
         gpuRendererName,
         isSoftware,
       };
@@ -984,7 +1137,7 @@ async function init() {
           applyNightMix(nextMix);
         }
         controls.update(stepDt);
-        couple.update(stepDt);
+        couple.update(stepDt, { paused: simPaused });
         checkLetterProximity();
         if (!simPaused) stepSimulation(stepDt);
       }
@@ -1010,9 +1163,9 @@ async function init() {
         textures: scene.textures.length,
         qualityMode,
         activeQualityTier,
+        ssaoAttached: oceanSky.isSsaoAttached?.() ?? false,
         gpuRendererName,
         isSoftware,
-        havokBodies,
       };
     },
     getStats() {
@@ -1039,11 +1192,11 @@ async function init() {
         simPaused,
         nightMix: Number(nightMix.toFixed(3)),
         activeQualityTier,
+        ssaoAttached: oceanSky.isSsaoAttached?.() ?? false,
         drawCalls: engine._drawCalls?.current || scene.getActiveMeshes().length,
         renderedTriangles: Math.round((scene.getActiveIndices?.() || 0) / 3),
         meshes,
         instancedFloraCount,
-        havokBodies,
         interactiveIds: allInteractables.map((it) => it.id).sort(),
         letterVisible: Boolean(letterModal && !letterModal.hidden),
       };
@@ -1051,4 +1204,4 @@ async function init() {
   };
 }
 
-init();
+init().catch(showFatalBootError);

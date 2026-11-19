@@ -491,18 +491,20 @@ export function createInteractionFX(
     }
   }
   const rings = [];
+  const sharedRingMat = new StandardMaterial(`${name}_RingSharedMat`, scene);
+  sharedRingMat.emissiveColor = new Color3(0.84, 0.94, 1.0);
+  sharedRingMat.disableLighting = true;
+  sharedRingMat.backFaceCulling = false;
+  sharedRingMat.disableDepthWrite = true;
+  sharedRingMat.alpha = 0.999;
+
   for (let i = 0; i < maxRings; i += 1) {
     const m = buildVertexMesh(`${name}_Ring_${i}`, scene, root, { positions: ringPos, indices: ringIdx });
-    const mat = new StandardMaterial(`${name}_RingMat_${i}`, scene);
-    mat.emissiveColor = new Color3(1, 1, 1);
-    mat.disableLighting = true;
-    mat.backFaceCulling = false;
-    mat.disableDepthWrite = true;
-    mat.alpha = 0;
-    m.material = mat;
+    m.material = sharedRingMat;
+    m.visibility = 0;
     m.isVisible = false;
     scene.getGlowLayerByName?.("EstateGlow")?.addExcludedMesh?.(m);
-    rings.push({ mesh: m, mat, on: false, t: 0, dur: 1, r0: 0.1, r1: 1, op: 0.6, delay: 0 });
+    rings.push({ mesh: m, on: false, t: 0, dur: 1, r0: 0.1, r1: 1, op: 0.6, delay: 0 });
   }
   let ringCursor = 0;
 
@@ -516,7 +518,7 @@ export function createInteractionFX(
     r.r1 = o.radius ?? 1.1;
     r.op = o.opacity ?? 0.7;
     r.delay = o.delay ?? 0;
-    r.mat.emissiveColor = hexToColor3(o.color ?? 0xffffff).scale(0.8);
+    r.mesh.visibility = 0;
     r.mesh.position.set(pos.x, pos.y + 0.015, pos.z);
     r.mesh.isVisible = false;
   }
@@ -703,7 +705,7 @@ export function createInteractionFX(
       const e = 1 - Math.pow(1 - u, 2.2);
       const rs = lerp(r.r0, r.r1, e);
       r.mesh.scaling.set(rs, 1, rs);
-      r.mat.alpha = r.op * (1 - u) * Math.min(1, u * 8);
+      r.mesh.visibility = r.op * (1 - u) * Math.min(1, u * 8);
     }
   }
 
@@ -2127,6 +2129,13 @@ function buildFloraInteractables(scene, floraRoot, { treeInfo, roseInfo, hydInfo
     vine.isPickable = false;
 
     const bloomCols = [0xffffff, 0xffb7cf, 0xfff0a0, 0xc9b5ff, 0xff8fae];
+    const crownBloomMats = bloomCols.map((col, ci) =>
+      makePbrMat(`CrownBloomMat_${ci}`, scene, {
+        color: col,
+        emissive: 0x221016,
+        roughness: 0.55,
+      })
+    );
     for (let i = 0; i < 14; i += 1) {
       const a = (i / 14) * Math.PI * 2;
       const bMesh = MeshBuilder.CreateSphere(`CrownBloom_${i}`, { diameter: 0.052, segments: 6 }, scene);
@@ -2134,11 +2143,7 @@ function buildFloraInteractables(scene, floraRoot, { treeInfo, roseInfo, hydInfo
       bMesh.position.set(Math.cos(a) * 0.13, 0.012, Math.sin(a) * 0.13);
       bMesh.scaling.set(1, 0.6, 1);
       bMesh.isPickable = false;
-      bMesh.material = makePbrMat(`CrownBloomMat_${i % bloomCols.length}`, scene, {
-        color: bloomCols[i % bloomCols.length],
-        emissive: 0x221016,
-        roughness: 0.55,
-      });
+      bMesh.material = crownBloomMats[i % crownBloomMats.length];
     }
 
     interactables.push({

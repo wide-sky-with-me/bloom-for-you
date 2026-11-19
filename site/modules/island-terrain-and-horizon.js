@@ -39,6 +39,7 @@ import {
   getMeadowGroundNormalTexture,
 } from "./world-spatial.js";
 import { instantiateGLB } from "./assets-loader.js";
+import { findDescendantByName, mergeStaticChildrenByMaterial } from "./glb-helpers.js";
 
 function samplePolyline(waypoints, spacing) {
   const segLens = [];
@@ -584,6 +585,24 @@ function buildCourtyardAndTrails(scene, root) {
   bPost.thinInstanceSetBuffer("matrix", pMats, 16, true);
   bBulb.thinInstanceSetBuffer("matrix", lMats, 16, true);
 
+  // Merge non-pickable static decorative sub-parts of fountain, mailbox & bicycle frame
+  for (const m of sec.getChildMeshes(false)) {
+    if (/^(CourtCurb|FountainBasinRim|FountainPedestal|FountainUpperBowl|Mailbox(?!Flag)|Bike(?!Wheel|Rim|Hub|Spoke|Bell))/.test(m.name || "")) {
+      m.isPickable = false;
+    }
+  }
+  mergeStaticChildrenByMaterial(sec, scene, {
+    namePrefix: "CourtyardPropsBatch",
+    filterMesh: (m) => {
+      let cur = m;
+      while (cur) {
+        if (cur === flagPivot || cur === waypointPivot || wheels.includes(cur) || cur === bell) return false;
+        cur = cur.parent;
+      }
+      return /^(CourtCurb|FountainBasinRim|FountainPedestal|FountainUpperBowl|Mailbox|Bike)/.test(m.name || "");
+    },
+  });
+
   return { courtRefs: { mailbox, flagPivot, wheels, bell, waypointPivot }, bulbMat };
 }
 
@@ -812,22 +831,37 @@ function buildDistantHorizonAndArchipelago(scene, root, fleetContainer) {
     win.parent = hor;
     win.isPickable = false;
   }
+  mergeStaticChildrenByMaterial(hor, scene, {
+    namePrefix: "AcrossBayVillageBatch",
+    filterMesh: (m) => m.name?.startsWith("Village"),
+  });
 
-  // Outer-Bay Cruising Fleet (instanced from harbor_fleet.glb Coastal_Sloop)
+  // Outer-Bay Cruising Fleet (instanced from harbor_fleet.glb Coastal_Sloop, unused siblings disposed)
   const outerBoats = [];
   if (fleetContainer) {
     for (let b = 0; b < 4; b += 1) {
-      const inst = instantiateGLB(fleetContainer, `OuterBoat_${b}`, hor);
-      const sloop = inst?.rootNodes[0]?.getChildTransformNodes(false).find((n) => n.name.includes("Coastal_Sloop")) || inst?.rootNodes[0];
-      if (inst) {
-        for (const n of inst.rootNodes[0].getChildren()) {
-          if (n !== sloop) n.setEnabled(false);
+      const bWrap = new TransformNode(`OuterBoatWrap_${b}`, scene);
+      bWrap.parent = hor;
+      const inst = instantiateGLB(fleetContainer, `OuterBoat_${b}`, bWrap);
+      const sloop = findDescendantByName(inst?.rootNodes, "Coastal_Sloop");
+      if (inst && sloop) {
+        sloop.parent = bWrap;
+        for (const r of [...(inst.rootNodes || [])]) {
+          for (const n of [...(r.getChildren?.() || [])]) {
+            if (n !== sloop) n.dispose(false, false);
+          }
+          if (r !== sloop) r.dispose(false, false);
         }
+        sloop.getChildMeshes().forEach((m) => {
+          m.isPickable = false;
+        });
         const bx = 135 + b * 42;
         const bz = -40 + b * 48;
-        inst.rootNodes[0].position.set(bx, 0, bz);
-        inst.rootNodes[0].rotation.y = 0.4 + b * 0.8;
-        outerBoats.push({ node: inst.rootNodes[0], bx, bz, phase: b * 1.4, r: 16 + b * 5 });
+        bWrap.position.set(bx, 0, bz);
+        bWrap.rotation.y = 0.4 + b * 0.8;
+        outerBoats.push({ node: bWrap, bx, bz, phase: b * 1.4, r: 16 + b * 5 });
+      } else {
+        bWrap.dispose();
       }
     }
   }

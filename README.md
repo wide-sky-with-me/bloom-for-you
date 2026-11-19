@@ -1,167 +1,124 @@
 # 《鸢尾湾·花与海之约》 · 海景花墅、莫奈花园与群岛海湾庄园
 
-一座采用 **Three.js (`v0.186.1`) 物理写实渲染（PBR）** 构建、融合 **写实自然主义 + 莫奈式花园配色 + 克制浪漫氛围** 的 3D 互动海岸庄园礼赠场景。打开页面即可俯瞰近景花墅与莫奈花园、中景蜿蜒半岛与石砌游艇海港、远景群岛对岸小镇与环湾山脉构成的完整暖金色傍晚全景，并可真正步入室内外每一处角落自由探索。
+基于 **Babylon.js `9.36.0`** 与自研 **二次元双阶 Cel 着色插件（`GenshinToonPlugin`）** 构建的 3D 互动海岸庄园礼赠应用。场景融合近景双层海景花墅、莫奈瀑布睡莲鱼虾池、繁花双人秋千、中景半岛石砌游艇海港与远景群岛对岸小镇，支持默认俯瞰全景、点击深入第一人称漫步，以及 **小贤贤 & 小冉子** 双人骨骼漫游与 69 处场景/NPC/生态动物互动。
+
+所有运行时代码、字体、礼赠文案与 **51 个 `.glb` 三维模型**均 100% 本地自托管，无任何外部运行时网络请求。
 
 ---
 
-## 一、交付物概览
+## 一、交付物与目录结构
 
-1. **完整前端工程源码与配置**
-   - 场景源码目录：`site/`（含 `index.html`、`style.css`、`app.js`、`audio.js`、`gift.json` 及 `site/modules/` 各子系统模块）
-   - 工程与构建配置：`package.json`、`package-lock.json`、`vite.config.js`、`scripts/build-single-html.mjs`、`build.py`
-   - 自动化回归测试：`tests/test_build.py`
-2. **Web 静态部署产物**
-   - `dist-vite/`（Vite 生产打包产物，含 Tree-shaken 模块包与指纹静态资源）
-   - `dist/`（零外部依赖静态站点目录 + `release.manifest.json` SHA-256 校验清单）
-3. **100% 自包含离线单文件 HTML**
-   - 根目录交付文件：`鸢尾湾·花与海之约.html`（约 `13.25 MB`）
-   - 已将 Three.js 运行时、全部场景模块、样式表、`FlowerSong` 子集字体、赠言配置以及全部 **10 个 `.glb` 植物与水生生物三维模型**（Gzip Level-9 + Base64 内联，运行时通过原生 `DecompressionStream` + `GLTFLoader.parse()` 内存解压加载）打包为单个 HTML 文件，**无需本地服务器、无需联网，直接双击通过 `file://` 即可完整离线运行**。
+| 路径 | 用途 |
+| --- | --- |
+| `site/` | 前端源码（`index.html`、`style.css`、`app.js`、`audio.js`、`gift.json` 及 `site/modules/` 16 个模块化子系统） |
+| `site/assets/models/` | 51 个本地压缩优化 `.glb` 资产（`35.58 MB`）：双主角 VRM 骨骼角色、3 位 VRM 村民 NPC、风格化林木与 8 类动物、建筑地标、25 件 Poly Haven CC0 家具/礁石、10 件动植物 |
+| `tools/blender/` | Blender 4.0.2 程序化与 VRM 骨骼建模脚本及 VRM 源哈希清单（`vrm_sources.json`） |
+| `tools/optimize_glbs.py` | GLB 安全减面（Blender 4.0.2）、不透明非正常贴图 PNG→JPEG 重打包、全局静止骨骼动画通道裁剪与孤立 `bufferViews` 去重工具 |
+| `dist-vite/` | Vite 生产打包产物（3 个合并 JS chunk：`index`、`babylon-core`、`babylon-loaders` + 静态模型资源，`39.18 MB`） |
+| `dist/` | 带 SHA-256 校验清单（`release.json`）与 `.nojekyll` 的静态部署产物（`39.18 MB`） |
+| `鸢尾湾·花与海之约.html` | 100% 自包含离线单文件 HTML（`33.19 MB`，Gzip-9 + Base64 内联字体、赠言与全部 51 个 `.glb`，直接双击 `file://` 离线运行） |
+| `tests/` | 构建/逻辑回归单测（`test_build.py`，12 项）与 Playwright WebGL2 端到端验证（`verify_e2e_playwright.py`） |
 
 ---
 
-## 二、环境依赖、安装、开发与构建说明
+## 二、环境依赖、开发、构建与测试
 
-### 1. 环境要求
-- **Node.js** `>= 18`（含 `npm`，用于 Vite 开发服务器、Web 打包及离线单文件 HTML 打包）
-- **Python** `>= 3.10`（可选，用于运行静态清单校验脚本 `build.py` 与单元测试套件）
+### 环境要求
+- **Node.js** `>= 20`（含 `npm`，用于 Vite 开发服务、Web 打包及离线单文件构建）
+- **Python** `>= 3.10`（用于 `build.py` 静态发布打包与测试套件；运行 E2E 需安装 `playwright`，运行 GLB 减面需安装 `blender 4.0` 与 `Pillow`）
 
-### 2. 安装与本地开发
+### 常用命令
 ```bash
-# 安装本地依赖（Three.js v0.186.1 与 Vite v6，零外部 CDN 依赖）
-npm install
+# 安装本地依赖
+npm ci
 
-# 启动本地热更新开发服务器（默认监听 http://127.0.0.1:5173）
+# 启动热更新开发服务器 (http://127.0.0.1:5173)
 npm run dev
-```
 
-### 3. 生产构建与测试
-```bash
-# 同时生成 Vite Web 产物（dist-vite/）与自包含离线单文件（鸢尾湾·花与海之约.html）
+# 同步构建 Vite Web 产物 (dist-vite/) 与离线单文件 HTML (鸢尾湾·花与海之约.html)
 npm run build
 
-# 仅生成 Vite Web 产物
+# 分别单独构建 Web 产物或离线单文件
 npm run build:web
-
-# 仅生成自包含离线单文件 HTML
 npm run build:single
 
-# 生成带 SHA-256 完整性清单的静态发布目录 dist/
+# 生成带 SHA-256 清单的静态发布目录 dist/（自动检测源码变动并在过期时重建 dist-vite/）
 python3 build.py --output dist
 
-# 运行构建与离线自包含完整性单元测试
+# 运行单元测试与纯逻辑回归测试
 npm test
+
+# 运行 Playwright Chromium WebGL2 端到端验证（同时校验 HTTP dist/ 与断网 file:// 单文件）
+npm run test:e2e
+
+# 可选：对高面数道具执行可控减面与不透明贴图优化
+npm run optimize:glbs
 ```
 
 ---
 
-## 三、交互与控制说明
+## 三、场景架构与核心模块
 
-### 1. 视角漫游与安全过渡
-- **默认俯瞰全景模式**：左键拖拽环绕旋转、右键/中键平移、滚轮平滑缩放（支持俯仰角与地面防穿模高度保护）。
-- **点击深入与第一人称漫步**：
-  - 点击地面、木栈道、拱桥、码头或室内地板即可平滑走入对应位置；
-  - 漫步模式下支持 `W / A / S / D` 或方向键移动，按住 `Shift` 加速快走，拖拽画面环顾四周；
-  - 按 `Esc` 键可随时收起弹窗或平滑飞回全景俯瞰；
-  - 从室外切入**固定陶瓦屋顶**的两室一厅海景花墅（或从室内切回室外）时，相机会自动沿门廊与敞开的双开门生成无穿模引导曲线过渡，不会掀开屋顶或穿过墙体。
+`site/modules/` 按职责拆分为 16 个模块，核心依赖流为：
 
-### 2. 底部极简胶囊栏（`#explore-bar`）
-- **视角预设**：`俯瞰全景`、`睡莲鱼虾池`、`繁花双人秋千`、`亲水木栈道`、`步入花墅`、`海景主卧`、`海港游艇`、`溪桥风车`。
-- **纪念信笺（`#btn-letter`）**：随时展开信纸弹窗；在漫步模式下**走近书房胡桃木书桌上的立体折痕火漆信笺**（距离 `< 1.55m`）或直接点击信笺/信箱模型也会自动展开。关闭弹窗后自动精确恢复打开前的相机位置与控制模式。
-- **暂停 / 运行（`#btn-pause` 或 `Space`）**：基于统一仿真时间 `simTime` 冻结/恢复水面波纹、瀑布、鱼虾游弋、花瓣飘落、风车、秋千、船只与海鸥动画；**暂停期间相机环绕、漫步切换与信笺阅读依然完全可用**。
-- **夜景 / 傍晚（`#btn-daynight`）**：在默认的**暖金色斜阳傍晚**与**静谧月色夜景**之间平滑过渡（联动室内暖窗灯光、28 盏花园与栈道石铜汀步灯及地面暖光晕、码头路灯、防波堤灯塔旋转光束、对岸小镇与渡轮灯火、海面银蓝月光反射以及庭院少量萤火虫）。
-- **复位（`#btn-reset`）**：确定性恢复默认傍晚光照、运行状态、关闭弹窗并回到初始全景机位。
-- **隐藏式性能与画质面板（`#debug-hud`）**：默认隐藏，保持画面纯净；按键盘 `` ` ``（反引号）、`F3` 或在 URL 后附加 `?debug=1` 可展开查看实时 `FPS`、`Draw Calls`、`Triangles` 与 `画质级别`，并支持手动切换 `自动 / 高 / 中 / 低` 四档画质。
-
----
-
-## 四、礼赠文案自定义方式
-
-所有礼赠标题、收信人、称呼、正文段落、落款与日期集中管理于以下两处（无需在渲染逻辑中搜寻硬编码文本）：
-
-1. **主配置文件**：`site/gift.json`
-   ```json
-   {
-     "title": "鸢尾湾·花与海之约",
-     "subtitle": "海景花墅、莫奈花园与群岛海湾庄园",
-     "recipient": "我最爱的老婆",
-     "salutation": "亲爱的老婆：",
-     "letter": [
-       "第一段赠言……",
-       "第二段赠言……"
-     ],
-     "signature": "永远偏爱你的，老公",
-     "date": "花与海之约 · 岁岁常相见"
-   }
-   ```
-2. **离线兜底默认配置**：`site/modules/gift-config.js`（当 `gift.json` 未挂载时使用，结构与 `gift.json` 完全一致）。
-
-修改 `site/gift.json`（及同步更新 `site/modules/gift-config.js`）后，运行 `npm run build` 即可将最新赠言同步打包进 `dist-vite/` 与根目录离线单文件 `鸢尾湾·花与海之约.html`。
+- **基础空间与资产层**：
+  - `world-spatial.js`：260m 半岛地形高度/法线解析公式、植被禁区、2.5D 平滑滑动碰撞、别墅一/二层室内包围盒与过门寻路（单一事实源）、程序化 PBR 贴图工具。
+  - `assets-loader.js`：统一加载 51 个 `.glb`（自动适配 Web HTTP 与单文件离线 `DecompressionStream` 内存解压）并统计失败项。
+  - `glb-helpers.js`：GLB 节点遍历、阴影配置、零重复贴图克隆（`cloneMaterialSharingTextures`）、静态网格按材质合并（`mergeStaticChildrenByMaterial`）、统一关闭高开销 `subSurface` 全场景折射通道、GPU `ThinInstance` 批量归一化摆放与水面程序贴图。
+- **大气、渲染与风格化层**：
+  - `ocean-sky-stage.js`：傍晚/月夜大气散射天空盒、Beer-Lambert 海岸浪花水体、3 级联 2048px CSM 阴影、`SSAO2RenderingPipeline`、`DefaultRenderingPipeline`（ACES / Bloom / FXAA / Sharpen）与 `GlowLayer`；低画质档位自动从相机卸载 SSAO2 并关闭 GlowLayer。
+  - `genshin-toon-plugin.js`：Babylon `MaterialPluginBase` 二次元双阶 Cel 着色插件（区分世界建筑、角色衣物、角色发丝天使光环、面部柔和过渡与眼部五官，显式排除家具与水生道具名称误判）。
+- **场景子系统**：
+  - `island-terrain-and-horizon.js`：半岛地形网格、花岗岩庭院、环湾 3 层远山、6 座群岛、对岸聚落与沿海扫描礁石。
+  - `flora-and-fx.js`：GPU `ThinInstance` 实例化草甸/野花/林木、漂浮花瓣、蝴蝶群与互动粒子特效。
+  - `harbor-villa-world.js`（协调器）：汇总 `world-villa.js`（两层海景花墅与室内交互）、`world-gardens-pond.js`（莫奈瀑布鱼虾池与双人秋千）、`world-harbor-estate.js`（海港、防波堤、灯塔、风车、木栈道、溪桥、农舍、船队）与 `world-town-life.js`（7 位交互动漫 NPC、8 类小动物、沙滩螃蟹查找表与蝴蝶）。
+- **操控与双人系统**：
+  - `exploration-camera.js`：默认俯瞰环绕、双击平滑飞行（室内门廊 Catmull-Rom 防穿顶曲线）与第一人称漫步，支持帧率无关指数阻尼与窗口失焦清键。
+  - `couple-rigged-controller.js` & `couple-mode-babylon.js`：驱动 **小贤贤**（83 根发丝/裙摆弹簧骨）与 **小冉子**（50 根发丝/披肩/大衣弹簧骨），支持 19 组动画片段、17 组表情 Morph、眼球对视追踪、一/二/三人称视角、触屏单指旋转与双指捏合缩放及移动端面板折叠。
+  - `gift-config.js` & `site/audio.js`：集中化礼赠配置解析与零依赖 Web Audio 合成音效（支持一键静音）。
 
 ---
 
-## 五、核心场景结构与已落地的性能优化策略
+## 四、交互与控制说明
 
-### 1. 近景、中景与远景构成
-- **近景核心庄园**：1:1 可步入**法式复古双层花园小别墅**（错落双坡十字山墙红陶瓦屋顶 + 南向牛眼圆窗山花 + 三联拱券门廊 + 转角隅石 + 复古鼠尾草绿百叶窗板 + 铁艺繁花窗台槽 + 东南露天花艺庭院与二层观海花艺大露台；室内采用**法式复古鼠尾草绿 × 复古干枯玫瑰粉护墙板与蔷薇藤蔓壁纸**，一层设雕花壁炉留声机客厅、复古薄荷豆绿冰箱与黄铜珐琅灶台餐厨厅、植物阳光书房及胡桃木折痕火漆信笺，可沿室内胡桃木雕花楼梯步入二层四柱蕾丝纱幔海景主卧；全屋布置 **16 篮垂吊金边吊兰 `Chlorophytum`（含下垂匍匐茎小吊兰株与小白花）、多层复古铁艺花架、垂挂常春藤及 20 余盆绣球/玫瑰/玛格丽特/蝴蝶兰/蕨类鲜花盆栽**）、莫奈多层次花拱步道、下挖式两级叠石瀑布睡莲锦鲤琉金河虾池（四周环绕立体剑叶与垂瓣须毛鸢尾花丛）、纯白 A 字管架链条双人秋千、弧形金色沙滩 + 层理海蚀礁石 + 亲水雪松木栈道与观海躺椅平台。
-- **中景海岸半岛**：自然蜿蜒的海岸线、东侧花岗岩游艇海港与防波堤红白灯塔、西岬大理石玫瑰花亭、北侧山涧雪松木拱桥、山顶旋转石砌风车，以及 3 座带弧形毛石挡土墙、排水口、上下石阶步道与木框小型菜圃的普罗旺斯农舍。
-- **远景群岛海湾**：6 座空间分扇区群岛岛屿（`150–550m`）、对岸错落石屋聚落（含钟楼、拱廊码头与街巷台阶）、带桅杆索具弧面船帆与速度相关 V 形尾迹的巡航帆船及渡轮、3 层分方位角山脊山脉（`600–1310m`）、山谷薄雾、暖金云层与盘旋海鸥。
-
-### 2. 真正生效的工程级性能优化
-1. **大规模 GPU `InstancedMesh` 实例化（`36,450` 个实例）**：将 91 株分枝乔木（樱杏、白桦、橡树、橄榄、海岸丝柏）、16,000 簇坡地草丛、13,000 株立体野花、绣球与黄金角玫瑰、莫奈花园与花墅室内外 GLB 花灌木、150 丛立体鸢尾花、6 束室内带刺玫瑰及 28 盏石铜汀步灯与地面暖光晕全部合批为 `InstancedMesh`。
-2. **静态建筑与垂吊植物按材质空间分桶合并（`batchStaticMeshesByMaterial`）**：在保留交互 `userData.interactive`、视锥裁剪及 16 篮垂吊吊兰微风摇曳层级的前提下，将双层复古小别墅、垂吊吊兰花篮、码头、木栈道、农舍、拱桥及池畔叠石的静态网格合并缩减至 `1,317` 个。
-3. **远景山脉与群岛按方位角扇区合并 + 视锥裁剪**：将环湾山脉与群岛按空间扇区合并 `BufferGeometry` 并开启 `frustumCulled = true`，当视角背向部分远山或群岛时自动整块裁剪。
-4. **移除冗余整场景 `transmission` 二次渲染通道**：室内窗玻璃与纱帘采用高反射环境贴图透明材质并显式禁用 `transmissionRenderTarget`，消除整场景不透明网格二次渲染与每帧全屏 Mipmap 重建，单帧渲染三角面数减半（从 `12.96M` 降至 `6.28M`）。
-5. **距离分级（LOD）与 `自动 / 高 / 中 / 低` 四档画质降级**：草甸与花海按由近及远排序写入实例缓冲，切换至 `中` / `低` 画质时优先稀疏中远景山坡植被并保留近景核心花园密度（实例化植物数依次为 `36,116` -> `24,781` -> `14,807`，`低` 档同步关闭实时阴影将 `Draw Calls` 进一步降至 `826`）。
-6. **精确射线检测白名单（`raycastTargets`）**：鼠标悬停与点击拾取仅检测显式注册的可交互代理网格与可步行地形/地板网格，完全跳过天空、海面、远景群岛山脉及数万株实例化花草。
-7. **轻量夜景自发光架构**：夜景仅激活 2 盏低开销无阴影环境补光灯（白昼自动 `visible = false` 移出片元着色器循环），配合材质自发光、实例化地面加法混合暖光晕与顶点渐隐灯塔光束实现柔和月夜照明。
+- **俯瞰全景与第一人称漫步**：
+  - 桌面端：左键拖拽旋转、右键/中键平移、滚轮缩放、单击聚焦、双击深入漫步；漫步态支持 `WASD` / 方向键移动、`Shift` 加速、`Esc` 返回全景。
+  - 触屏端：单指旋转、双指捏合缩放、点击地面行走；底部提示栏根据指针类型自动切换触屏/键鼠文案。
+- **双人漫游模式（`💞 双人漫游`）**：
+  - 切换操控 `小贤贤` / `小冉子`（`Tab`），切换 `第一/第二/第三人称`（`V`），`F` 牵手、`1–8` 触发拥抱/亲亲/摸头/跳舞/比心/公主抱/眨眼/神态切换、`Space` 开心跳、`E` 与 69 处道具/NPC/动物互动、`Esc` 退出。
+  - 窄屏设备（`<= 680px`）自动提供面板折叠按钮以减少视口遮挡。
+- **状态栏与隐藏调试面板**：
+  - `纪念信笺`（走近书房书桌自动展开，关闭恢复原视角）、`音效/静音`（`#btn-mute`）、`暂停/运行`（`Space`，同步冻结仿真时间、场景骨骼动画与待机角色）、`夜景/傍晚`、`复位`（确定性退出双人模式并恢复默认傍晚全景）。
+  - 按 `` ` ``、`F3` 或访问 `?debug=1` 打开默认隐藏的性能调试 HUD（实时 `FPS`、`Draw Calls`、`Triangles` 与 `自动 / 高 / 中 / 低` 四档画质切换；自动档支持带滞回的降档与恢复）。
 
 ---
 
-## 六、第三方开源资源与许可证说明
+## 五、礼赠文案自定义
 
-本项目所有运行时代码、字体与三维模型均 100% 本地自托管，无任何外部 CDN 依赖（详见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)）：
+所有礼赠标题、收信人、称呼、正文、落款与日期集中维护于：
+1. `site/gift.json`（Web 构建权威源）
+2. `site/modules/gift-config.js`（离线兜底默认值）
 
-- **Three.js (`v0.186.1`)**：MIT License（`site/vendor/three-0.186.1/LICENSE` & `node_modules/three`）
-- **FlowerSong 子集字体 (`site/assets/flower-song.woff2`)**：SIL Open Font License 1.1（`site/assets/FONT-LICENSE.txt`）
-- **本地优化自托管 `.glb` 模型（`site/assets/models/`）**：
-  - **CC0 1.0 Public Domain（Poly Haven）**：`ph_fern.glb` (`fern_02`)、`ph_periwinkle.glb` (`periwinkle_plant`)
-  - **CC BY 4.0（Sketchfab 原作者署名）**：
-    - `freshwater_shrimp.glb` — *"Macrobrachium Rosenbergii"* by **BlueMesh**
-    - `ryukin_goldfish.glb` — *"Ryukin goldfish"* by **somitsu**
-    - `pond_koi.glb` — *"Goldfish"* by **jc.sekinger**
-    - `waterlily.glb` — *"Hand Painted Lotus Plant"* by **sarath.irn.kat005**
-    - `rose_bush.glb` — *"Rose bush"* by **RosticOstafi**
-    - `margarita_bush.glb` — *"Margarita flower bush"* by **blujay**
-    - `wisteria_cascade.glb` — *"Wisteria Flowers"* by **omiyaio**
-    - `hero_rose.glb` — *"Rose"* by **Heliona**
+修改后执行 `npm run build` 与 `python3 build.py --output dist` 即可同步更新 Web 站点与离线单文件 HTML。
 
 ---
 
-## 七、真实执行与实测验证记录
+## 六、许可证与第三方资源
 
-以下数据均在当前 Linux 构建环境中实际运行采集，不虚构未执行的测试：
+本项目全部依赖、字体与 51 个本地 `.glb` 模型均已登记版权、作者署名与修改说明，详见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
 
-### 1. 已执行的构建与自动化检查命令
-- `npm install` -> 成功生成 `package-lock.json`（`0 vulnerabilities`）
-- `npm run build` -> Vite 生产构建 `dist-vite/`（`1.46s` 完成）+ 离线单文件打包 `鸢尾湾·花与海之约.html`（`13.25 MB`）成功
-- `python3 build.py --output dist` -> 生成 `dist/` 及 SHA-256 `release.json` 成功
-- `python3 -m unittest discover -s tests -v` -> **7 项单元测试全部通过（`OK`）**
-- Playwright Chromium WebGL2 实测脚本：对 `dist-vite/`（HTTP）与 `鸢尾湾·花与海之约.html`（`offline=True` + `file://` 协议）执行了双层法式复古小别墅外观、复古鼠尾草绿与复古干枯玫瑰粉内饰、全屋垂吊金边吊兰与鲜花盆栽、交互信笺与断网自包含验证，**控制台错误数 `0`、页面异常数 `0`、外部网络请求数 `0`**。
+---
 
-### 2. 实测渲染指标与环境说明
-- **实测运行环境**：无硬件 GPU 的无头服务器环境，WebGL2 后端为纯 CPU 软件光栅化器 `ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)`，视口分辨率 `1440 × 900`（`DPR = 1`）。
-- **实测场景与分档指标**：
-  | 检测项 / 画质档位 | 网格总数 (`meshes`) | 实例化植被/灯具数 | Draw Calls（阴影更新帧） | 渲染三角面数 (`renderedTriangles`) |
-  | :--- | :---: | :---: | :---: | :---: |
-  | **Web 构建 · 高 (`high`)** | `1,317` | `36,450` | `1,561` | `7,166,075`（场景面数 `6,608,837`） |
-  | **离线单文件 (`file://`, `offline=True`)** | `1,317` | `36,450` | `1,560` | `7,166,051` |
-- **关于帧率（FPS）的诚实说明**：
-  - 在上述纯 CPU 软件光栅化器（`Google SwiftShader`，无物理 GPU 硬件加速）下，全场景高画质 `1440×900` 同步 `gl.readPixels` 实测单帧软件光栅化耗时约 `10.5s`（约 `0.1 FPS`，`#debug-hud` 如实显示 `0.1`）；
-  - 在具备独立或集成硬件 GPU 的常规桌面浏览器中，得益于静态网格合批（稳态 `~833` Draw Calls）、`36,116` 实例 GPU 合批、远景扇区视锥裁剪以及 `自动` 画质自适应降级机制（当检测到硬件帧率 `< 32 FPS` 时自动平滑降档至 `中` / `低`），可稳定在流畅交互帧率下运行。
+## 七、实测验证记录
 
-### 3. 已验证通过的功能检查项
-- 默认暖金色傍晚全景与月色夜景平滑切换（含窗户暖光、汀步灯暖光晕、灯塔光束、萤火虫）正常；
-- 步入固定屋顶花墅的门廊引导安全过渡曲线经 28 个采样点逐点校验无穿顶、无穿地；
-- 靠近书房书桌自动弹出纪念信笺、点击 `#btn-letter` 弹出 4 段完整赠言、按 `Esc` 或关闭按钮精确恢复原相机坐标验证通过；
-- `暂停` 冻结 `simTime` 期间相机平滑飞行与界面交互保持可用，`复位` 确定性重置时间、光照、弹窗与默认俯瞰机位验证通过；
-- 根目录 `鸢尾湾·花与海之约.html` 在 `offline=True` 断网浏览器上下文中通过 `file://` 直接打开，全部 10 个内联 `.glb` 模型、字体、交互与赠言配置 100% 正常加载运行。
+以下结果在当前 Linux 构建环境（Node `v24.21.0`、Python `3.12`、无头 Chromium WebGL2 SwiftShader 软件渲染器、`1280 × 720`）中实际执行采集：
+
+- `npm run build` & `python3 build.py --output dist`：
+  - `site/assets/models/`：`35.58 MB`（51 个 `.glb`，无孤立 `bufferViews`，剔除 16,540 条全局静止骨骼动画通道）
+  - `dist/` 与 `dist-vite/`：`39.18 MB`（`dist-vite/assets/` 合并为 3 个 JS chunk，无冗余 `.wasm`）
+  - 离线单文件 `鸢尾湾·花与海之约.html`：`33.20 MB`（含 51 个内联 `.glb`、字体与配置）
+- `npm test`（`tests/test_build.py`）：**12/12 通过**（覆盖构建清单、过期产物检测、无外链、离线自包含、JS 语法、GLB 缓冲与骨骼通道紧凑度、材质贴图零重复克隆、`GenshinToonPlugin` 材质分类零误伤与 `world-spatial` 别墅寻路）
+- `npm run test:e2e`（`tests/verify_e2e_playwright.py`）：
+  - **Web 构建（HTTP `dist/`）**与 **离线单文件（`file://` + `offline=True`）** 均通过全部断言：**0 console error、0 pageerror、0 外部网络请求、0 失败 GLB**；
+  - 场景运行时统计（对比优化前）：`drawCalls = 2,993`（单帧实测自 `5,690` 下降 `47.4%`，并修复跨帧累加问题）、`meshes = 1,169`（自 `1,994` 下降 `41.4%`）、`materials = 416`（自 `810` 下降 `48.6%`）、`textures = 190`（自 `1,148` 下降 `83.4%`）、`interactables = 69`；
+  - 实机确认：家具/水生材质未误判为角色头发、吊灯折射 RTT 已关闭、低画质真实卸载 SSAO2 与关闭 GlowLayer、双人模式点击复位正确退出并回到全景、暂停冻结场景时间与待机角色、静音开关、移动端 `390 × 844` 零横向溢出与面板折叠均正常。

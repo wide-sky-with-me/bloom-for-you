@@ -11,6 +11,8 @@ import {
   getWalkSurfaceY,
   isPositionWalkable,
   resolveWalkPosition,
+  isInsideVilla1FShell,
+  buildVillaWalkWaypoints as buildWalkWaypoints,
 } from "./world-spatial.js";
 import { createInteractionFX } from "./flora-and-fx.js";
 import { MOOD_LABELS, createRiggedCharacter } from "./couple-rigged-controller.js";
@@ -50,34 +52,6 @@ function angDiff(a, b) {
 function basisQuaternion(xAxis, yAxis, zAxis) {
   const m = Matrix.FromXYZAxesToRef(xAxis, yAxis, zAxis, new Matrix());
   return Quaternion.FromRotationMatrix(m);
-}
-
-function isInsideVilla1FShell(x, z) {
-  return (x > -23.5 && x < -10.3 && z > -9.9 && z < 4.1) || (x >= -10.3 && x < -3.9 && z > -9.9 && z < -1.3);
-}
-
-function inStudySuite(x, z) {
-  return x > -10.5 && x < -3.9 && z > -9.9 && z < -1.3;
-}
-
-function buildWalkWaypoints(sx, sz, dx, dz, sy = 2.6, dy = 2.6) {
-  if (sy > 4.5 || dy > 4.5) return [[dx, dz]];
-  const sIn = isInsideVilla1FShell(sx, sz);
-  const dIn = isInsideVilla1FShell(dx, dz);
-  const pts = [];
-  if (!sIn && dIn) {
-    if (sz > 6.8 || Math.abs(sx + 14.0) > 2.2) pts.push([-14.0, 9.2]);
-    pts.push([-14.0, 5.2], [-14.0, 2.2]);
-    if (inStudySuite(dx, dz)) pts.push([-11.6, -5.2], [-9.2, -5.2]);
-  } else if (sIn && !dIn) {
-    if (inStudySuite(sx, sz)) pts.push([-9.2, -5.2], [-11.6, -5.2]);
-    pts.push([-14.0, 2.2], [-14.0, 9.2]);
-  } else if (sIn && dIn && inStudySuite(sx, sz) !== inStudySuite(dx, dz)) {
-    pts.push(inStudySuite(sx, sz) ? [-9.2, -5.2] : [-12.0, -5.2]);
-    pts.push(inStudySuite(sx, sz) ? [-12.0, -5.2] : [-9.2, -5.2]);
-  }
-  pts.push([dx, dz]);
-  return pts;
 }
 
 export function createCoupleMode({
@@ -410,33 +384,35 @@ export function createCoupleMode({
     bringPartnerClose(0.68);
     faceEachOther();
 
-    if (name === "hug") {
+    if (name === "hug" || name === "kiss") {
+      const isKiss = name === "kiss";
       const m = midpoint();
-      const d = 0.42;
+      const d = isKiss ? 0.36 : 0.42;
       const dx = Math.sin(xian.yaw) * d * 0.5;
       const dz = Math.cos(xian.yaw) * d * 0.5;
-      xian.pos.x = m.x + dx;
-      xian.pos.z = m.z + dz;
-      ran.pos.x = m.x - dx;
-      ran.pos.z = m.z - dz;
-      xian.startAction("hug", 2.4);
-      ran.startAction("hug", 2.4);
-      fx.heart(m.add(new Vector3(0, 1.5, 0)), { count: 32, scale: 0.04 });
-      toast("紧紧抱在一起 🤗");
-    } else if (name === "kiss") {
-      const m = midpoint();
-      const d = 0.36;
-      const dx = Math.sin(xian.yaw) * d * 0.5;
-      const dz = Math.cos(xian.yaw) * d * 0.5;
-      xian.pos.x = m.x + dx;
-      xian.pos.z = m.z + dz;
-      ran.pos.x = m.x - dx;
-      ran.pos.z = m.z - dz;
-      xian.startAction("kiss", 2.1);
-      ran.startAction("kiss", 2.1);
-      fx.heart(m.add(new Vector3(0, 1.52, 0)), { count: 44, scale: 0.045, colors: [0xff7da8, 0xffd1e0] });
-      audio?.playPetalGlissando?.();
-      toast("mua~ 💋");
+      const txXian = m.x + dx;
+      const tzXian = m.z + dz;
+      const txRan = m.x - dx;
+      const tzRan = m.z - dz;
+      if (isPositionWalkable(txXian, tzXian, 0.22, xian.pos.y)) {
+        xian.pos.x = txXian;
+        xian.pos.z = tzXian;
+      }
+      if (isPositionWalkable(txRan, tzRan, 0.22, ran.pos.y)) {
+        ran.pos.x = txRan;
+        ran.pos.z = tzRan;
+      }
+      const dur = isKiss ? 2.1 : 2.4;
+      xian.startAction(name, dur);
+      ran.startAction(name, dur);
+      if (isKiss) {
+        fx.heart(m.add(new Vector3(0, 1.52, 0)), { count: 44, scale: 0.045, colors: [0xff7da8, 0xffd1e0] });
+        audio?.playPetalGlissando?.();
+        toast("mua~ 💋");
+      } else {
+        fx.heart(m.add(new Vector3(0, 1.5, 0)), { count: 32, scale: 0.04 });
+        toast("紧紧抱在一起 🤗");
+      }
     } else if (name === "pat") {
       ran.startAction("pat", 2.2, { role: "give" });
       xian.startAction("pat", 2.2, { role: "recv" });
@@ -834,39 +810,60 @@ export function createCoupleMode({
     camera.setTarget(camLook);
   }
 
-  // Pointer drag + wheel + keyboard handlers while couple mode is active
-  let dragging = false;
+  // Pointer drag (mouse & multi-touch pinch zoom) + wheel + keyboard handlers while couple mode is active
+  const activePointers = new Map();
   let lastPtr = { x: 0, y: 0 };
+  let lastPinchDist = 0;
 
-  canvas?.addEventListener("pointerdown", (e) => {
+  const onPointerDown = (e) => {
     if (!active) return;
-    dragging = true;
-    lastPtr = { x: e.clientX, y: e.clientY };
-  });
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (activePointers.size === 1) {
+      lastPtr = { x: e.clientX, y: e.clientY };
+    } else if (activePointers.size === 2) {
+      const pts = Array.from(activePointers.values());
+      lastPinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    }
+  };
 
-  canvas?.addEventListener("pointermove", (e) => {
-    if (!active || !dragging || (e.buttons & 1) === 0) return;
-    const dx = e.clientX - lastPtr.x;
-    const dy = e.clientY - lastPtr.y;
-    lastPtr = { x: e.clientX, y: e.clientY };
-    camYaw -= dx * 0.0052;
-    camPitch = clamp(camPitch - dy * 0.0044, view === "first" ? -0.62 : -0.82, view === "first" ? 0.55 : 0.48);
-  });
+  const onPointerMove = (e) => {
+    if (!active || !activePointers.has(e.pointerId)) return;
+    if (e.pointerType === "mouse" && (e.buttons & 1) === 0) {
+      activePointers.delete(e.pointerId);
+      return;
+    }
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (activePointers.size === 1) {
+      const dx = e.clientX - lastPtr.x;
+      const dy = e.clientY - lastPtr.y;
+      lastPtr = { x: e.clientX, y: e.clientY };
+      camYaw -= dx * 0.0052;
+      camPitch = clamp(camPitch - dy * 0.0044, view === "first" ? -0.62 : -0.82, view === "first" ? 0.55 : 0.48);
+    } else if (activePointers.size === 2 && view === "third") {
+      const pts = Array.from(activePointers.values());
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      if (lastPinchDist > 4) {
+        camDist = clamp(camDist * (lastPinchDist / Math.max(4, dist)), 1.6, 8.8);
+      }
+      lastPinchDist = dist;
+    }
+  };
 
-  window.addEventListener("pointerup", () => {
-    dragging = false;
-  });
+  const onPointerUp = (e) => {
+    activePointers.delete(e.pointerId);
+    if (activePointers.size === 1) {
+      const rem = activePointers.values().next().value;
+      if (rem) lastPtr = { x: rem.x, y: rem.y };
+    }
+  };
 
-  canvas?.addEventListener(
-    "wheel",
-    (e) => {
-      if (!active || view !== "third") return;
-      camDist = clamp(camDist * Math.exp(clamp(e.deltaY, -140, 140) * 0.0012), 1.6, 8.8);
-    },
-    { passive: true }
-  );
+  const onWheel = (e) => {
+    if (!active || view !== "third") return;
+    camDist = clamp(camDist * Math.exp(clamp(e.deltaY, -140, 140) * 0.0012), 1.6, 8.8);
+  };
 
-  window.addEventListener("keydown", (e) => {
+  const onKeyDown = (e) => {
     if (!active) return;
     keys.add(e.code);
     if (e.repeat) return;
@@ -895,11 +892,25 @@ export function createCoupleMode({
       if (seatSession) standUp(true);
       else leader().startAction("hop", 0.72);
     }
-  });
+  };
 
-  window.addEventListener("keyup", (e) => {
+  const onKeyUp = (e) => {
     keys.delete(e.code);
-  });
+  };
+
+  const onWindowBlur = () => {
+    keys.clear();
+    activePointers.clear();
+  };
+
+  canvas?.addEventListener("pointerdown", onPointerDown);
+  canvas?.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", onPointerUp);
+  window.addEventListener("pointercancel", onPointerUp);
+  canvas?.addEventListener("wheel", onWheel, { passive: true });
+  window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("keyup", onKeyUp);
+  window.addEventListener("blur", onWindowBlur);
 
   function syncUI() {
     if (ui.panel) ui.panel.hidden = !active;
@@ -950,13 +961,20 @@ export function createCoupleMode({
     updateCamera(0);
     syncUI();
     onActiveChange?.(true);
-    toast(`${leader().name} 出发啦～ WASD 走 · 拖拽转视角 · E 互动 · V 切视角 · Tab 换人`, 4200);
+    const coarsePointer = Boolean(window.matchMedia?.("(pointer: coarse)")?.matches);
+    toast(
+      coarsePointer
+        ? `${leader().name} 出发啦～ 点地面行走 · 单指转视角 · 双指缩放 · 点道具互动`
+        : `${leader().name} 出发啦～ WASD 走 · 拖拽转视角 · E 互动 · V 切视角 · Tab 换人`,
+      4200
+    );
   }
 
   function exit() {
     active = false;
     walkWaypoints = [];
     keys.clear();
+    activePointers.clear();
     xian.setVisibleHead(true);
     ran.setVisibleHead(true);
     xian.tag.visible = true;
@@ -966,12 +984,17 @@ export function createCoupleMode({
     onActiveChange?.(false);
   }
 
-  ui.panel?.addEventListener("click", (e) => {
+  const onPanelClick = (e) => {
     const b = e.target.closest("button");
     if (!b) return;
     e.stopPropagation();
     audio?.unlock?.();
-    if (b.dataset.coupleChar) setControlled(b.dataset.coupleChar);
+    if (b.dataset.coupleToggle !== undefined) {
+      ui.panel?.classList.toggle("is-collapsed");
+      const collapsed = ui.panel?.classList.contains("is-collapsed");
+      b.textContent = collapsed ? "展开动作 ▾" : "收起 ▴";
+      b.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    } else if (b.dataset.coupleChar) setControlled(b.dataset.coupleChar);
     else if (b.dataset.coupleView) setView(b.dataset.coupleView);
     else if (b.dataset.coupleAction) doAction(b.dataset.coupleAction);
     else if (b.dataset.coupleInteract !== undefined) {
@@ -980,7 +1003,13 @@ export function createCoupleMode({
     } else if (b.dataset.coupleExit !== undefined) {
       exit();
     }
-  });
+  };
+  ui.panel?.addEventListener("click", onPanelClick);
+
+  function ensureInteractables() {
+    if (interactables.length === 0) interactables = collectInteractables();
+    return interactables;
+  }
 
   function handleClick(picked) {
     if (!active) return false;
@@ -993,8 +1022,7 @@ export function createCoupleMode({
     }
 
     if (pid && /^(npc-|critter-)/.test(pid)) {
-      interactables = collectInteractables();
-      const it = interactables.find((x) => x.id === pid);
+      const it = ensureInteractables().find((x) => x.id === pid);
       const L = leader();
       if (it && Math.hypot(it.position.x - L.pos.x, it.position.z - L.pos.z) > Math.max(4.2, it.radius || 2.6)) {
         const dx = L.pos.x - it.position.x;
@@ -1041,15 +1069,14 @@ export function createCoupleMode({
       standUp();
       return true;
     }
-    interactables = collectInteractables();
+    ensureInteractables();
     updateNearestPrompt();
     if (nearest) return activateItem(nearest);
     return false;
   }
 
   function activateById(id) {
-    interactables = collectInteractables();
-    const item = interactables.find((it) => it.id === id);
+    const item = ensureInteractables().find((it) => it.id === id);
     if (!item) return false;
     return activateItem(item);
   }
@@ -1096,8 +1123,12 @@ export function createCoupleMode({
   }
 
   let elapsedSec = 0;
-  function update(dt) {
+  function update(dt, { paused = false } = {}) {
     const safeDt = clamp(dt || 0.016, 0.001, 0.05);
+    if (paused) {
+      if (active) updateCamera(safeDt);
+      return;
+    }
     elapsedSec += safeDt;
     if (danceT > 0) danceT = Math.max(0, danceT - safeDt);
 
@@ -1123,6 +1154,20 @@ export function createCoupleMode({
     updateCamera(safeDt);
   }
 
+  function dispose() {
+    canvas?.removeEventListener("pointerdown", onPointerDown);
+    canvas?.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+    window.removeEventListener("pointercancel", onPointerUp);
+    canvas?.removeEventListener("wheel", onWheel);
+    window.removeEventListener("keydown", onKeyDown);
+    window.removeEventListener("keyup", onKeyUp);
+    window.removeEventListener("blur", onWindowBlur);
+    ui.panel?.removeEventListener("click", onPanelClick);
+    xian.dispose?.();
+    ran.dispose?.();
+  }
+
   syncUI();
 
   return {
@@ -1131,6 +1176,7 @@ export function createCoupleMode({
     ran,
     fx,
     update,
+    dispose,
     enter,
     exit,
     isActive: () => active,

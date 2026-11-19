@@ -2,24 +2,22 @@
 
 This static web application is 100% self-hosted with zero external runtime network requests.
 
-## 1. Babylon.js (`v9.36.0`) & Havok Physics (`v1.3.14`)
+## 1. Babylon.js (`v9.36.0`)
 - Packages: `@babylonjs/core@9.36.0`, `@babylonjs/loaders@9.36.0`, `@babylonjs/materials@9.36.0`
 - License: Apache License 2.0 (Copyright © Babylon.js contributors / Microsoft)
-- Package: `@babylonjs/havok@1.3.14` (`site/assets/havok/HavokPhysics.wasm`)
-- License: MIT / Havok Physics WebAssembly runtime distributed via `@babylonjs/havok` (see `node_modules/@babylonjs/havok/LICENSE` when installed).
 
 ## 2. FlowerSong Subset Font (`flower-song.woff2`)
 - Path: `site/assets/flower-song.woff2`
 - License: SIL Open Font License 1.1 (see `site/assets/FONT-LICENSE.txt`)
 
 ## 3. Bundled 3D Botanical & Aquatic `.glb` Assets (`site/assets/models/`)
-All 3D models below are self-hosted locally in `site/assets/models/` with texture optimization for real-time WebGL2 rendering:
+All 3D models below are self-hosted locally in `site/assets/models/` with mesh/texture optimization for real-time WebGL2 rendering:
 
 1. `site/assets/models/freshwater_shrimp.glb`
    - Title: "Macrobrachium Rosenbergii" (Giant Freshwater River Prawn)
    - Author: BlueMesh (Sketchfab UID `fbeca11a9b524df0b43f341d4152cc69`)
    - License: Creative Commons Attribution 4.0 International (CC BY 4.0)
-   - Modifications: Texture downscaled to 512px for real-time WebGL delivery.
+   - Modifications: Texture downscaled to 512px and geometry decimated (preserving armature skin & animation) for real-time WebGL delivery.
 
 2. `site/assets/models/ryukin_goldfish.glb`
    - Title: "Ryukin goldfish"
@@ -41,7 +39,7 @@ All 3D models below are self-hosted locally in `site/assets/models/` with textur
 
 5. `site/assets/models/rose_bush.glb`
    - Title: "Rose bush"
-   - Author: RosticOstafi (Sketchfab UID `3f97dc47b0fd4b1382f169d2f169d2f1` / `3f97dc47b0fd4b1382f169d2f137949b`)
+   - Author: RosticOstafi (Sketchfab UID `3f97dc47b0fd4b1382f169d2f137949b`)
    - License: Creative Commons Attribution 4.0 International (CC BY 4.0)
    - Modifications: Texture downscaled to 512px and petal albedo luminance normalized for multi-hue botanical instancing.
 
@@ -61,15 +59,16 @@ All 3D models below are self-hosted locally in `site/assets/models/` with textur
    - Title: "Rose"
    - Author: Heliona (Sketchfab UID `6281bf3703584323bb4d8326f1f1b59d`)
    - License: Creative Commons Attribution 4.0 International (CC BY 4.0)
-   - Modifications: Texture downscaled to 512px for real-time WebGL delivery.
+   - Modifications: Texture downscaled to 512px and geometry decimated for real-time WebGL delivery.
 
 9. `site/assets/models/ph_fern.glb` & `site/assets/models/ph_periwinkle.glb`
    - Titles: `fern_02` and `periwinkle_plant`
    - Author: Poly Haven
    - License: CC0 1.0 Universal (Public Domain Dedication)
+   - Modifications: Downscaled textures and decimated `ph_periwinkle.glb` for real-time WebGL delivery.
 
-## 4. Bundled 3D Photogrammetry Furniture & Vintage Prop `.glb` Assets (`site/assets/models/ph_*.glb`)
-All 18 real-world scanned furniture, lighting, tableware, and vintage prop models below originate from Poly Haven and are dedicated to the public domain under **CC0 1.0 Universal** (with textures downscaled & repacked locally for real-time WebGL2 & single-file offline HTML delivery):
+## 4. Bundled 3D Photogrammetry Furniture, Coastal Rock & Prop `.glb` Assets (`site/assets/models/ph_*.glb`)
+All 25 real-world scanned furniture, lighting, tableware, coastal rock, and prop models below originate from Poly Haven and are dedicated to the public domain under **CC0 1.0 Universal** (with textures downscaled and selected high-poly interior props decimated locally for real-time WebGL2 & single-file offline HTML delivery):
 
 10. `site/assets/models/ph_sofa.glb` — `Sofa_01` (Poly Haven, CC0 1.0)
 11. `site/assets/models/ph_green_chair.glb` — `GreenChair_01` (Poly Haven, CC0 1.0)
@@ -94,25 +93,29 @@ All 18 real-world scanned furniture, lighting, tableware, and vintage prop model
 30. `site/assets/models/ph_coast_rocks.glb` — `coast_rocks_01` (Poly Haven, CC0 1.0)
 31. `site/assets/models/ph_coast_rocks_b.glb` — `coast_rocks_03` (Poly Haven, CC0 1.0)
 32. `site/assets/models/ph_moss_boulder.glb` — `rock_moss_set_01` (Poly Haven, CC0 1.0)
-33. `site/assets/models/ph_coastal_shrub.glb` — `shrub_02` (Poly Haven, CC0 1.0)
-34. `site/assets/models/ph_lifebuoy.glb` — `lifebuoy` (Poly Haven, CC0 1.0)
-35. `site/assets/models/ph_picnic_table.glb` — `wooden_picnic_table` (Poly Haven, CC0 1.0)
+33. `site/assets/models/ph_lifebuoy.glb` — `lifebuoy` (Poly Haven, CC0 1.0)
+34. `site/assets/models/ph_picnic_table.glb` — `wooden_picnic_table` (Poly Haven, CC0 1.0)
 
-## 5. CC0 VRM 0.x Anime Character Base Models & Custom Rigging (`couple_*.glb`)
-The couple character avatars below combine **CC0 1.0 Universal** VRM 0.x base meshes with custom Blender 4.0.2 outfits, accessories, MToon-to-PBR texture baking, facial shape-key consolidation, and 17 NLA animation tracks built via `tools/blender/build_couple_vrm_glb.py`:
+## 5. CC0 VRM 0.x Anime Character Base Models & Custom Rigging (`couple_*.glb`, `npc_*.glb`)
+The couple and villager avatars below combine **CC0 1.0 Universal** VRM 0.x base meshes (upstream source URLs and SHA-256 hashes recorded in `tools/blender/vrm_sources.json`) with custom Blender 4.0.2 outfits, accessories, MToon-to-PBR texture baking, facial shape-keys, and NLA animation tracks built via `tools/blender/build_couple_vrm_glb.py` and `tools/blender/build_npcs_vrm_glb.py`:
 
-36. `site/assets/models/couple_xian.glb` ("小贤贤")
-   - Base Model: `Victoria_Rubin.vrm` (source: `madjin/vrm-samples` CC0 sample library)
-   - License: CC0 1.0 Universal (Public Domain Dedication)
-   - Modifications: Converted MToon materials to Principled PBR with baked shading and downscaled (`<= 512px`) textures, separated facial overlay features from skin outline mesh, added Hydro Vision waist charm, consolidated facial blendshapes (`EyeBlink`, `Smile`, `Kiss`, `ShyBlush`), and retargeted 17 interactive couple NLA clips.
+35. `site/assets/models/couple_xian.glb` ("小贤贤")
+    - Base Model: `Victoria_Rubin.vrm` (source: `madjin/vrm-samples` CC0 sample library)
+    - License: CC0 1.0 Universal (Public Domain Dedication)
+    - Modifications: Converted MToon materials to Principled PBR with baked shading and downscaled (`<= 512px`) textures, separated facial overlay features from skin mesh, added Hydro Vision waist charm, preserved eyeball bones and 83 hair/cloth spring bones, consolidated 17 facial expression morphs, and retargeted 19 interactive couple NLA clips (including `Walk_HoldHand_L/R`).
 
-37. `site/assets/models/couple_ran.glb` ("小冉子")
-   - Base Model: `Sakurada_Fumiriya.vrm` (source: `madjin/vrm-samples` CC0 sample library)
-   - License: CC0 1.0 Universal (Public Domain Dedication)
-   - Modifications: Restyled textures in royal sapphire, ivory, crimson, and gold; modeled Fontaine-inspired coat tail, gold trim, wrist bracers, and Hydro Vision chest brooch; consolidated facial blendshapes (`EyeBlink`, `Smile`, `Kiss`, `ShyBlush`); and retargeted 17 interactive couple NLA clips.
+36. `site/assets/models/couple_ran.glb` ("小冉子")
+    - Base Model: `Sakurada_Fumiriya.vrm` (source: `madjin/vrm-samples` CC0 sample library)
+    - License: CC0 1.0 Universal (Public Domain Dedication)
+    - Modifications: Restyled textures in royal sapphire, ivory, crimson, and gold; modeled Fontaine-inspired coat tail, shoulder cape, gold trim, wrist bracers, and Hydro Vision chest brooch; preserved eyeball bones and 50 hair/cape/coat/sash spring bones; consolidated 17 facial expression morphs; and retargeted 19 interactive couple NLA clips.
 
-## 6. First-Party Blender 4.0.2 Sculpted Architectural, Flora & Maritime `.glb` Assets
-The 10 architectural, landscape, flora, and fleet `.glb` bundles below are first-party assets generated specifically for this project via Blender 4.0.2 scripts in `tools/blender/`:
+37. `site/assets/models/npc_vita.glb`, `site/assets/models/npc_shino.glb`, `site/assets/models/npc_vivi.glb` (Town Villager NPCs)
+    - Base Models: `Vita.vrm`, `Sendagaya_Shino.vrm`, `Vivi.vrm` (source: `madjin/vrm-samples` CC0 sample library)
+    - License: CC0 1.0 Universal (Public Domain Dedication)
+    - Modifications: Converted MToon materials to Principled PBR with baked textures (`<= 512px`), pruned unused physics nodes, and baked idle/wave/sit NLA animation clips via `tools/blender/build_npcs_vrm_glb.py`.
+
+## 6. First-Party Blender 4.0.2 Sculpted Architectural, Flora, Critter & Maritime `.glb` Assets
+The 11 architectural, landscape, flora, wildlife, and fleet `.glb` bundles below are first-party assets generated specifically for this project via Blender 4.0.2 scripts in `tools/blender/`:
 
 - `site/assets/models/coastal_villa.glb` — Two-story coastal stone & timber villa with walkthrough doorway, staircase, interior paneling, animated shutters/doors/gramophone/globe/coffee-lever
 - `site/assets/models/garden_monet_pond.glb` — Monet cascading stone pond & waterfall tiers
@@ -123,4 +126,5 @@ The 10 architectural, landscape, flora, and fleet `.glb` bundles below are first
 - `site/assets/models/cliffside_gazebo.glb` — Marble headland dome gazebo & swinging bench
 - `site/assets/models/provencal_cottage.glb` — Pastel Provencal hillside stone cottages
 - `site/assets/models/harbor_fleet.glb` — Harbor yacht cruiser, coastal sloop & launch hulls
-- `site/assets/models/stylized_trees.glb` — Cypress, olive, pine & cherry canopy variants for botanical instancing
+- `site/assets/models/stylized_trees.glb` — Organic Teyvat birch, cherry, cypress, oak, olive & coastal palm canopy variants for botanical instancing
+- `site/assets/models/stylized_critters.glb` — Vertex-colored animated coastal wildlife & village pets (calico cat, shiba dog, rabbit, squirrel, mallard duck, red fox, seagull, beach crab)

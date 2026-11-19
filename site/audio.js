@@ -18,6 +18,7 @@ const PENTATONIC_FREQ = [
 export function createHarborAudio() {
   let ctx = null;
   let masterGain = null;
+  let muted = false;
 
   function ensureUnlocked() {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -25,7 +26,7 @@ export function createHarborAudio() {
     if (!ctx) {
       ctx = new AudioCtx();
       masterGain = ctx.createGain();
-      masterGain.gain.value = 0.24;
+      masterGain.gain.value = muted ? 0 : 0.24;
       masterGain.connect(ctx.destination);
     }
     if (ctx.state === "suspended") {
@@ -34,7 +35,16 @@ export function createHarborAudio() {
     return ctx;
   }
 
+  function setMuted(next) {
+    muted = Boolean(next);
+    if (masterGain && ctx) {
+      masterGain.gain.setTargetAtTime(muted ? 0 : 0.24, ctx.currentTime, 0.03);
+    }
+    return muted;
+  }
+
   function playTone(freq, duration = 1.6, volume = 0.16, delaySec = 0, type = "sine") {
+    if (muted) return;
     const audioCtx = ensureUnlocked();
     if (!audioCtx) return;
     const now = audioCtx.currentTime + delaySec;
@@ -122,6 +132,8 @@ export function createHarborAudio() {
 
   return {
     unlock: ensureUnlocked,
+    setMuted,
+    isMuted: () => muted,
     playRoofChime,
     playLetterUnfold,
     playLighthouseBell,

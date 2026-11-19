@@ -9,6 +9,11 @@ import {
   getWalkSurfaceY,
   isPositionWalkable,
   resolveWalkPosition,
+  isInsideVilla1FShell,
+  isInsideVilla2FShell,
+  isInsideVillaShell,
+  inVillaStudySuite as inStudySuite,
+  buildVillaWalkWaypoints as buildSmartWaypoints,
 } from "./world-spatial.js";
 
 const DEFAULT_EYE_HEIGHT = 1.68;
@@ -53,56 +58,6 @@ function sampleCatmullRom(pts, u, out = new Vector3()) {
     0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
   out.set(evalAxis(p0.x, p1.x, p2.x, p3.x), evalAxis(p0.y, p1.y, p2.y, p3.y), evalAxis(p0.z, p1.z, p2.z, p3.z));
   return out;
-}
-
-function isInsideVilla1FShell(x, z) {
-  return (x > -23.5 && x < -10.3 && z > -9.9 && z < 4.1) || (x >= -10.3 && x < -3.9 && z > -9.9 && z < -1.3);
-}
-
-function isInsideVilla2FShell(x, z) {
-  return x > -23.5 && x < -11.1 && z > -9.9 && z < 4.1;
-}
-
-function isInsideVillaShell(x, z) {
-  return isInsideVilla1FShell(x, z) || isInsideVilla2FShell(x, z);
-}
-
-function inStudySuite(x, z) {
-  return x > -10.5 && x < -3.9 && z > -9.9 && z < -1.3;
-}
-
-function buildSmartWaypoints(startX, startZ, destX, destZ, startY = 2.6, destY = 2.6) {
-  const pts = [];
-  if (startY > 4.5 || destY > 4.5) {
-    pts.push([destX, destZ]);
-    return pts;
-  }
-  const startInside = isInsideVilla1FShell(startX, startZ);
-  const destInside = isInsideVilla1FShell(destX, destZ);
-
-  if (!startInside && destInside) {
-    if (startZ > 6.8 || Math.abs(startX + 14.0) > 2.2) {
-      pts.push([-14.0, 9.2]);
-    }
-    pts.push([-14.0, 5.2], [-14.0, 2.2]);
-    if (inStudySuite(destX, destZ)) {
-      pts.push([-11.6, -5.2], [-9.2, -5.2]);
-    }
-  } else if (startInside && !destInside) {
-    if (inStudySuite(startX, startZ)) {
-      pts.push([-9.2, -5.2], [-11.6, -5.2]);
-    }
-    pts.push([-14.0, 2.2], [-14.0, 9.2]);
-  } else if (startInside && destInside) {
-    if (inStudySuite(startX, startZ) && !inStudySuite(destX, destZ)) {
-      pts.push([-9.2, -5.2], [-12.0, -5.2]);
-    } else if (!inStudySuite(startX, startZ) && inStudySuite(destX, destZ)) {
-      pts.push([-12.0, -5.2], [-9.2, -5.2]);
-    }
-  }
-
-  pts.push([destX, destZ]);
-  return pts;
 }
 
 export function findNearestWalkableSpot(targetX, targetZ, maxRadius = 11.0, refY = null) {
@@ -382,7 +337,7 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     return true;
   }
 
-  window.addEventListener("keydown", (e) => {
+  const onKeyDown = (e) => {
     if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight"].includes(e.code)) {
       keys.add(e.code);
       if (mode === "walk" && enabled) {
@@ -391,15 +346,23 @@ export function createExplorationControls(camera, domElement, opts = {}) {
         desiredEyeHeight = DEFAULT_EYE_HEIGHT;
       }
     }
-  });
-
-  window.addEventListener("keyup", (e) => {
+  };
+  const onKeyUp = (e) => {
     keys.delete(e.code);
-  });
+  };
+  const onBlur = () => {
+    keys.clear();
+    touches.clear();
+    dragType = null;
+  };
+  const onContextMenu = (e) => e.preventDefault();
 
-  domElement.addEventListener("contextmenu", (e) => e.preventDefault());
+  window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("keyup", onKeyUp);
+  window.addEventListener("blur", onBlur);
+  domElement.addEventListener("contextmenu", onContextMenu);
 
-  domElement.addEventListener("pointerdown", (e) => {
+  const onPointerDown = (e) => {
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try {
       domElement.setPointerCapture?.(e.pointerId);
@@ -415,9 +378,10 @@ export function createExplorationControls(camera, domElement, opts = {}) {
       const pts = Array.from(touches.values());
       lastPinch = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
     }
-  });
+  };
+  domElement.addEventListener("pointerdown", onPointerDown);
 
-  domElement.addEventListener("pointermove", (e) => {
+  const onPointerMove = (e) => {
     if (!touches.has(e.pointerId)) return;
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -455,7 +419,7 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     } else if (touches.size === 2) {
       const pts = Array.from(touches.values());
       const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      if (lastPinch > 4 && mode === "aerial") {
+      if (enabled && lastPinch > 4 && mode === "aerial") {
         desiredAerialSpherical.radius = clamp(
           desiredAerialSpherical.radius * (lastPinch / Math.max(4, dist)),
           4.0,
@@ -465,7 +429,8 @@ export function createExplorationControls(camera, domElement, opts = {}) {
       lastPinch = dist;
       movedPx += 12;
     }
-  });
+  };
+  domElement.addEventListener("pointermove", onPointerMove);
 
   function clearTouch(e) {
     touches.delete(e.pointerId);
@@ -474,27 +439,24 @@ export function createExplorationControls(camera, domElement, opts = {}) {
   domElement.addEventListener("pointerup", clearTouch);
   domElement.addEventListener("pointercancel", clearTouch);
 
-  domElement.addEventListener(
-    "wheel",
-    (e) => {
-      e.preventDefault();
-      if (!enabled) return;
-      if (mode === "aerial") {
-        activeFlight = null;
-        const factor = Math.exp(clamp(e.deltaY, -160, 160) * 0.0014);
-        desiredAerialSpherical.radius = clamp(desiredAerialSpherical.radius * factor, 4.0, 260.0);
-      } else {
-        activeFlight = null;
-        const step = -clamp(e.deltaY, -120, 120) * 0.022;
-        const nx = walkPos.x - Math.sin(yaw) * step;
-        const nz = walkPos.z - Math.cos(yaw) * step;
-        const res = resolveWalkPosition(walkPos.x, walkPos.z, nx, nz, 0.38, walkPos.y);
-        walkPos.x = res.x;
-        walkPos.z = res.z;
-      }
-    },
-    { passive: false }
-  );
+  const onWheel = (e) => {
+    e.preventDefault();
+    if (!enabled) return;
+    if (mode === "aerial") {
+      activeFlight = null;
+      const factor = Math.exp(clamp(e.deltaY, -160, 160) * 0.0014);
+      desiredAerialSpherical.radius = clamp(desiredAerialSpherical.radius * factor, 4.0, 260.0);
+    } else {
+      activeFlight = null;
+      const step = -clamp(e.deltaY, -120, 120) * 0.022;
+      const nx = walkPos.x - Math.sin(yaw) * step;
+      const nz = walkPos.z - Math.cos(yaw) * step;
+      const res = resolveWalkPosition(walkPos.x, walkPos.z, nx, nz, 0.38, walkPos.y);
+      walkPos.x = res.x;
+      walkPos.z = res.z;
+    }
+  };
+  domElement.addEventListener("wheel", onWheel, { passive: false });
 
   function getStateSnapshot() {
     return {
@@ -585,9 +547,10 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     }
 
     if (mode === "walk") {
-      yaw = lerp(yaw, desiredYaw, 0.22);
-      pitch = lerp(pitch, desiredPitch, 0.22);
-      currentEyeHeight = lerp(currentEyeHeight, desiredEyeHeight, clamp(dt * 8.0, 0.08, 1.0));
+      const lookAlpha = 1 - Math.exp(-15.0 * dt);
+      yaw = lerp(yaw, desiredYaw, lookAlpha);
+      pitch = lerp(pitch, desiredPitch, lookAlpha);
+      currentEyeHeight = lerp(currentEyeHeight, desiredEyeHeight, 1 - Math.exp(-8.5 * dt));
 
       let moveFwd = 0;
       let moveRight = 0;
@@ -647,10 +610,11 @@ export function createExplorationControls(camera, domElement, opts = {}) {
       const bob = moved ? Math.sin(walkBobPhase) * 0.022 : 0.0;
       applyWalkCameraPose(bob);
     } else {
-      Vector3.LerpToRef(aerialTarget, desiredAerialTarget, 0.14, aerialTarget);
-      aerialSpherical.radius = lerp(aerialSpherical.radius, desiredAerialSpherical.radius, 0.14);
-      aerialSpherical.phi = lerp(aerialSpherical.phi, desiredAerialSpherical.phi, 0.14);
-      aerialSpherical.theta = lerp(aerialSpherical.theta, desiredAerialSpherical.theta, 0.14);
+      const orbitAlpha = 1 - Math.exp(-9.0 * dt);
+      Vector3.LerpToRef(aerialTarget, desiredAerialTarget, orbitAlpha, aerialTarget);
+      aerialSpherical.radius = lerp(aerialSpherical.radius, desiredAerialSpherical.radius, orbitAlpha);
+      aerialSpherical.phi = lerp(aerialSpherical.phi, desiredAerialSpherical.phi, orbitAlpha);
+      aerialSpherical.theta = lerp(aerialSpherical.theta, desiredAerialSpherical.theta, orbitAlpha);
       applyAerialCameraPose();
       const minAerialY = Math.max(1.2, getWorldTerrainY(camera.position.x, camera.position.z) + 0.9);
       if (camera.position.y < minAerialY) {
@@ -660,10 +624,23 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     }
   }
 
+  function dispose() {
+    window.removeEventListener("keydown", onKeyDown);
+    window.removeEventListener("keyup", onKeyUp);
+    window.removeEventListener("blur", onBlur);
+    domElement.removeEventListener("contextmenu", onContextMenu);
+    domElement.removeEventListener("pointerdown", onPointerDown);
+    domElement.removeEventListener("pointermove", onPointerMove);
+    domElement.removeEventListener("pointerup", clearTouch);
+    domElement.removeEventListener("pointercancel", clearTouch);
+    domElement.removeEventListener("wheel", onWheel);
+  }
+
   setAerialImmediate([-4.5, 2.8, 9.2], defaultRadius, 1.0, 0.3);
 
   return {
     update,
+    dispose,
     teleportWalk,
     diveToWalk,
     setAerialImmediate,

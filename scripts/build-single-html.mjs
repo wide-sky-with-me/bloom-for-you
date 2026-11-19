@@ -7,14 +7,13 @@
  *   1. Favicon SVG (base64 data URI)
  *   2. Subset font `flower-song.woff2` (base64 data URI inside CSS) + full `site/style.css`
  *   3. Centralized gift config (`window.__INLINE_GIFT_CONFIG__`)
- *   4. HavokPhysics.wasm compressed via gzip-9 + base64 (`window.__INLINE_HAVOK_WASM_GZIP_B64__`)
- *   5. All 48 `.glb` sculpted, rigged, botanical, aquatic & photogrammetry models
+ *   4. All 51 `.glb` sculpted, rigged, botanical, aquatic & photogrammetry models
  *      (`window.__INLINE_GLB_GZIP_B64__`, decoded via DecompressionStream)
- *   6. Complete Babylon.js 9.36 + Havok 1.3.14 + Scene Modules bundled as a single IIFE script
+ *   5. Complete Babylon.js 9.36 + Scene Modules bundled as a single IIFE script
  *      (zero ES module imports, zero external URLs — opens directly via `file://` offline).
  */
 
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -75,7 +74,6 @@ const MODEL_FILES = {
   ph_coast_rocks: "ph_coast_rocks.glb",
   ph_coast_rocks_b: "ph_coast_rocks_b.glb",
   ph_moss_boulder: "ph_moss_boulder.glb",
-  ph_coastal_shrub: "ph_coastal_shrub.glb",
   ph_lifebuoy: "ph_lifebuoy.glb",
   ph_picnic_table: "ph_picnic_table.glb",
 };
@@ -89,9 +87,6 @@ async function bundleAppIIFE() {
     configFile: false,
     root: SITE,
     logLevel: "warn",
-    optimizeDeps: {
-      exclude: ["@babylonjs/havok"],
-    },
     build: {
       write: false,
       minify: "esbuild",
@@ -116,10 +111,11 @@ async function bundleAppIIFE() {
 }
 
 async function main() {
-  console.log("[single-file] Bundling Babylon.js 9 + Havok + scene modules into standalone IIFE...");
+  const modelEntries = Object.entries(MODEL_FILES);
+  console.log("[single-file] Bundling Babylon.js 9 + scene modules into standalone IIFE...");
   const appCode = await bundleAppIIFE();
 
-  console.log("[single-file] Encoding font, styles, gift config, Havok WASM & 48 GLB models (gzip-9 + base64)...");
+  console.log(`[single-file] Encoding font, styles, gift config & ${modelEntries.length} GLB models (gzip-9 + base64)...`);
   const svgB64 = readFileSync(path.resolve(SITE, "assets/flower.svg")).toString("base64");
   const fontB64 = readFileSync(path.resolve(SITE, "assets/flower-song.woff2")).toString("base64");
 
@@ -131,13 +127,8 @@ async function main() {
 
   const giftConfig = JSON.parse(readFileSync(path.resolve(SITE, "gift.json"), "utf-8"));
 
-  const havokSite = path.resolve(SITE, "assets/havok/HavokPhysics.wasm");
-  const havokNm = path.resolve(ROOT, "node_modules/@babylonjs/havok/lib/esm/HavokPhysics.wasm");
-  const havokPath = existsSync(havokSite) ? havokSite : havokNm;
-  const havokWasmGzB64 = gzipSync(readFileSync(havokPath), { level: 9 }).toString("base64");
-
   const glbMap = {};
-  for (const [key, filename] of Object.entries(MODEL_FILES)) {
+  for (const [key, filename] of modelEntries) {
     const rawGlb = readFileSync(path.resolve(SITE, "assets/models", filename));
     const gz = gzipSync(rawGlb, { level: 9 });
     glbMap[key] = gz.toString("base64");
@@ -156,9 +147,9 @@ async function main() {
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>《鸢尾湾·花与海之约》 · 海景花墅、莫奈花园与群岛海湾庄园 (离线典藏版)</title>
-  <meta name="description" content="《鸢尾湾·花与海之约》自包含离线单文件 3D 互动海岸庄园（内联 Babylon.js 9、Havok 物理引擎、Blender 精雕与骨骼模型、字体与赠言配置，支持 file:// 直接打开）。" />
+  <meta name="description" content="《鸢尾湾·花与海之约》自包含离线单文件 3D 互动海岸庄园（内联 Babylon.js 9、Blender 精雕与骨骼模型、字体与赠言配置，支持 file:// 直接打开）。" />
   <link rel="icon" href="data:image/svg+xml;base64,${svgB64}" />
   <style>
 ${inlinedCss}
@@ -168,7 +159,6 @@ ${inlinedCss}
   ${cleanBodyInner}
   <script>
 window.__INLINE_GIFT_CONFIG__ = ${escapeInlineScript(JSON.stringify(giftConfig))};
-window.__INLINE_HAVOK_WASM_GZIP_B64__ = ${escapeInlineScript(JSON.stringify(havokWasmGzB64))};
 window.__INLINE_GLB_GZIP_B64__ = ${escapeInlineScript(JSON.stringify(glbMap))};
   </script>
   <script>

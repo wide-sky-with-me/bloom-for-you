@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the '鸢尾湾·花与海之约' Babylon 9.36 + Havok 1.3.14 static Pages artifact."""
+"""Build the '鸢尾湾·花与海之约' Babylon 9.36 static Pages artifact."""
 
 from __future__ import annotations
 
@@ -24,6 +24,11 @@ REQUIRED_SITE_FILES = (
     "modules/ocean-sky-stage.js",
     "modules/island-terrain-and-horizon.js",
     "modules/flora-and-fx.js",
+    "modules/glb-helpers.js",
+    "modules/world-villa.js",
+    "modules/world-gardens-pond.js",
+    "modules/world-harbor-estate.js",
+    "modules/world-town-life.js",
     "modules/harbor-villa-world.js",
     "modules/couple-rigged-controller.js",
     "modules/couple-mode-babylon.js",
@@ -33,7 +38,6 @@ REQUIRED_SITE_FILES = (
     "assets/flower-song.woff2",
     "assets/FONT-LICENSE.txt",
     "assets/flower.svg",
-    "assets/havok/HavokPhysics.wasm",
     "assets/models/couple_xian.glb",
     "assets/models/couple_ran.glb",
     "assets/models/coastal_villa.glb",
@@ -83,7 +87,6 @@ REQUIRED_SITE_FILES = (
     "assets/models/ph_coast_rocks.glb",
     "assets/models/ph_coast_rocks_b.glb",
     "assets/models/ph_moss_boulder.glb",
-    "assets/models/ph_coastal_shrub.glb",
     "assets/models/ph_lifebuoy.glb",
     "assets/models/ph_picnic_table.glb",
 )
@@ -114,17 +117,35 @@ def verify_source(source: Path) -> dict:
     return {"modules": module_files}
 
 
-def _ensure_vite_dist() -> Path:
+def _latest_source_mtime(source: Path) -> float:
+    latest = 0.0
+    for p in source.rglob("*"):
+        if p.is_file():
+            latest = max(latest, p.stat().st_mtime)
+    for cfg in (ROOT / "vite.config.js", ROOT / "package.json", ROOT / "THIRD_PARTY_NOTICES.md"):
+        if cfg.is_file():
+            latest = max(latest, cfg.stat().st_mtime)
+    return latest
+
+
+def _is_vite_dist_stale(vite_dist: Path, source: Path) -> bool:
+    index_html = vite_dist / "index.html"
+    if not index_html.is_file():
+        return True
+    return _latest_source_mtime(source) > index_html.stat().st_mtime
+
+
+def _ensure_vite_dist(source: Path, *, force_rebuild: bool = False) -> Path:
     vite_dist = ROOT / "dist-vite"
-    if not (vite_dist / "index.html").is_file():
+    if force_rebuild or _is_vite_dist_stale(vite_dist, source):
         npm = shutil.which("npm")
         if not npm:
-            raise FileNotFoundError("dist-vite/index.html missing and npm is not installed")
+            raise FileNotFoundError("dist-vite is missing or stale and npm is not installed")
         subprocess.run([npm, "run", "build:web"], cwd=str(ROOT), check=True)
     return vite_dist
 
 
-def build(output: Path) -> Path:
+def build(output: Path, *, force_rebuild: bool = False) -> Path:
     output = output.resolve()
     source = ROOT / "site"
     if output == ROOT or output == source or output in source.parents or source in output.parents:
@@ -134,7 +155,7 @@ def build(output: Path) -> Path:
         shutil.rmtree(output)
 
     summary = verify_source(source)
-    vite_dist = _ensure_vite_dist()
+    vite_dist = _ensure_vite_dist(source, force_rebuild=force_rebuild)
 
     shutil.copytree(vite_dist, output, dirs_exist_ok=True)
     shutil.copy2(ROOT / "THIRD_PARTY_NOTICES.md", output / "THIRD_PARTY_NOTICES.md")
@@ -151,7 +172,7 @@ def build(output: Path) -> Path:
         "title": "鸢尾湾·花与海之约",
         "style": "iris-bay-monet-garden-coastal-estate-babylon9",
         "worldSizeMeters": 260,
-        "renderer": "babylon-9.36.0-havok-1.3.14",
+        "renderer": "babylon-9.36.0",
         "navigation": "default-aerial-overlook-click-to-dive-and-walk-inside",
         "modules": summary["modules"],
         "revision": os.environ.get("BLOOM_BUILD_REVISION", "local"),
@@ -161,15 +182,16 @@ def build(output: Path) -> Path:
         json.dumps(release, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    print(f"Built Iris Bay Babylon 9 + Havok Static World: {output}")
+    print(f"Built Iris Bay Babylon 9 Static World: {output}")
     return output
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
+    parser.add_argument("--force-rebuild", action="store_true", help="Always rerun vite build before packaging")
     args = parser.parse_args()
-    build(args.output)
+    build(args.output, force_rebuild=args.force_rebuild)
 
 
 if __name__ == "__main__":
