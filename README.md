@@ -1,4 +1,10 @@
-# 《鸢尾湾·花与海之约》 · 海景花墅、莫奈花园与群岛海湾庄园
+# 鸢尾湾 · 花径漫步
+
+[进入花径](https://wide-sky-with-me.github.io/bloom-for-you/) · [回到经典庄园（双人漫游与读信）](https://wide-sky-with-me.github.io/bloom-for-you/classic/)
+
+线上首页由 `desktop/Viewer/build.mjs` 从水庭模型生成，打开即可沿路赏花。GitHub Pages 只发布浏览器版，不上传 UE 工程包。下文介绍保留在 `classic/` 的经典版本。
+
+## 《鸢尾湾·花与海之约》 · 海景花墅、莫奈花园与群岛海湾庄园
 
 基于 **Babylon.js `9.36.0`** 与自研 **二次元双阶 Cel 着色插件（`GenshinToonPlugin`）** 构建的 3D 互动海岸庄园礼赠应用。场景融合近景双层海景花墅、莫奈瀑布睡莲鱼虾池、繁花双人秋千、中景半岛石砌游艇海港与远景群岛对岸小镇，支持默认俯瞰全景、点击深入第一人称漫步，以及 **小贤贤 & 小冉子** 双人骨骼漫游与 69 处场景/NPC/生态动物互动。
 

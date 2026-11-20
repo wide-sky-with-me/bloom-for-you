@@ -1,4 +1,4 @@
-name: Publish Bloom for You Scroll World
+name: Publish Iris Bay Flower Path
 
 on:
   push:
@@ -32,14 +32,17 @@ jobs:
         run: npm run build
       - name: Run release contract tests
         run: python -m unittest discover -s tests -v
-      - name: Build static site
-        env:
-          BLOOM_BUILD_REVISION: ${{ github.sha }}
-        run: python build.py --output dist
+      - name: Validate flower path geometry
+        run: python desktop/Tests/test_scene.py
+      - name: Assemble the flower path homepage and classic garden
+        run: |
+          mkdir -p pages/classic
+          node desktop/Viewer/build.mjs desktop/Art pages/index.html
+          cp '鸢尾湾·花与海之约.html' pages/classic/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: dist
+          path: pages
   deploy:
     environment:
       name: github-pages
@@ -47,6 +50,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Deploy Scroll World
+      - name: Deploy Iris Bay
         id: deployment
         uses: actions/deploy-pages@v4
