@@ -29,6 +29,9 @@ import { installGenshinToonShading } from "./modules/genshin-toon-plugin.js";
 import { resolveGiftConfig } from "./modules/gift-config.js";
 import { createHarborAudio } from "./audio.js";
 
+const REMODEL = import.meta.env.MODE === "remodel";
+const ENTRY_PRESET = REMODEL ? "monetPathWalk" : "aerialOverlook";
+
 function populateLetterModal(gift) {
   if (!gift) return;
   const recEl = document.getElementById("letter-recipient");
@@ -112,8 +115,36 @@ async function init() {
   const btnReset = document.getElementById("btn-reset");
   const debugHud = document.getElementById("debug-hud");
   const isTouchDevice = Boolean(window.matchMedia?.("(pointer: coarse)")?.matches || "ontouchstart" in window);
+  const walkButton = document.getElementById("walk-forward");
+  let forwardHeld = false;
+  const walkEvents = new AbortController();
+  if (REMODEL) {
+    document.body.classList.add("is-remodel");
+    document.getElementById("edition-label").hidden = false;
+    const options = { signal: walkEvents.signal };
+    const stop = () => { forwardHeld = false; };
+    walkButton.addEventListener("pointerdown", (event) => {
+      walkButton.setPointerCapture(event.pointerId);
+      forwardHeld = true;
+    }, options);
+    for (const event of ["pointerup", "pointercancel", "lostpointercapture", "blur"]) {
+      walkButton.addEventListener(event, stop, options);
+    }
+    walkButton.addEventListener("keydown", (event) => {
+      if (event.code !== "Space" && event.code !== "Enter") return;
+      event.preventDefault();
+      event.stopPropagation();
+      forwardHeld = true;
+    }, options);
+    walkButton.addEventListener("keyup", stop, options);
+    window.addEventListener("blur", stop, options);
+  }
 
   function hintTextFor(modeName, inCouple) {
+    if (REMODEL && (inCouple || modeName === "walk")) {
+      return isTouchDevice ? "按住前进 · 拖动画面转向 · 点地面行走" :
+        inCouple ? "WASD 行走 · 拖动转向 · E 互动 · F 牵手" : "WASD 行走 · 拖动转向 · 点人物一起漫游";
+    }
     if (inCouple) {
       return isTouchDevice
         ? "点地面行走 · 单指转视角 · 双指缩放 · 点 NPC / 道具互动"
@@ -193,7 +224,11 @@ async function init() {
     shadowGen: oceanSky.shadowGen,
     courtRefs: horizon.courtRefs,
   });
-
+  if (REMODEL) {
+    setLoadingProgress(0.95, "正在布置花墅门廊与书房信桌…");
+    const { installRemodelWorld } = await import("./modules/remodel-world.js");
+    await installRemodelWorld(scene, new URL("./island.glb", document.baseURI).href);
+  }
   scene.blockMaterialDirtyMechanism = false;
 
   // Prune orphaned materials left behind by disposed sibling templates or replaced tint materials
@@ -248,6 +283,7 @@ async function init() {
 
   const allInteractables = [...flora.interactables, ...world.interactables];
   const interactableById = new Map(allInteractables.map((it) => [it.id, it]));
+  const letterDesk = interactableById.get("villa-love-letter");
 
   const LEGACY_ID_MAP = {
     mailbox: "estate-mailbox-letter",
@@ -276,6 +312,7 @@ async function init() {
   const controls = createExplorationControls(camera, canvas, {
     isPortrait,
     onModeChange(nextMode) {
+      if (REMODEL) walkButton.hidden = nextMode !== "walk";
       if (exploreHint) {
         exploreHint.textContent = hintTextFor(nextMode, false);
       }
@@ -319,6 +356,7 @@ async function init() {
     },
     onActiveChange(on) {
       controls.setEnabled(!on);
+      if (REMODEL) walkButton.hidden = !on && controls.getMode() !== "walk";
       document.body.classList.toggle("is-couple-mode", on);
       if (exploreHint) {
         exploreHint.textContent = hintTextFor(controls.getMode(), on);
@@ -353,7 +391,9 @@ async function init() {
       preLetterSnapshot = controls.getStateSnapshot();
       preLetterPreset = activePresetName;
     }
+    forwardHeld = false;
     letterModal.hidden = false;
+    if (REMODEL) letterClose.focus({ preventScroll: true });
     btnLetter?.classList.add("is-active");
   }
 
@@ -580,7 +620,7 @@ async function init() {
     horizon.update?.(0, 0);
     flora.reset?.();
     world.reset?.();
-    setCameraPreset("aerialOverlook", { smooth: false });
+    setCameraPreset(ENTRY_PRESET);
   }
 
   btnReset?.addEventListener("click", (e) => {
@@ -925,10 +965,14 @@ async function init() {
   }
 
   function checkLetterProximity() {
-    if (controls.getMode() !== "walk") return;
-    const wp = controls.getWalkPosition();
-    if (Math.abs(wp.y - 2.6) > 1.4) return;
-    const dist = Math.hypot(wp.x - -7.4, wp.z - -7.55);
+    const withCouple = REMODEL && couple.isActive();
+    if (!withCouple && controls.getMode() !== "walk") return;
+    const wp = withCouple ? couple.getLeaderPosition() : controls.getWalkPosition();
+    const dist = Math.hypot(wp.x - letterDesk.position.x, wp.z - letterDesk.position.z);
+    if (Math.abs(wp.y - letterDesk.floorY) > 1.4) {
+      autoOpenedNearDesk = false;
+      return;
+    }
     if (dist < 1.55 && !autoOpenedNearDesk && letterModal && letterModal.hidden) {
       autoOpenedNearDesk = true;
       openLetterModal({ saveState: true });
@@ -936,6 +980,13 @@ async function init() {
     } else if (dist > 2.45) {
       autoOpenedNearDesk = false;
     }
+  }
+
+  function updateTravel(dt) {
+    if (REMODEL && !letterModal.hidden) return;
+    controls.update(dt, forwardHeld);
+    couple.update(dt, { paused: simPaused, forwardHeld });
+    checkLetterProximity();
   }
 
   let startFrozenForQA = false;
@@ -946,6 +997,11 @@ async function init() {
   }
 
   // Ensure all PBR, SSAO2, CSM, and post-processing shaders finish compiling before revealing canvas
+  if (REMODEL) {
+    // High-detail startup can lose the WebGL context before auto quality gets a frame to react.
+    setQuality("low");
+    setCameraPreset(ENTRY_PRESET);
+  }
   applyNightMix(0.0);
   stepSimulation(0.016);
   controls.update(0.016);
@@ -987,9 +1043,7 @@ async function init() {
       applyNightMix(nextMix);
     }
 
-    controls.update(frameDt);
-    couple.update(frameDt, { paused: simPaused });
-    checkLetterProximity();
+    updateTravel(frameDt);
 
     if (!simPaused) {
       stepSimulation(frameDt);
@@ -1071,6 +1125,7 @@ async function init() {
     setQuality,
     toggleDebugHud,
     dispose() {
+      walkEvents.abort();
       if (hoverRafId) cancelAnimationFrame(hoverRafId);
       if (idleTimer) clearTimeout(idleTimer);
       if (clickTimer) clearTimeout(clickTimer);
@@ -1136,9 +1191,7 @@ async function init() {
             Math.sign(targetNightMix - nightMix) * Math.min(Math.abs(targetNightMix - nightMix), stepDt * 1.05);
           applyNightMix(nextMix);
         }
-        controls.update(stepDt);
-        couple.update(stepDt, { paused: simPaused });
-        checkLetterProximity();
+        updateTravel(stepDt);
         if (!simPaused) stepSimulation(stepDt);
       }
       return new Promise((resolve) => {

@@ -34,9 +34,9 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Validate flower path geometry
         run: python desktop/Tests/test_scene.py
-      - name: Assemble the remodel homepage and both earlier gardens
+      - name: Build the playable world at the original URL
         run: |
-          node desktop/WebRemodel/view/build.mjs pages
+          npm run build:web -- --mode remodel --outDir "$PWD/pages"
           mkdir -p pages/classic pages/flower-path
           node desktop/Viewer/build.mjs desktop/Art pages/flower-path/index.html
           cp '鸢尾湾·花与海之约.html' pages/classic/index.html

@@ -499,9 +499,21 @@ export function buildEstateAndHarborSection(scene, root, models, shadowGen, fx, 
   wmAnchor.rotation.y = 0.52;
   const wmInst = instantiateGLB(models.hilltop_windmill, "WindmillGLB", wmAnchor);
   applyGLBShadows(wmInst?.rootNodes, shadowGen, { cast: true, receive: true });
-  const wmRotor = findDescendantByName(wmInst?.rootNodes, "Windmill_Rotor");
-  const wmBaseQuat = wmRotor?.rotationQuaternion ? wmRotor.rotationQuaternion.clone() : Quaternion.Identity();
+  let wmRotor = findDescendantByName(wmInst?.rootNodes, "Windmill_Rotor");
+  let wmBaseQuat = wmRotor?.rotationQuaternion?.clone() ?? Quaternion.Identity();
   const wmAxisX = new Vector3(1, 0, 0);
+  eRoot.metadata = {
+    bindRemodelMotion(rotor, wickY) {
+      wmRotor = rotor;
+      wmBaseQuat = rotor.rotationQuaternion.clone();
+      // The remodel wick is higher than the classic revolving lens. Keep its
+      // night/flash control and rotate the cones around the surveyed lamp axis.
+      for (const beam of lhBeams) {
+        const offset = wickY - beam.computeWorldMatrix(true).getTranslation().y;
+        beam.position.y += offset;
+      }
+    },
+  };
 
   // 3. Creek Arched Bridge (@ (8.4, avgBankY, -44.0))
   const yWest = getWorldTerrainY(3.2, -44.0) + 0.04;

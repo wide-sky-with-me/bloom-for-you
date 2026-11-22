@@ -19,6 +19,7 @@ import { MOOD_LABELS, createRiggedCharacter } from "./couple-rigged-controller.j
 
 const SPEED_WALK = 1.78;
 const SPEED_RUN = 3.55;
+const BODY_RADIUS = 0.34;
 
 export const ACTIONS = {
   holdhand: { label: "牵手", key: "F" },
@@ -274,7 +275,7 @@ export function createCoupleMode({
     const step = Math.min(len, Math.max(smoothSpeed, speed * 0.35) * dt);
     const nx = c.pos.x + (dx / len) * step;
     const nz = c.pos.z + (dz / len) * step;
-    const resolved = resolveWalkPosition(c.pos.x, c.pos.z, nx, nz, 0.34, c.pos.y);
+    const resolved = resolveWalkPosition(c.pos.x, c.pos.z, nx, nz, BODY_RADIUS, c.pos.y);
     const moved = Math.hypot(resolved.x - c.pos.x, resolved.z - c.pos.z);
 
     if (moved > 0.0008) {
@@ -531,7 +532,7 @@ export function createCoupleMode({
     }
   }
 
-  function updateLeader(dt) {
+  function updateLeader(dt, forwardHeld) {
     const L = leader();
     if (L.action && (L.action.name === "hug" || L.action.name === "kiss" || L.action.name === "pat" || L.action.name === "heart")) {
       L.speed = 0;
@@ -541,7 +542,7 @@ export function createCoupleMode({
 
     let fwd = 0;
     let right = 0;
-    if (keys.has("KeyW") || keys.has("ArrowUp")) fwd += 1;
+    if (forwardHeld || keys.has("KeyW") || keys.has("ArrowUp")) fwd += 1;
     if (keys.has("KeyS") || keys.has("ArrowDown")) fwd -= 1;
     if (keys.has("KeyD") || keys.has("ArrowRight")) right += 1;
     if (keys.has("KeyA") || keys.has("ArrowLeft")) right -= 1;
@@ -597,6 +598,32 @@ export function createCoupleMode({
     if (L.state === "walk" || L.state === "run") L.state = "idle";
   }
 
+  function canWalkSegment(pos, x, z) {
+    const dx = x - pos.x, dz = z - pos.z;
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / (BODY_RADIUS / 2)));
+    let floor = pos.y;
+    for (let i = 1; i <= steps; i++) {
+      const px = pos.x + dx * i / steps, pz = pos.z + dz * i / steps;
+      if (!isPositionWalkable(px, pz, BODY_RADIUS, floor)) return false;
+      const nextFloor = getWalkSurfaceY(px, pz, floor);
+      if (Math.abs(nextFloor - floor) > 1.05) return false;
+      floor = nextFloor;
+    }
+    return true;
+  }
+
+  function nextReachableFootstep(pos) {
+    // In a narrow passage, rejoin the actual leader trail, not a point beyond a wall.
+    for (let i = trail.length - 1; i >= 0; --i) {
+      const step = trail[i];
+      if (Math.hypot(step.x - pos.x, step.z - pos.z) <= 2 && canWalkSegment(pos, step.x, step.z)) {
+        if (i > 0) trail.splice(0, i);
+        return step;
+      }
+    }
+    return trail[0];
+  }
+
   function updatePartner(dt) {
     const L = leader();
     const P = partner();
@@ -648,15 +675,6 @@ export function createCoupleMode({
     }
 
     const distToLeader = Math.hypot(P.pos.x - L.pos.x, P.pos.z - L.pos.z);
-    if (distToLeader > 14 || Math.abs(P.pos.y - L.pos.y) > 3.2) {
-      const nx = L.pos.x + Math.cos(L.yaw) * 0.6;
-      const nz = L.pos.z - Math.sin(L.yaw) * 0.6;
-      const safeX = isPositionWalkable(nx, nz, 0.24, L.pos.y) ? nx : L.pos.x;
-      const safeZ = isPositionWalkable(nx, nz, 0.24, L.pos.y) ? nz : L.pos.z;
-      P.place(safeX, getWalkSurfaceY(safeX, safeZ, L.pos.y), safeZ, L.yaw, null);
-      trail.length = 0;
-      return;
-    }
 
     let target = null;
     if (holdingHands) {
@@ -665,7 +683,7 @@ export function createCoupleMode({
       const rz = -Math.sin(L.yaw);
       const tx = L.pos.x + rx * 0.54 * side;
       const tz = L.pos.z + rz * 0.54 * side;
-      if (isPositionWalkable(tx, tz, 0.18, L.pos.y) && Math.abs(getWalkSurfaceY(tx, tz, L.pos.y) - L.pos.y) < 0.5) {
+      if (distToLeader < 2 && canWalkSegment(P.pos, tx, tz) && Math.abs(getWalkSurfaceY(tx, tz, L.pos.y) - L.pos.y) < 0.5) {
         target = { x: tx, z: tz };
       }
       const handSide = -side;
@@ -677,7 +695,7 @@ export function createCoupleMode({
 
     if (!target) {
       while (trail.length > 1 && Math.hypot(trail[0].x - P.pos.x, trail[0].z - P.pos.z) < 0.35) trail.shift();
-      if (distToLeader > 1.1 && trail.length) target = trail[0];
+      if (distToLeader > 0.7 && trail.length) target = nextReachableFootstep(P.pos);
     }
 
     if (target) {
@@ -1123,7 +1141,7 @@ export function createCoupleMode({
   }
 
   let elapsedSec = 0;
-  function update(dt, { paused = false } = {}) {
+  function update(dt, { paused = false, forwardHeld = false } = {}) {
     const safeDt = clamp(dt || 0.016, 0.001, 0.05);
     if (paused) {
       if (active) updateCamera(safeDt);
@@ -1136,10 +1154,10 @@ export function createCoupleMode({
       if (carrying && controlledId === "xian") {
         const saved = controlledId;
         controlledId = "ran";
-        updateLeader(safeDt);
+        updateLeader(safeDt, forwardHeld);
         controlledId = saved;
       } else {
-        updateLeader(safeDt);
+        updateLeader(safeDt, forwardHeld);
       }
       updatePartner(safeDt);
       updateNearestPrompt();
@@ -1193,6 +1211,7 @@ export function createCoupleMode({
       return interactables;
     },
     getInteractables: () => interactables,
+    getLeaderPosition: () => leader().pos.clone(),
     teleport,
     setCamAngles(y, p) {
       camYaw = y;

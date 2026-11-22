@@ -14,6 +14,7 @@ import {
   makePbrMat,
   registerBoxCollider,
   registerCircleCollider,
+  registerUprightMeshCollider,
   registerWalkZone,
 } from "./world-spatial.js";
 import {
@@ -48,7 +49,7 @@ export function buildCoastalVillaSection(scene, root, models, shadowGen, fx) {
     if (x >= -27.45 && x < -25.25 && z >= -0.15 && z <= 2.35) return lerp(2.2, 2.6, clamp((x + 27.45) / 2.2, 0, 1));
     if (x > -2.75 && x <= -0.55 && z >= -0.25 && z <= 2.05) return lerp(2.6, 2.2, clamp((x + 2.75) / 2.2, 0, 1));
     return null;
-  });
+  }, { priority: 1 }); // The paved courtyard continues underneath the villa platform and steps.
 
   // Authoritative Villa Structural & Furniture Colliders (Exact 1F / 2F Y-bounds)
   const boxCols = [
@@ -152,6 +153,12 @@ export function buildCoastalVillaSection(scene, root, models, shadowGen, fx) {
   const frontDoorR = findDescendantByName(villaNodes, "Villa_FrontDoor_R");
   const doorLOpenQuat = frontDoorL?.rotationQuaternion ? frontDoorL.rotationQuaternion.clone() : Quaternion.RotationYawPitchRoll(1.48, 0, 0);
   const doorROpenQuat = frontDoorR?.rotationQuaternion ? frontDoorR.rotationQuaternion.clone() : Quaternion.RotationYawPitchRoll(-1.48, 0, 0);
+  // Each frame spans its whole leaf, including the inset glass. The collision
+  // aperture tracks the same model and hinges as the visible animation.
+  const syncDoorColliders = ["Villa_FrontDoor_L_Frame", "Villa_FrontDoor_R_Frame"]
+    .map(name => findDescendantByName(villaNodes, name)).filter(Boolean).map(registerUprightMeshCollider);
+  let appliedDoorAnim = 1; // authored open pose
+  const closedDoorQuat = Quaternion.Identity();
   const fridgeDoor = findDescendantByName(villaNodes, "Fridge_Door");
   const fridgeBaseQuat = fridgeDoor?.rotationQuaternion ? fridgeDoor.rotationQuaternion.clone() : Quaternion.Identity();
   const armoireDoorL = findDescendantByName(villaNodes, "Armoire_Door_L");
@@ -528,12 +535,15 @@ export function buildCoastalVillaSection(scene, root, models, shadowGen, fx) {
   let nightMix = 0;
 
   function applyVillaInteractiveState(elapsed, dt) {
-    state.doorAnim = lerp(state.doorAnim, state.doorTarget, 1 - Math.exp(-dt * 6));
-    if (frontDoorL) {
-      frontDoorL.rotationQuaternion = Quaternion.Slerp(Quaternion.Identity(), doorLOpenQuat, state.doorAnim);
+    if (state.doorAnim !== state.doorTarget) {
+      state.doorAnim = lerp(state.doorAnim, state.doorTarget, 1 - Math.exp(-dt * 6));
+      if (Math.abs(state.doorAnim - state.doorTarget) < 0.0001) state.doorAnim = state.doorTarget;
     }
-    if (frontDoorR) {
-      frontDoorR.rotationQuaternion = Quaternion.Slerp(Quaternion.Identity(), doorROpenQuat, state.doorAnim);
+    if (state.doorAnim !== appliedDoorAnim) {
+      if (frontDoorL) frontDoorL.rotationQuaternion = Quaternion.Slerp(closedDoorQuat, doorLOpenQuat, state.doorAnim);
+      if (frontDoorR) frontDoorR.rotationQuaternion = Quaternion.Slerp(closedDoorQuat, doorROpenQuat, state.doorAnim);
+      for (const sync of syncDoorColliders) sync();
+      appliedDoorAnim = state.doorAnim;
     }
 
     state.fireBoost = Math.max(0, state.fireBoost - dt * 0.22);

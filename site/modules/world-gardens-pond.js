@@ -413,8 +413,23 @@ export function buildGardensAndPondSection(scene, root, models, shadowGen, fx) {
   swingNode.position.set(scx, sgy, scz);
   const swingInst = instantiateGLB(models.garden_swing_arches, "SwingGLB", swingNode);
   applyGLBShadows(swingInst?.rootNodes, shadowGen, { cast: true, receive: true });
-  const swingPivot = findDescendantByName(swingInst?.rootNodes, "Swing_Pivot");
-  const swingBaseQuat = swingPivot?.rotationQuaternion ? swingPivot.rotationQuaternion.clone() : Quaternion.Identity();
+  let swingPivot = findDescendantByName(swingInst?.rootNodes, "Swing_Pivot");
+  let swingBaseQuat = swingPivot?.rotationQuaternion?.clone() ?? Quaternion.Identity();
+  gRoot.metadata = {
+    bindRemodelMotion(pivot, pond, cascade) {
+      swingPivot = pivot;
+      swingBaseQuat = pivot.rotationQuaternion.clone();
+      const pose = interactables.find(item => item.id === "garden-swing-ride").pose;
+      pose.attachTo = pivot;
+      for (const seat of pose.seats) {
+        seat.y = -1.627;
+        seat.z = 0.027;
+      }
+      pond.material.bumpTexture = pondNorm;
+      cascade.material.albedoTexture = wfTex;
+      cascade.material.useAlphaFromAlbedoTexture = true;
+    },
+  };
 
   // Garden Animated State + Wishing Coin Pool + Feed Crumbs + Waterfall Rainbow + Fireflies
   const animState = {

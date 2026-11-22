@@ -361,8 +361,8 @@ export function clearNavigationRegistry() {
   _circleColliders.length = 0;
 }
 
-export function registerWalkZone(fn) {
-  _walkZones.push(fn);
+export function registerWalkZone(fn, { priority = 0 } = {}) {
+  _walkZones.push({ fn, priority });
 }
 
 export function registerBoxCollider(xMin, xMax, zMin, zMax, yMin = -Infinity, yMax = Infinity) {
@@ -382,6 +382,29 @@ export function registerRotatedBoxCollider(cx, cz, ry, halfW, halfD, yMin = -Inf
   });
 }
 
+// A rigid mesh turning about Y can use the same oriented-box solver as the static walls.
+// Its owner calls sync after a pose change; walk queries never traverse the scene graph.
+export function registerUprightMeshCollider(mesh) {
+  const collider = {};
+  function sync() {
+    mesh.computeWorldMatrix(true);
+    const box = mesh.getBoundingInfo().boundingBox;
+    const axis = box.directions[0];
+    const scaleX = axis.length();
+    collider.cx = box.centerWorld.x;
+    collider.cz = box.centerWorld.z;
+    collider.cosR = axis.x / scaleX;
+    collider.sinR = -axis.z / scaleX;
+    collider.halfW = box.extendSize.x * scaleX;
+    collider.halfD = box.extendSize.z * box.directions[2].length();
+    collider.yMin = box.minimumWorld.y - 0.001; // float32 seam against the authored floor
+    collider.yMax = box.maximumWorld.y;
+  }
+  sync();
+  _rotatedBoxColliders.push(collider);
+  return sync;
+}
+
 export function registerCircleCollider(cx, cz, radius, yMin = -Infinity, yMax = Infinity) {
   _circleColliders.push({ cx, cz, radius, yMin, yMax });
 }
@@ -397,8 +420,10 @@ export function getRegisteredColliders() {
 export function getWalkSurfaceY(x, z, refY = null) {
   let best = null;
   let bestDiff = Infinity;
-  for (let i = 0; i < _walkZones.length; i += 1) {
-    const raw = _walkZones[i](x, z, refY);
+  let bestPriority = -Infinity;
+  for (const { fn, priority } of _walkZones) {
+    if (priority < bestPriority) continue;
+    const raw = fn(x, z, refY);
     if (raw === null || raw === undefined) continue;
     const list = Array.isArray(raw) ? raw : [raw];
     for (let k = 0; k < list.length; k += 1) {
@@ -406,11 +431,13 @@ export function getWalkSurfaceY(x, z, refY = null) {
       if (typeof val !== "number") continue;
       if (typeof refY === "number") {
         const diff = Math.abs(val - refY);
-        if (diff < bestDiff) {
+        if (priority > bestPriority || diff < bestDiff) {
+          bestPriority = priority;
           bestDiff = diff;
           best = val;
         }
-      } else if (best === null || val > best) {
+      } else if (priority > bestPriority || val > best) {
+        bestPriority = priority;
         best = val;
       }
     }

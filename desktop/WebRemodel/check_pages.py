@@ -8,15 +8,16 @@ import sys
 
 def validate(directory):
     index = (directory / 'index.html').read_text(encoding='utf-8')
-    if '花墅与水庭' not in index or '1.0.1' not in index:
-        raise ValueError('Homepage is not the reviewed browser edition')
+    for marker in ('id="diorama-canvas"', 'id="btn-couple"', 'id="letter-modal"'):
+        if marker not in index:
+            raise ValueError(f'Not the playable world: missing {marker}')
+    if 'id="enter"' in index or 'plates/arrival' in index:
+        raise ValueError('A gallery was placed at the playable root')
     for relative in ('flower-path/index.html', 'classic/index.html', 'credits.txt'):
         if (directory / relative).stat().st_size < 1024:
             raise ValueError(f'Missing or empty legacy edition / credits: {relative}')
-    models = list(directory.rglob('*.glb'))
-    if len(models) != 1:
-        raise ValueError(f'Expected one self-contained island, found {models}')
-    content = models[0].read_bytes()
+    model = directory / 'island.glb'
+    content = model.read_bytes()
     magic, version, size, json_size, chunk_type = struct.unpack_from('<4s3I4s', content)
     if (magic, version, size, chunk_type) != (b'glTF', 2, len(content), b'JSON'):
         raise ValueError('Invalid GLB v2 container')
@@ -31,7 +32,7 @@ def validate(directory):
             raise ValueError(f'Missing swing or rotor animation: {prefix}')
     if any('uri' in obj and not obj['uri'].startswith('data:') for obj in [*doc['buffers'], *doc.get('images', [])]):
         raise ValueError('Unexpected external mesh / texture dependency')
-    print('Verified browser island:', models[0].relative_to(directory), size, hashlib.sha256(content).hexdigest())
+    print('Verified playable island:', model.name, size, hashlib.sha256(content).hexdigest())
 
 
 if __name__ == '__main__':

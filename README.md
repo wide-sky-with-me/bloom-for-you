@@ -2,7 +2,19 @@
 
 [进入重制小岛](https://wide-sky-with-me.github.io/bloom-for-you/) · [旧版花径](https://wide-sky-with-me.github.io/bloom-for-you/flower-path/) · [经典庄园：双人漫游与读信](https://wide-sky-with-me.github.io/bloom-for-you/classic/)
 
-首页是「花墅与水庭」1.0.1 的浏览器观景版。网页版从重制场景导出的模型加载，支持查看花墅、秋千、东港灯塔、风车、莫奈池与书房。完整可编辑模型见 [Blender 发行包](https://github.com/wide-sky-with-me/bloom-for-you/releases/tag/remodel-v1.0.1)。下文介绍保留在 `classic/` 的经典版本。
+首页使用庄园的游戏引擎、角色和探索控制器，直接加载六处新版模型。地标位于同一个可行走的世界里；这不是 1.0.1 的观景相册。原角色与部分远景素材继续使用。可编辑模型另见 [Blender 工程](https://github.com/wide-sky-with-me/bloom-for-you/releases/tag/remodel-v1.0.1)。
+
+**怎么玩：** 在花径出生后，用 `W/A/S/D` 行走，按住鼠标拖动转向；手机按住「前进」。选「双人漫游」后，`Tab` 切换角色、`F` 牵手，靠近门按 `E` 开关。要读信，穿过花墅一楼走廊进入书房，低头点桌上的信纸。
+
+本地构建可玩网页版：
+
+```sh
+npm ci
+npm run build:web -- --mode remodel --outDir "$PWD/pages"
+python3 -m http.server 8000 --directory pages
+```
+
+下文介绍保留在 `classic/` 的经典版本。
 
 ## 《鸢尾湾·花与海之约》 · 海景花墅、莫奈花园与群岛海湾庄园
 

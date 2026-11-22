@@ -20,12 +20,16 @@ function copyDirRecursive(src, dest) {
 
 function irisBayVitePlugin() {
   let resolvedOutDir = path.resolve(__dirname, "dist-vite");
+  let playableRemodel = false;
+  const remodelFile = path.resolve(__dirname, "desktop/WebRemodel/model/island.glb");
   return {
     name: "iris-bay-static-assets",
     configResolved(config) {
       resolvedOutDir = path.resolve(config.root, config.build.outDir);
+      playableRemodel = config.mode === "remodel";
     },
     closeBundle() {
+      if (playableRemodel) copyFileSync(remodelFile, path.join(resolvedOutDir, "island.glb"));
       const modelsSrc = path.resolve(__dirname, "site/assets/models");
       const modelsDest = path.resolve(resolvedOutDir, "assets/models");
       if (existsSync(modelsSrc)) {

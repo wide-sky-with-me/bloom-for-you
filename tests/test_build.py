@@ -33,6 +33,9 @@ EXPECTED_MODULES = (
     "genshin-toon-plugin.js",
     "exploration-camera.js",
     "gift-config.js",
+    "remodel-world.js",
+    "remodel-villa.js",
+    "remodel-landmarks.js",
 )
 
 EXPECTED_MODELS = (
@@ -297,6 +300,22 @@ console.log("TOON_CLASSIFIER_OK");
         proc = self._run_node_with_real_module(script)
         self.assertEqual(proc.returncode, 0, f"Toon classifier check failed:\n{proc.stderr}")
         self.assertIn("TOON_CLASSIFIER_OK", proc.stdout)
+
+    def test_porch_floor_supersedes_paving_in_both_registration_orders(self) -> None:
+        proc = self._run_node_with_real_module(r"""
+import assert from "node:assert/strict";
+import { clearNavigationRegistry, registerWalkZone, getWalkSurfaceY } from "./site/modules/world-spatial.js";
+const courtyard = () => registerWalkZone(() => 2.235);
+const villa = () => registerWalkZone((x, z) => z < 7 ? [2.60, 6.12] : null, { priority: 1 });
+for (const order of [[courtyard, villa], [villa, courtyard]]) {
+  clearNavigationRegistry();
+  for (const register of order) register();
+  assert.equal(getWalkSurfaceY(-13.93, 5.10, 2.235), 2.60);
+  assert.equal(getWalkSurfaceY(-13.93, 5.10, 6.12), 6.12);
+  assert.equal(getWalkSurfaceY(-13.93, 9.20, 2.60), 2.235);
+}
+""")
+        self.assertEqual(proc.returncode, 0, proc.stderr[-1500:])
 
     def test_world_spatial_villa_waypoints_and_bounds(self) -> None:
         script = r"""

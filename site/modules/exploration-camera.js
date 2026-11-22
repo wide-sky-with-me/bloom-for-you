@@ -516,8 +516,12 @@ export function createExplorationControls(camera, domElement, opts = {}) {
     walkWaypoints = [];
   }
 
-  function update(dt) {
+  function update(dt, forwardHeld = false) {
     if (!enabled) return;
+    if (forwardHeld && mode === "walk") {
+      activeFlight = null;
+      walkWaypoints = [];
+    }
     if (activeFlight) {
       activeFlight.elapsed += dt;
       const u = clamp(activeFlight.elapsed / activeFlight.duration, 0, 1);
@@ -554,7 +558,7 @@ export function createExplorationControls(camera, domElement, opts = {}) {
 
       let moveFwd = 0;
       let moveRight = 0;
-      if (keys.has("KeyW") || keys.has("ArrowUp")) moveFwd += 1;
+      if (forwardHeld || keys.has("KeyW") || keys.has("ArrowUp")) moveFwd += 1;
       if (keys.has("KeyS") || keys.has("ArrowDown")) moveFwd -= 1;
       if (keys.has("KeyD") || keys.has("ArrowRight")) moveRight += 1;
       if (keys.has("KeyA") || keys.has("ArrowLeft")) moveRight -= 1;
