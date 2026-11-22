@@ -1,0 +1,15 @@
+import {build} from 'esbuild';
+import {mkdir, copyFile, access} from 'node:fs/promises';
+import {join,dirname,resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {places} from './places.mjs';
+const src=dirname(fileURLToPath(import.meta.url));
+if (process.argv.length!==3) throw Error('用法: node desktop/WebRemodel/view/build.mjs <静态输出目录>');
+const out=resolve(process.argv[2]);
+if(out===src) throw Error('输出目录须与源目录分开');
+const files=[['../model/island.glb','island.glb'],['index.html','index.html'],['style.css','style.css'],...places.map(p=>[`plates/${p.id}.jpg`,`plates/${p.id}.jpg`])];
+await Promise.all(files.map(([f])=>access(join(src,f))));
+await mkdir(join(out,'plates'),{recursive:true});
+await build({entryPoints:[join(src,'app.js'),join(src,'world.js')],outdir:out,bundle:true,format:'esm',target:'es2020',minify:true,logLevel:'info'});
+await Promise.all(files.map(([from,to])=>copyFile(join(src,from),join(out,to))));
+console.log('重制 1.0.1 静态入口:',out);

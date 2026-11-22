@@ -1,4 +1,4 @@
-name: Publish Iris Bay Flower Path
+name: Publish Iris Bay
 
 on:
   push:
@@ -34,11 +34,14 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Validate flower path geometry
         run: python desktop/Tests/test_scene.py
-      - name: Assemble the flower path homepage and classic garden
+      - name: Assemble the remodel homepage and both earlier gardens
         run: |
-          mkdir -p pages/classic
-          node desktop/Viewer/build.mjs desktop/Art pages/index.html
+          node desktop/WebRemodel/view/build.mjs pages
+          mkdir -p pages/classic pages/flower-path
+          node desktop/Viewer/build.mjs desktop/Art pages/flower-path/index.html
           cp '鸢尾湾·花与海之约.html' pages/classic/index.html
+          cp THIRD_PARTY_NOTICES.md pages/credits.txt
+          python desktop/WebRemodel/check_pages.py pages
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

@@ -1,8 +1,8 @@
-# 鸢尾湾 · 花径漫步
+# 鸢尾湾 · 花墅与水庭
 
-[进入花径](https://wide-sky-with-me.github.io/bloom-for-you/) · [回到经典庄园（双人漫游与读信）](https://wide-sky-with-me.github.io/bloom-for-you/classic/)
+[进入重制小岛](https://wide-sky-with-me.github.io/bloom-for-you/) · [旧版花径](https://wide-sky-with-me.github.io/bloom-for-you/flower-path/) · [经典庄园：双人漫游与读信](https://wide-sky-with-me.github.io/bloom-for-you/classic/)
 
-线上首页由 `desktop/Viewer/build.mjs` 从水庭模型生成，打开即可沿路赏花。GitHub Pages 只发布浏览器版，不上传 UE 工程包。下文介绍保留在 `classic/` 的经典版本。
+首页是「花墅与水庭」1.0.1 的浏览器观景版。网页版从重制场景导出的模型加载，支持查看花墅、秋千、东港灯塔、风车、莫奈池与书房。完整可编辑模型见 [Blender 发行包](https://github.com/wide-sky-with-me/bloom-for-you/releases/tag/remodel-v1.0.1)。下文介绍保留在 `classic/` 的经典版本。
 
 ## 《鸢尾湾·花与海之约》 · 海景花墅、莫奈花园与群岛海湾庄园
 
