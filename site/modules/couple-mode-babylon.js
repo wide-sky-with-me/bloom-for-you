@@ -1039,6 +1039,9 @@ export function createCoupleMode({
       return true;
     }
 
+    // A hit on the physical letter is a request to read, not a walking destination.
+    if (pid === "villa-love-letter") return activateById(pid);
+
     if (pid && /^(npc-|critter-)/.test(pid)) {
       const it = ensureInteractables().find((x) => x.id === pid);
       const L = leader();
